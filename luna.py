@@ -1472,7 +1472,9 @@ class HomePage(QWidget):
         outer = QHBoxLayout(self); outer.setContentsMargins(24, 0, 24, 0)
         content = QWidget(); content.setMaximumWidth(1300)
         outer.addStretch(1); outer.addWidget(content, 100); outer.addStretch(1)
-        lay = QVBoxLayout(content); lay.setContentsMargins(0, 26, 0, 14); lay.setSpacing(10)
+        # układ: [karta serii] [środek: logo, podpis, wyszukiwarka, kafelki] [karta zegara] – karty na pełną wysokość
+        mid = QHBoxLayout(content); mid.setContentsMargins(0, 14, 0, 14); mid.setSpacing(18)
+        lay = QVBoxLayout(); lay.setContentsMargins(0, 12, 0, 0); lay.setSpacing(10)
 
         logo = QLabel(); logo.setPixmap(logo_pixmap(46)); logo.setFixedSize(46, 46)
         brand = QLabel("Luna"); brand.setObjectName("brand")
@@ -1487,7 +1489,7 @@ class HomePage(QWidget):
         self.search.setMaximumWidth(680)
         lay.addWidget(self.search, 0, Qt.AlignmentFlag.AlignHCenter)
 
-        center = QVBoxLayout(); center.setSpacing(10)
+        center = lay
         top = QHBoxLayout()
         title = QLabel("Aplikacje"); title.setObjectName("h1")
         self.count = QLabel(); self.count.setObjectName("muted")
@@ -1515,12 +1517,10 @@ class HomePage(QWidget):
         self.recent.itemClicked.connect(lambda it: self.opened.emit(it.data(Qt.ItemDataRole.UserRole)))
         center.addWidget(self.recent, 2)
 
-        mid = QHBoxLayout(); mid.setSpacing(18)
         self.left_card, self.right_card = StreakCard(store), ClockCard(store)
         mid.addWidget(self.left_card)
-        mid.addLayout(center, 1)
+        mid.addLayout(lay, 1)
         mid.addWidget(self.right_card)
-        lay.addLayout(mid, 1)
 
         self.store.changed.connect(self.refresh)
         self.refresh()
