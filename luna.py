@@ -16,9 +16,9 @@ import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote, urlencode
-from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRectF, QEvent, QTimer, QLocale, QDateTime,
+from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRect, QRectF, QEvent, QTimer, QLocale, QDateTime,
                           QPropertyAnimation, pyqtSignal)
-from PyQt6.QtGui import (QCursor, QBrush, QRadialGradient, QLinearGradient, QIcon, QPixmap, QPainter, QColor, QFont,
+from PyQt6.QtGui import (QGuiApplication, QImage, QCursor, QBrush, QRadialGradient, QLinearGradient, QIcon, QPixmap, QPainter, QColor, QFont,
                          QFontDatabase, QPen, QPolygonF, QKeySequence, QShortcut, QActionGroup, QTextDocument,
                          QPalette, QPainterPath, QDesktopServices)
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply, QTcpServer, QHostAddress
@@ -26,8 +26,12 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget,
                              QListWidget, QListWidgetItem, QListView, QAbstractItemView, QMenu, QInputDialog,
                              QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QDialog, QDialogButtonBox, QFrame,
                              QScrollArea, QPlainTextEdit, QGraphicsOpacityEffect, QButtonGroup, QToolTip, QComboBox,
-                             QCheckBox, QSlider, QProgressBar, QFileDialog)
+                             QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+try:
+    from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
+except ImportError:
+    QSvgRenderer = None
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 
 HOME = Path.home()
@@ -571,6 +575,10 @@ QFrame#wf { background:transparent; border:0; }
 QCheckBox, QSlider, QProgressBar { background:transparent; }
 QScrollArea#sb { background:transparent; border:0; }
 QToolTip { background:#1c1c1c; color:#ececec; border:1px solid #333333; padding:5px 8px; }
+QPushButton#gbtn { background:#ffffff; color:#1f1f1f; border-radius:18px; padding:8px 18px 8px 12px; font-weight:600; }
+QPushButton#gbtn:hover { background:#e9e9e9; }
+QToolButton#acct { border-radius:17px; }
+QToolButton#acct::menu-indicator { image:none; width:0; }
 QToolButton#rail { background:rgba(255,255,255,0.06); border-radius:8px; }
 QToolButton#rail:hover { background:rgba(255,255,255,0.15); }
 QLabel#badge { background:#ececec; color:#111111; border-radius:8px; padding:0 6px; font-size:10px; font-weight:700; }
@@ -1430,11 +1438,12 @@ WIDGETS = {  # id: (tytuł, domyślna strona, kolejność, domyślnie włączony
     "calendar": ("Kalendarz Google", "right", 5, False, "google"),
     "gtasks": ("Zadania Google", "right", 6, False, "google"),
     "audio": ("Odtwarzacz audio", "right", 7, False, None),
+    "drive": ("Dysk Google", "right", 10, False, "google"),
     "system": ("Monitor zasobów", "right", 8, False, None),
     "rss": ("Wiadomości (RSS)", "right", 9, False, None),
 }
 FEATURES = {  # id: (nazwa, opis, domyślnie)
-    "google": ("Integracja z Google", "Gmail, Kalendarz i Zadania. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
+    "google": ("Integracja z Google", "Gmail, Kalendarz, Zadania i Dysk – jedno logowanie. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
     "markets": ("Panele giełdowe i walutowe", "Rynki (akcje, krypto) i przelicznik walut. Wyłączone: brak zapytań o notowania.", True),
     "left": ("Lewy panel boczny", "Pokazuje widgety przypisane do lewej strony.", True),
     "right": ("Prawy panel boczny", "Pokazuje widgety przypisane do prawej strony.", True),
@@ -1443,271 +1452,6 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
 }
 GLASS_ALPHA = [168]
-BG_B64 = (
-    "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"
-    "PTxCHUjO/tLN2P4TSoAEAABtFCqyISYQj//Z"
-)
 
 
 def safe_disconnect(sig, slot):
@@ -1717,47 +1461,96 @@ def safe_disconnect(sig, slot):
         pass
 
 
+def luna_bg_svg() -> str:
+    """Wektorowe tło (SVG 1920×1080): ciemne, ukośne arkusze z miękkimi cieniami + poświata „księżyca”.
+    Wektor skaluje się bez utraty ostrości (Retina/HiDPI); losowość jest ustalona, więc wynik jest powtarzalny."""
+    rnd = random.Random(11)
+    parts, x = [], -900.0
+    while x < 2900:
+        w = rnd.choice((44, 66, 92, 128, 176, 236)) * rnd.uniform(0.8, 1.25)
+        fill = "url(#sl)" if rnd.random() < 0.55 else "url(#sd)"
+        parts.append(f'<rect x="{x:.1f}" y="-1300" width="{w:.1f}" height="3700" fill="{fill}" opacity="{rnd.uniform(0.55, 1.0):.2f}"/>')
+        parts.append(f'<rect x="{x:.1f}" y="-1300" width="1.5" height="3700" fill="#ffffff" opacity="{rnd.uniform(0.05, 0.15):.2f}"/>')
+        parts.append(f'<rect x="{x + w:.1f}" y="-1300" width="{rnd.uniform(16, 46):.1f}" height="3700" fill="url(#sh)"/>')
+        x += w + rnd.uniform(0, 12)
+    stripes = "".join(parts)
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+<defs>
+<linearGradient id="base" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d1e23"/><stop offset="0.55" stop-color="#101114"/><stop offset="1" stop-color="#08080a"/></linearGradient>
+<linearGradient id="sl" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#4a4c54" stop-opacity="0.55"/><stop offset="1" stop-color="#25262b" stop-opacity="0.30"/></linearGradient>
+<linearGradient id="sd" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#202126" stop-opacity="0.85"/><stop offset="1" stop-color="#0c0c0e" stop-opacity="0.95"/></linearGradient>
+<linearGradient id="sh" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#000000" stop-opacity="0.5"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></linearGradient>
+<radialGradient id="g1" gradientUnits="userSpaceOnUse" cx="1560" cy="170" r="820"><stop offset="0" stop-color="#eceef6" stop-opacity="0.26"/><stop offset="0.4" stop-color="#a6adc2" stop-opacity="0.09"/><stop offset="1" stop-color="#a6adc2" stop-opacity="0"/></radialGradient>
+<radialGradient id="g2" gradientUnits="userSpaceOnUse" cx="240" cy="1020" r="900"><stop offset="0" stop-color="#56627f" stop-opacity="0.20"/><stop offset="1" stop-color="#56627f" stop-opacity="0"/></radialGradient>
+<radialGradient id="vig" gradientUnits="userSpaceOnUse" cx="960" cy="540" r="1180"><stop offset="0.45" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.62"/></radialGradient>
+</defs>
+<rect width="1920" height="1080" fill="url(#base)"/>
+<g transform="rotate(30 960 540)">{stripes}</g>
+<rect width="1920" height="1080" fill="url(#g1)"/>
+<rect width="1920" height="1080" fill="url(#g2)"/>
+<rect width="1920" height="1080" fill="url(#vig)"/>
+</svg>'''
+
+
 class Background:
-    """Tło okna: obraz „cover” (wypełnia i centruje bez zniekształceń) + rozmyta kopia pod szklane panele.
-    Cache zależy od rozmiaru i trybu; przeliczany dopiero po zakończeniu zmiany rozmiaru (debounce)."""
+    """Tło okna: wektorowe SVG skalowane w trybie „cover” (wypełnia i centruje bez zniekształceń) w rozdzielczości
+    fizycznej ekranu (ostre na Retina/HiDPI) + rozmyta kopia pod szklane panele.
+    Cache zależy od rozmiaru, trybu i DPR; przeliczany dopiero po zakończeniu zmiany rozmiaru (debounce)."""
+    MAX_PIXELS = 8_300_000   # limit pamięci (~4K): przy większych oknach obniżamy skalę HiDPI
 
     def __init__(self):
-        self.store = self.frame = self.cover = self.blur = self._src = self.key = None
-
-    def source(self):
-        if self._src is None:
-            pm = QPixmap(); pm.loadFromData(base64.b64decode("".join(BG_B64.split()))); self._src = pm
-        return self._src
+        self.store = self.frame = self.cover = self.blur = self.key = None
+        self._svg = self._noise = None
 
     def mode(self):
         return self.store.settings.get("bg", "image") if self.store else "image"
 
+    def dpr(self):
+        return self.frame.devicePixelRatioF() if self.frame is not None else 1.0
+
     def wanted_key(self, size):
-        return (size.width(), size.height(), self.mode())
+        return (size.width(), size.height(), self.mode(), round(self.dpr(), 2))
+
+    def renderer(self):
+        if self._svg is None and QSvgRenderer is not None:
+            self._svg = QSvgRenderer(luna_bg_svg().encode("utf-8"))
+        return self._svg
+
+    def noise(self):
+        """Drobne ziarno nakładane na tło – likwiduje „schodki” (banding) w ciemnych gradientach."""
+        if self._noise is None:
+            rnd = random.Random(3); data = bytearray()
+            for _ in range(128 * 128):
+                v = rnd.randrange(256); data += bytes((v, v, v, 9))
+            img = QImage(bytes(data), 128, 128, 128 * 4, QImage.Format.Format_RGBA8888).copy()
+            self._noise = QPixmap.fromImage(img)
+        return self._noise
 
     def prepare(self, size):
         key = self.wanted_key(size)
         if key == self.key:
             return
-        w, h = max(1, size.width()), max(1, size.height())
-        mode = key[2]
-        if mode == "image":
-            src = self.source().scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                                       Qt.TransformationMode.SmoothTransformation)
-            pm = src.copy(max(0, (src.width() - w) // 2), max(0, (src.height() - h) // 2), w, h)
-            p = QPainter(pm); p.fillRect(pm.rect(), QColor(8, 8, 10, 96))
-            g = QLinearGradient(0, 0, 0, h); g.setColorAt(0, QColor(0, 0, 0, 0)); g.setColorAt(1, QColor(0, 0, 0, 120))
-            p.fillRect(pm.rect(), QBrush(g)); p.end()
-        elif mode == "gradient":
+        w, h = max(1, size.width()), max(1, size.height()); mode, dpr = key[2], key[3]
+        if mode == "image" and self.renderer() is not None:
+            scale = max(1.0, min(dpr, math.sqrt(self.MAX_PIXELS / (w * h))))
+            pm = QPixmap(max(1, int(w * scale)), max(1, int(h * scale))); pm.setDevicePixelRatio(scale)
+            p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            k = max(w / 1920.0, h / 1080.0)          # „cover”: bez zniekształceń, wyśrodkowane
+            self.renderer().render(p, QRectF((w - 1920 * k) / 2, (h - 1080 * k) / 2, 1920 * k, 1080 * k))
+            nz = self.noise(); nz.setDevicePixelRatio(scale); p.drawTiledPixmap(QRect(0, 0, w, h), nz); p.end()
+        elif mode == "solid":
+            pm = QPixmap(w, h); pm.fill(QColor("#111111"))
+        else:  # gradient (a także awaryjnie, gdy brak QtSvg)
             pm = QPixmap(w, h); p = QPainter(pm)
             g = QLinearGradient(0, 0, w, h)
             g.setColorAt(0, QColor("#26282d")); g.setColorAt(0.55, QColor("#16171a")); g.setColorAt(1, QColor("#0b0b0d"))
             p.fillRect(pm.rect(), QBrush(g)); p.end()
-        else:
-            pm = QPixmap(w, h); pm.fill(QColor("#111111"))
-        small = pm.scaled(max(1, w // 14), max(1, h // 14), Qt.AspectRatioMode.IgnoreAspectRatio,
-                          Qt.TransformationMode.SmoothTransformation)
-        self.blur = small.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        img = pm.toImage()
+        small = img.scaled(max(1, w // 14), max(1, h // 14), Qt.AspectRatioMode.IgnoreAspectRatio,
+                           Qt.TransformationMode.SmoothTransformation)
+        big = small.scaled(w, h, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        big.setDevicePixelRatio(1.0)
+        self.blur = QPixmap.fromImage(big)
         self.cover, self.key = pm, key
 
     def draw_under(self, p, widget):
@@ -1965,8 +1758,10 @@ class WidgetFrame(QFrame):
 
 
 class Sidebar(QWidget):
-    """Boczny panel: przewijana kolumna widgetów + wąska szyna do zwijania/rozwijania całego panelu."""
-    W = 300
+    """Boczny panel: przewijana kolumna widgetów + wąska szyna (drawer). Panel sam zwija się do szyny, gdy w oknie
+    brakuje miejsca; kliknięcie szyny wysuwa go z powrotem (przeglądarka zwija wtedy drugi, jeśli trzeba)."""
+    W, RAIL = 300, 20
+    rail_clicked = pyqtSignal(str)
 
     def __init__(self, side, store):
         super().__init__()
@@ -1985,7 +1780,7 @@ class Sidebar(QWidget):
         self.scroll.setMinimumWidth(0); self.scroll.setMaximumWidth(self.W)
         self.rail = QToolButton(); self.rail.setObjectName("rail"); self.rail.setFixedSize(16, 54)
         self.rail.setCursor(Qt.CursorShape.PointingHandCursor); self.rail.setIconSize(QSize(14, 14))
-        self.rail.clicked.connect(lambda: self.set_collapsed(not self.collapsed))
+        self.rail.clicked.connect(lambda: self.rail_clicked.emit(self.side))
         rb = QVBoxLayout(); rb.setContentsMargins(2, 18, 2, 0); rb.addWidget(self.rail); rb.addStretch()
         if side == "left":
             lay.addWidget(self.scroll); lay.addLayout(rb)
@@ -1993,7 +1788,8 @@ class Sidebar(QWidget):
             lay.addLayout(rb); lay.addWidget(self.scroll)
         self.anim = QPropertyAnimation(self.scroll, b"maximumWidth", self); self.anim.setDuration(180)
         self.anim.finished.connect(self._anim_done)
-        self.collapsed = bool(store.settings.get("sidebar", {}).get(side, False))
+        self.user_collapsed = bool(store.settings.get("sidebar", {}).get(side, False))  # wybór użytkownika (zapisywany)
+        self.collapsed = self.user_collapsed                                            # stan widoczny (może być wymuszony)
         self.scroll.setVisible(not self.collapsed); self._rail_icon()
         self._count = 0
 
@@ -2004,18 +1800,25 @@ class Sidebar(QWidget):
         left = self.side == "left"
         kind = ("back" if left else "forward") if not self.collapsed else ("forward" if left else "back")
         self.rail.setIcon(glyph(kind, "#9a9a9a"))
-        self.rail.setToolTip("Zwiń panel" if not self.collapsed else "Rozwiń panel")
+        self.rail.setToolTip("Zwiń panel" if not self.collapsed else "Wysuń panel")
 
-    def set_collapsed(self, c):
-        self.collapsed = c
+    def set_user_collapsed(self, c):
+        self.user_collapsed = c
         self.store.settings.setdefault("sidebar", {})[self.side] = c; self.store.save_soon()
-        self.anim.stop()
-        if c:
-            self.anim.setStartValue(self.scroll.width()); self.anim.setEndValue(0)
+
+    def set_state(self, c, animate=True):
+        """Ustawia widoczny stan (zwinięty/rozwinięty) – bez zmiany wyboru użytkownika."""
+        if c == self.collapsed:
+            return
+        self.collapsed = c; self.anim.stop()
+        if not animate:
+            self.scroll.setMaximumWidth(self.W); self.scroll.setVisible(not c)
+        elif c:
+            self.anim.setStartValue(self.scroll.width()); self.anim.setEndValue(0); self.anim.start()
         else:
             self.scroll.setMaximumWidth(0); self.scroll.show()
-            self.anim.setStartValue(0); self.anim.setEndValue(self.W)
-        self.anim.start(); self._rail_icon()
+            self.anim.setStartValue(0); self.anim.setEndValue(self.W); self.anim.start()
+        self._rail_icon()
 
     def _anim_done(self):
         if self.collapsed:
@@ -2038,8 +1841,9 @@ class WidgetHost(QObject):
         super().__init__()
         self.store, self.browser = store, browser
         self.inst = {}
-        self._google = None
+        self._google = self._spotify = None
         self.left, self.right = Sidebar("left", store), Sidebar("right", store)
+        self.left.rail_clicked.connect(browser.toggle_sidebar); self.right.rail_clicked.connect(browser.toggle_sidebar)
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.sync)
         store.layout_changed.connect(lambda: self._t.start(30))
 
@@ -2048,6 +1852,12 @@ class WidgetHost(QObject):
         if self._google is None and self.store.feature("google"):
             self._google = GoogleService(self.store)
         return self._google
+
+    @property
+    def spotify(self):
+        if self._spotify is None:
+            self._spotify = SpotifyService(self.store)
+        return self._spotify
 
     def enabled(self, wid):
         _, _, _, _, gate = WIDGETS[wid]; c = self.store.wcfg(wid)
@@ -2745,15 +2555,210 @@ class SystemWidget(WidgetFrame):
             pb.setValue(int(val or 0))
 
 
-class AudioWidget(WidgetFrame):
-    """Mini-odtwarzacz lokalnych plików (QtMultimedia ładowane dopiero tutaj). Spotify: skrót do wersji WWW."""
+class SpotifyPane(QWidget):
+    """Aktualnie odtwarzany utwór ze Spotify (Web API) + sterowanie. Odpytuje API tylko, gdy widget jest widoczny."""
+    API = "https://api.spotify.com/v1/me/player"
 
-    def build(self):
-        self.ok = False
+    def __init__(self, owner):
+        super().__init__(); self.setObjectName("clear")
+        self.o, self.playing, self.cover_url, self._mode = owner, False, None, "login"
+        l = QVBoxLayout(self); l.setContentsMargins(0, 0, 0, 0); l.setSpacing(6)
+        self.msg = lbl("", "muted2", wrap=True); self.btn = QPushButton(); self.btn.clicked.connect(lambda: self.on_btn())
+        self.card = QWidget(); self.card.setObjectName("clear")
+        c = QVBoxLayout(self.card); c.setContentsMargins(0, 0, 0, 0); c.setSpacing(6)
+        top = QHBoxLayout(); top.setSpacing(10)
+        self.cover = QLabel(); self.cover.setFixedSize(58, 58); self.cover.setObjectName("cover")
+        info = QVBoxLayout(); info.setSpacing(0)
+        self.song = lbl("Nic nie gra", "h3", wrap=True); self.artist = lbl("", "muted"); self.dev = lbl("", "muted")
+        for w in (self.song, self.artist, self.dev):
+            info.addWidget(w)
+        top.addWidget(self.cover); top.addLayout(info, 1); c.addLayout(top)
+        self.bar = QProgressBar(); self.bar.setRange(0, 1000); self.bar.setTextVisible(False); self.bar.setFixedHeight(5)
+        c.addWidget(self.bar)
+        row = QHBoxLayout(); row.setSpacing(4); row.addStretch()
+        self.play_b = QToolButton()
+        for b, txt, fn in ((QToolButton(), "⏮", lambda: self.cmd("POST", "previous")), (self.play_b, "▶", self.toggle),
+                           (QToolButton(), "⏭", lambda: self.cmd("POST", "next"))):
+            b.setText(txt); b.setFixedSize(36, 36); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
+        row.addStretch(); c.addLayout(row)
+        self.note = lbl("", "muted", wrap=True); c.addWidget(self.note)
+        l.addWidget(self.msg); l.addWidget(self.btn); l.addWidget(self.card)
+        self.timer = QTimer(self); self.timer.timeout.connect(self.poll)
+
+    def sp(self):
+        return self.o.host.spotify
+
+    def start(self):
+        self.sp().state_changed.connect(self.sync); self.sync()
+
+    def stop(self):
+        self.timer.stop(); safe_disconnect(self.sp().state_changed, self.sync)
+
+    def sync(self):
+        s = self.sp(); self.timer.stop(); self.card.hide(); self.btn.hide(); self.msg.show()
+        if not s.configured():
+            self._mode = "cfg"; self.msg.setText("Podaj Client ID aplikacji Spotify (jednorazowo) w Ustawieniach → Spotify.")
+            self.btn.setText("Otwórz ustawienia"); self.btn.show()
+        elif s.expired or not s.logged_in():
+            self._mode = "login"
+            self.msg.setText("Sesja Spotify wygasła – połącz konto ponownie." if s.expired else
+                             "Połącz konto Spotify, aby widzieć i sterować odtwarzaniem.")
+            self.btn.setText("Połącz ze Spotify"); self.btn.show()
+        elif s.busy:
+            self.msg.setText("Dokończ logowanie w oknie przeglądarki…")
+        else:
+            self.msg.hide(); self.card.show(); self.poll(); self.timer.start(3000)
+
+    def on_btn(self):
+        if self._mode == "cfg":
+            self.o.host.browser.open_settings("spotify")
+        else:
+            self.sp().login()
+
+    @staticmethod
+    def friendly(err):
+        if "Premium" in err or "403" in err:
+            return "Sterowanie wymaga Spotify Premium (podgląd utworu działa bez niego)."
+        if "NO_ACTIVE_DEVICE" in err or "404" in err:
+            return "Nie wykryto aktywnego urządzenia – uruchom Spotify na telefonie lub komputerze."
+        return err
+
+    def poll(self):
+        self.sp().request("GET", self.API, self.o.guard(self.got))
+
+    def got(self, j, err):
+        if err:
+            self.note.setText(self.friendly(err)); return
+        self.note.setText("")
+        it = (j or {}).get("item")
+        if not it:
+            self.song.setText("Nic nie gra"); self.artist.setText("Włącz muzykę w aplikacji Spotify"); self.dev.setText("")
+            self.bar.setValue(0); self.cover.clear(); self.cover_url = None; self.playing = False; self.play_b.setText("▶"); return
+        self.song.setText(it.get("name", "")); self.artist.setText(", ".join(a.get("name", "") for a in it.get("artists", [])))
+        self.dev.setText((j.get("device") or {}).get("name", ""))
+        self.playing = bool(j.get("is_playing")); self.play_b.setText("⏸" if self.playing else "▶")
+        self.bar.setValue(int(1000 * (j.get("progress_ms") or 0) / (it.get("duration_ms") or 1)))
+        imgs = (it.get("album") or {}).get("images") or []
+        url = (imgs[-2] if len(imgs) > 1 else imgs[0])["url"] if imgs else None
+        if url and url != self.cover_url:
+            self.cover_url = url; self.o.store.http(url, self.o.guard(self.set_cover), raw=True)
+
+    def set_cover(self, data, err, status):
+        pm = QPixmap()
+        if data and pm.loadFromData(data):
+            self.cover.setPixmap(pm.scaled(58, 58, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                           Qt.TransformationMode.SmoothTransformation))
+
+    def cmd(self, method, path):
+        self.sp().request(method, f"{self.API}/{path}", self.o.guard(self.after))
+
+    def after(self, j, err):
+        if err:
+            self.note.setText(self.friendly(err))
+        QTimer.singleShot(500, self.poll)
+
+    def toggle(self):
+        self.cmd("PUT", "pause" if self.playing else "play")
+
+
+TAB_JS_INFO = ("(function(){var m=navigator.mediaSession&&navigator.mediaSession.metadata;"
+               "var e=[].slice.call(document.querySelectorAll('video,audio'));"
+               "return JSON.stringify({t:m?m.title:'',a:m?m.artist:'',playing:e.some(function(x){return !x.paused&&!x.ended;}),n:e.length});})()")
+TAB_JS_TOGGLE = ("(function(){var e=[].slice.call(document.querySelectorAll('video,audio'));"
+                 "var p=e.filter(function(x){return !x.paused&&!x.ended;});"
+                 "if(p.length){p.forEach(function(x){x.pause();});}else if(e.length){e[0].play();}})()")
+
+
+class TabAudioRow(QWidget):
+    def __init__(self, pane, tab):
+        super().__init__(); self.setObjectName("clear"); self.pane, self.tab = pane, tab
+        h = QHBoxLayout(self); h.setContentsMargins(0, 3, 0, 3); h.setSpacing(4)
+        col = QVBoxLayout(); col.setSpacing(0)
+        self.title = lbl("", "h3"); self.sub = lbl("", "muted"); col.addWidget(self.title); col.addWidget(self.sub)
+        h.addLayout(col, 1)
+        self.b_play, self.b_mute, self.b_go = QToolButton(), QToolButton(), QToolButton()
+        for b, txt, tip, fn in ((self.b_play, "⏯", "Odtwarzaj / pauza", self.toggle), (self.b_mute, "🔊", "Wycisz kartę", self.mute),
+                                (self.b_go, "↗", "Przejdź do karty", self.go)):
+            b.setText(txt); b.setToolTip(tip); b.setFixedSize(30, 30); b.clicked.connect(lambda _=False, f=fn: f()); h.addWidget(b)
+
+    def page(self):
+        return self.tab.web.page()
+
+    def toggle(self):
+        self.page().runJavaScript(TAB_JS_TOGGLE); QTimer.singleShot(400, self.pane.refresh)
+
+    def mute(self):
+        self.page().setAudioMuted(not self.page().isAudioMuted()); self.pane.refresh()
+
+    def go(self):
+        br = self.pane.o.host.browser; br.bar.setCurrentIndex(br.stack.indexOf(self.tab))
+
+    def update_from(self, web):
+        page = web.page(); self.title.setText((web.title() or host_of(web.url().toString()) or "Karta")[:34])
+        self.b_mute.setText("🔇" if page.isAudioMuted() else "🔊")
+        self.sub.setText("♪ gra" if page.recentlyAudible() else "wstrzymano")
+        page.runJavaScript(TAB_JS_INFO, 0, self.got)
+
+    def got(self, res):
+        try:
+            d = json.loads(res); t = " – ".join(x for x in (d.get("a"), d.get("t")) if x)
+            if t:
+                self.title.setText(t[:34])
+            self.sub.setText("♪ gra" if d.get("playing") else "wstrzymano")
+        except Exception:
+            pass
+
+
+class TabsPane(QWidget):
+    """Nasłuchuje, które karty odtwarzają dźwięk (YouTube, SoundCloud…), i pozwala je wyciszyć / zatrzymać."""
+
+    def __init__(self, owner):
+        super().__init__(); self.setObjectName("clear")
+        self.o, self.rows, self.known = owner, {}, set()
+        l = QVBoxLayout(self); l.setContentsMargins(0, 0, 0, 0); l.setSpacing(2)
+        self.list = QVBoxLayout(); self.list.setSpacing(0)
+        self.empty = lbl("Żadna karta nie odtwarza teraz dźwięku.", "muted2", wrap=True)
+        l.addLayout(self.list); l.addWidget(self.empty)
+        l.addWidget(lbl("Sterowanie działa dla stron z odtwarzaczem HTML5 (YouTube, SoundCloud i inne).", "muted", wrap=True))
+        self.timer = QTimer(self); self.timer.timeout.connect(self.refresh)
+
+    def start(self):
+        self.o.host.browser.audio_changed.connect(self.refresh); self.timer.start(3000); self.refresh()
+
+    def stop(self):
+        self.timer.stop(); safe_disconnect(self.o.host.browser.audio_changed, self.refresh)
+
+    def refresh(self):
+        br = self.o.host.browser; live = {}
+        for i in range(br.stack.count()):
+            t = br.stack.widget(i); web = getattr(t, "web", None)
+            if web is None:
+                continue
+            if web.page().recentlyAudible():
+                self.known.add(t)
+            if t in self.known:
+                live[t] = web
+        self.known &= set(live)
+        for t in [t for t in self.rows if t not in live]:
+            self.rows.pop(t).deleteLater()
+        for t, web in live.items():
+            r = self.rows.get(t)
+            if r is None:
+                r = self.rows[t] = TabAudioRow(self, t); self.list.addWidget(r)
+            r.update_from(web)
+        self.empty.setVisible(not live)
+
+
+class LocalPane(QWidget):
+    """Prosty odtwarzacz lokalnych plików audio (QtMultimedia ładowane dopiero tutaj)."""
+
+    def __init__(self, owner):
+        super().__init__(); self.setObjectName("clear"); self.o, self.ok = owner, False
+        l = QVBoxLayout(self); l.setContentsMargins(0, 0, 0, 0); l.setSpacing(6)
         try:
             from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput, QMediaMetaData
         except ImportError:
-            self.lay.addWidget(lbl("Brak modułu QtMultimedia.", "muted2")); return
+            l.addWidget(lbl("Brak modułu QtMultimedia.", "muted2")); return
         self.MP, self.MD = QMediaPlayer, QMediaMetaData
         self.player = QMediaPlayer(self); self.out = QAudioOutput(self); self.player.setAudioOutput(self.out)
         self.out.setVolume(0.6); self.files, self.idx = [], -1; self.ok = True
@@ -2762,22 +2767,23 @@ class AudioWidget(WidgetFrame):
         info = QVBoxLayout(); info.setSpacing(0)
         self.song = lbl("Brak utworu", "h3", wrap=True); self.artist = lbl("Dodaj pliki audio ＋", "muted")
         info.addWidget(self.song); info.addWidget(self.artist)
-        top.addWidget(self.cover); top.addLayout(info, 1); self.lay.addLayout(top)
+        top.addWidget(self.cover); top.addLayout(info, 1); l.addLayout(top)
         self.pos = QSlider(Qt.Orientation.Horizontal); self.pos.setRange(0, 0)
-        self.pos.sliderMoved.connect(self.player.setPosition); self.lay.addWidget(self.pos)
+        self.pos.sliderMoved.connect(self.player.setPosition); l.addWidget(self.pos)
         row = QHBoxLayout(); row.setSpacing(4)
-        self.prev_b, self.play_b, self.next_b = (QToolButton() for _ in range(3))
-        for b, txt, fn in ((self.prev_b, "⏮", lambda: self.step(-1)), (self.play_b, "▶", self.toggle), (self.next_b, "⏭", lambda: self.step(1))):
+        self.play_b = QToolButton()
+        for b, txt, fn in ((QToolButton(), "⏮", lambda: self.step(-1)), (self.play_b, "▶", self.toggle), (QToolButton(), "⏭", lambda: self.step(1))):
             b.setText(txt); b.setFixedSize(34, 34); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
         add = QToolButton(); add.setText("＋"); add.setFixedSize(34, 34); add.setToolTip("Dodaj pliki audio"); add.clicked.connect(self.add)
-        sp = QPushButton("Spotify"); sp.setToolTip("Otwórz Spotify w karcie (odtwarzanie DRM nie działa w osadzonym Chromium)")
-        sp.clicked.connect(lambda: self.host.browser.open_url_new_tab("https://open.spotify.com"))
-        row.addStretch(); row.addWidget(add); row.addWidget(sp); self.lay.addLayout(row)
+        row.addStretch(); row.addWidget(add); l.addLayout(row)
         self.player.positionChanged.connect(lambda p: self.pos.setValue(p) if not self.pos.isSliderDown() else None)
         self.player.durationChanged.connect(lambda d: self.pos.setRange(0, d))
         self.player.metaDataChanged.connect(self.meta)
         self.player.mediaStatusChanged.connect(lambda s: self.step(1) if s == self.MP.MediaStatus.EndOfMedia else None)
         self.player.playbackStateChanged.connect(lambda s: self.play_b.setText("⏸" if s == self.MP.PlaybackState.PlayingState else "▶"))
+
+    def start(self): pass
+    def stop(self): pass     # muzyka gra dalej po zwinięciu panelu
 
     def add(self):
         fs, _ = QFileDialog.getOpenFileNames(self, "Wybierz muzykę", str(Path.home()), "Audio (*.mp3 *.flac *.wav *.ogg *.m4a *.aac)")
@@ -2817,6 +2823,46 @@ class AudioWidget(WidgetFrame):
     def teardown(self):
         if self.ok:
             self.player.stop()
+
+
+class AudioWidget(WidgetFrame):
+    """Widget dźwięku: Spotify (Web API), Karty (dźwięk z otwartych kart) albo Pliki (lokalny odtwarzacz).
+    Każdy tryb jest tworzony leniwie, a nieaktywne tryby nie mają timerów ani nasłuchiwaczy."""
+    MODES = (("spotify", "Spotify", SpotifyPane), ("tabs", "Karty", TabsPane), ("local", "Pliki", LocalPane))
+
+    def build(self):
+        row = QHBoxLayout(); row.setSpacing(4); group = QButtonGroup(self); self.btns, self.panes, self.mode = {}, {}, None
+        for key, name, _ in self.MODES:
+            b = QToolButton(); b.setObjectName("aipick"); b.setCheckable(True); b.setText(name)
+            b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, k=key: self.select(k))
+            group.addButton(b); row.addWidget(b); self.btns[key] = b
+        row.addStretch(); self.lay.addLayout(row)
+        self.select(self.store.settings.get("audio_mode", "spotify"))
+
+    def select(self, key):
+        if key == self.mode:
+            return
+        if self.mode and self.running:
+            self.panes[self.mode].stop()
+        self.mode = key; self.store.settings["audio_mode"] = key; self.store.save_soon()
+        if key not in self.panes:
+            cls = {k: c for k, _, c in self.MODES}[key]; self.panes[key] = cls(self); self.lay.addWidget(self.panes[key])
+        for k, p in self.panes.items():
+            p.setVisible(k == key)
+        self.btns[key].setChecked(True)
+        if self.running:
+            self.panes[key].start()
+
+    def start(self):
+        self.panes[self.mode].start()
+
+    def stop(self):
+        self.panes[self.mode].stop()
+
+    def teardown(self):
+        for p in self.panes.values():
+            if hasattr(p, "teardown"):
+                p.teardown()
 
 
 RSS_FEEDS = [("BBC World", "https://feeds.bbci.co.uk/news/world/rss.xml"), ("Hacker News", "https://hnrss.org/frontpage"),
@@ -2884,10 +2930,11 @@ class RssWidget(WidgetFrame):
 
 # ---------------------------------------------------------------- Google (OAuth 2.0 + PKCE, logowanie w zwykłej przeglądarce)
 GOOGLE_SCOPES = ("openid email https://www.googleapis.com/auth/gmail.readonly "
-                 "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/tasks")
+                 "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/tasks "
+                 "https://www.googleapis.com/auth/drive.metadata.readonly")
 
 
-def secret_get(store, key):
+def secret_get(store, key, section="google"):
     """Token odświeżania: w systemowym pęku kluczy (pakiet keyring), a gdy go brak – w pliku ustawień (chmod 600)."""
     try:
         import keyring
@@ -2896,36 +2943,66 @@ def secret_get(store, key):
             return v
     except Exception:
         pass
-    return store.settings.get("google", {}).get(key)
+    return store.settings.get(section, {}).get(key)
 
 
-def secret_set(store, key, value):
+def secret_set(store, key, value, section="google"):
     try:
         import keyring
         keyring.set_password("Luna", key, value)
-        store.settings.get("google", {}).pop(key, None); store.save_settings(); return
+        store.settings.get(section, {}).pop(key, None); store.save_settings(); return
     except Exception:
         pass
-    store.settings.setdefault("google", {})[key] = value; store.save_settings()
+    store.settings.setdefault(section, {})[key] = value; store.save_settings()
 
 
-def secret_del(store, key):
+def secret_del(store, key, section="google"):
     try:
         import keyring
         keyring.delete_password("Luna", key)
     except Exception:
         pass
-    store.settings.get("google", {}).pop(key, None); store.save_settings()
+    store.settings.get(section, {}).pop(key, None); store.save_settings()
+
+
+def google_g_icon(size=18) -> QIcon:
+    """Uproszczone „G” w czterech kolorach – na jasnym przycisku logowania."""
+    pm = QPixmap(64, 64); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    r = QRectF(11, 11, 42, 42)
+    for col, start, span in (("#EA4335", 45, 100), ("#FBBC05", 145, 75), ("#34A853", 220, 95), ("#4285F4", 315, 45)):
+        p.setPen(QPen(QColor(col), 9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap)); p.drawArc(r, start * 16, span * 16)
+    p.setPen(QPen(QColor("#4285F4"), 9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.FlatCap)); p.drawLine(33, 32, 54, 32)
+    p.end()
+    return QIcon(pm)
+
+
+def avatar_icon(text) -> QIcon:
+    pm = QPixmap(64, 64); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#ececec")); p.drawEllipse(2, 2, 60, 60)
+    f = QFont(); f.setPixelSize(34); f.setBold(True); p.setFont(f); p.setPen(QColor("#111111"))
+    p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, (text or "?")[:1].upper()); p.end()
+    return QIcon(pm)
+
+
+class GoogleButton(QPushButton):
+    """Jeden, rozpoznawalny przycisk „Zaloguj przez Google” (to samo centralne logowanie we wszystkich miejscach)."""
+
+    def __init__(self, text="Zaloguj przez Google"):
+        super().__init__(text)
+        self.setObjectName("gbtn"); self.setIcon(google_g_icon()); self.setIconSize(QSize(18, 18))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
 
 class OAuthListener(QObject):
     """Jednorazowy lokalny serwer (127.0.0.1) odbierający przekierowanie OAuth z kodem."""
     done = pyqtSignal(dict)
 
-    def __init__(self):
+    def __init__(self, port=0):
         super().__init__()
         self.srv = QTcpServer(self)
-        self.srv.listen(QHostAddress(QHostAddress.SpecialAddress.LocalHost), 0)
+        self.ok = self.srv.listen(QHostAddress(QHostAddress.SpecialAddress.LocalHost), port)
         self.srv.newConnection.connect(self._conn)
         self.port = self.srv.serverPort()
         QTimer.singleShot(180000, self.srv.close)  # limit czasu na logowanie: 3 minuty
@@ -2948,33 +3025,66 @@ class OAuthListener(QObject):
         sock.disconnectFromHost(); self.srv.close(); self.done.emit(q)
 
 
-class GoogleService(QObject):
-    """Sesja Google: trwały token odświeżania, automatyczne odnawianie tokenu dostępu, obsługa wygaśnięcia sesji.
-    Tworzona dopiero, gdy funkcja „Integracja z Google” jest włączona; sama nie uruchamia żadnych timerów."""
+class OAuthService(QObject):
+    """Wspólny klient OAuth 2.0 (kod autoryzacji + PKCE, przekierowanie na 127.0.0.1) dla Google i Spotify.
+    Jedno logowanie dla wszystkich widgetów, trwały token odświeżania, odnawianie tokenu dostępu w tle
+    i jeden wspólny timer synchronizacji (widgety tylko się „zapisują”, zamiast mieć własne timery)."""
     state_changed = pyqtSignal()
+    sync = pyqtSignal()
     CT = QNetworkRequest.KnownHeaders.ContentTypeHeader
     STATUS = QNetworkRequest.Attribute.HttpStatusCodeAttribute
+    NAME, SECTION, TOKEN_KEY = "?", "x", "refresh"
+    AUTH_URL = TOKEN_URL = SCOPES = CALLBACK = ""
+    NEEDS_SECRET, SYNC_MS = False, 120000
 
     def __init__(self, store):
         super().__init__()
         self.store, self.token, self.exp = store, None, 0.0
-        self.expired, self.busy, self.last_error = False, False, ""
-        self._waiters, self._listener = None, None
+        self.expired = self.busy = False; self.last_error = ""
+        self._waiters = self._listener = None; self._subs = 0
+        self._timer = QTimer(self); self._timer.timeout.connect(self._tick)
+        self.state_changed.connect(self._update_timer)
 
+    # --- konfiguracja i stan ---
     def cfg(self):
-        return self.store.settings.get("google", {})
+        return self.store.settings.get(self.SECTION, {})
+
+    def port(self):
+        return 0
 
     def configured(self):
-        c = self.cfg(); return bool(c.get("client_id") and c.get("client_secret"))
+        c = self.cfg(); return bool(c.get("client_id")) and (not self.NEEDS_SECRET or bool(c.get("client_secret")))
 
     def refresh_token(self):
-        return secret_get(self.store, "refresh")
+        return secret_get(self.store, self.TOKEN_KEY, self.SECTION)
 
     def logged_in(self):
         return self.configured() and bool(self.refresh_token()) and not self.expired
 
-    def email(self):
-        return self.cfg().get("email", "")
+    # --- wspólna synchronizacja widgetów ---
+    def register(self):
+        self._subs += 1; self._update_timer()
+
+    def unregister(self):
+        self._subs = max(0, self._subs - 1); self._update_timer()
+
+    def _update_timer(self):
+        active = self._subs > 0 and self.logged_in()
+        if active and not self._timer.isActive():
+            self._timer.start(self.SYNC_MS)
+        elif not active:
+            self._timer.stop()
+
+    def _tick(self):
+        if self.logged_in():  # najpierw (w razie potrzeby) odśwież token, potem poproś widgety o dane
+            self._with_token(lambda ok: self.sync.emit() if ok else None)
+
+    # --- hooki dla konkretnych usług ---
+    def extra_auth(self): return {}
+    def on_tokens(self, j): pass
+    def after_login(self): pass
+    def on_logout(self): pass
+    def revoke(self, tok): pass
 
     # --- logowanie ---
     def login(self):
@@ -2983,16 +3093,18 @@ class GoogleService(QObject):
         self.last_error = ""
         if self._listener:
             self._listener.srv.close()
-        self._listener = OAuthListener()
+        self._listener = OAuthListener(self.port())
+        if not self._listener.ok:
+            self.last_error = f"Nie można użyć portu {self.port()} (zajęty?)."; self.state_changed.emit(); return
         self.verifier = base64.urlsafe_b64encode(secrets.token_bytes(48)).decode().rstrip("=")
         challenge = base64.urlsafe_b64encode(hashlib.sha256(self.verifier.encode()).digest()).decode().rstrip("=")
-        self.state = secrets.token_urlsafe(16); self.redirect = f"http://127.0.0.1:{self._listener.port}"
-        q = urlencode({"client_id": self.cfg()["client_id"], "redirect_uri": self.redirect, "response_type": "code",
-                       "scope": GOOGLE_SCOPES, "code_challenge": challenge, "code_challenge_method": "S256",
-                       "state": self.state, "access_type": "offline", "prompt": "consent"})
+        self.state = secrets.token_urlsafe(16); self.redirect = f"http://127.0.0.1:{self._listener.port}{self.CALLBACK}"
+        q = {"client_id": self.cfg()["client_id"], "redirect_uri": self.redirect, "response_type": "code",
+             "scope": self.SCOPES, "code_challenge": challenge, "code_challenge_method": "S256", "state": self.state}
+        q.update(self.extra_auth())
         self._listener.done.connect(self._got_code)
         self.busy = True; self.state_changed.emit()
-        QDesktopServices.openUrl(QUrl("https://accounts.google.com/o/oauth2/v2/auth?" + q))  # zwykła przeglądarka systemowa
+        QDesktopServices.openUrl(QUrl(self.AUTH_URL + "?" + urlencode(q)))  # zwykła przeglądarka systemowa (bezpieczniej)
 
     def _got_code(self, q):
         self.busy = False
@@ -3004,13 +3116,8 @@ class GoogleService(QObject):
     def _login_done(self, j, status, neterr):
         if "access_token" in j and j.get("refresh_token"):
             self.token, self.exp, self.expired = j["access_token"], time.time() + int(j.get("expires_in", 3600)), False
-            secret_set(self.store, "refresh", j["refresh_token"])
-
-            def got(info, err):
-                self.store.settings.setdefault("google", {})["email"] = (info or {}).get("email", "")
-                self.store.save_settings(); self.state_changed.emit()
-            self.state_changed.emit()
-            self.request("GET", "https://openidconnect.googleapis.com/v1/userinfo", got)
+            secret_set(self.store, self.TOKEN_KEY, j["refresh_token"], self.SECTION); self.on_tokens(j)
+            self.state_changed.emit(); self.after_login()
         else:
             self.last_error = j.get("error_description") or j.get("error") or "Nie udało się zalogować."
             self.state_changed.emit()
@@ -3018,17 +3125,18 @@ class GoogleService(QObject):
     def logout(self):
         tok = self.refresh_token()
         if tok:
-            req = QNetworkRequest(QUrl("https://oauth2.googleapis.com/revoke?token=" + quote(tok)))
-            req.setHeader(self.CT, "application/x-www-form-urlencoded")
-            r = self.store.nam.post(req, b""); r.finished.connect(r.deleteLater)
-        secret_del(self.store, "refresh"); self.store.settings.get("google", {}).pop("email", None)
-        self.store.save_settings(); self.token, self.expired, self.last_error = None, False, ""
+            self.revoke(tok)
+        secret_del(self.store, self.TOKEN_KEY, self.SECTION); self.on_logout(); self.store.save_settings()
+        self.token, self.expired, self.last_error = None, False, ""
         self.state_changed.emit()
 
     # --- tokeny ---
     def _token_post(self, extra, cb):
-        c = self.cfg(); body = {"client_id": c.get("client_id", ""), "client_secret": c.get("client_secret", "")}; body.update(extra)
-        req = QNetworkRequest(QUrl("https://oauth2.googleapis.com/token"))
+        c = self.cfg(); body = {"client_id": c.get("client_id", "")}
+        if self.NEEDS_SECRET:
+            body["client_secret"] = c.get("client_secret", "")
+        body.update(extra)
+        req = QNetworkRequest(QUrl(self.TOKEN_URL))
         req.setHeader(self.CT, "application/x-www-form-urlencoded"); req.setTransferTimeout(15000)
         r = self.store.nam.post(req, urlencode(body).encode())
         r.finished.connect(lambda r=r: self._token_reply(r, cb))
@@ -3043,9 +3151,9 @@ class GoogleService(QObject):
         cb(j, status, neterr and not j)
 
     def _with_token(self, then):
-        if self.token and time.time() < self.exp - 60:
+        if self.token and time.time() < self.exp - 300:    # odnawiamy z zapasem 5 min – widgety nigdy nie czekają na wygasły token
             then(True); return
-        if self._waiters is not None:          # odświeżanie już trwa – dołącz do kolejki
+        if self._waiters is not None:                      # odświeżanie już trwa – dołącz do kolejki
             self._waiters.append(then); return
         self._waiters = [then]
         self._token_post({"grant_type": "refresh_token", "refresh_token": self.refresh_token() or ""}, self._refreshed)
@@ -3055,8 +3163,11 @@ class GoogleService(QObject):
         ok = "access_token" in j
         if ok:
             self.token, self.exp = j["access_token"], time.time() + int(j.get("expires_in", 3600))
+            if j.get("refresh_token"):                      # Spotify potrafi rotować token odświeżania
+                secret_set(self.store, self.TOKEN_KEY, j["refresh_token"], self.SECTION)
+            self.on_tokens(j)
         elif j.get("error") == "invalid_grant" or status in (400, 401):
-            self.token, self.expired = None, True      # token odświeżania unieważniony / wygasł
+            self.token, self.expired = None, True           # token odświeżania unieważniony / wygasł
             self.state_changed.emit()
         for w in waiters:
             w(ok)
@@ -3065,11 +3176,11 @@ class GoogleService(QObject):
     def request(self, method, url, cb, body=None, _retry=True):
         """cb(json|None, błąd|None). Przy 401 odświeża token i ponawia dokładnie raz."""
         if not self.logged_in():
-            cb(None, "Nie zalogowano do Google."); return
+            cb(None, f"Nie zalogowano do {self.NAME}."); return
 
         def go(ok):
             if not ok:
-                cb(None, "Sesja wygasła – zaloguj się ponownie." if self.expired else "Brak połączenia z Google."); return
+                cb(None, "Sesja wygasła – zaloguj się ponownie." if self.expired else f"Brak połączenia z {self.NAME}."); return
             req = QNetworkRequest(QUrl(url)); req.setRawHeader(b"Authorization", ("Bearer " + self.token).encode())
             req.setTransferTimeout(15000); data = b""
             if body is not None:
@@ -3098,25 +3209,92 @@ class GoogleService(QObject):
             msg = e.get("message") if isinstance(e, dict) else (e or "")
             if status == 401:
                 self.expired = True; self.state_changed.emit()
-            cb(None, f"Błąd Google {status}: {msg}".strip(": ")); return
+            cb(None, f"Błąd {self.NAME} {status}: {msg}".strip(": ")); return
         if neterr and j is None:
-            cb(None, "Brak połączenia z Google."); return
+            cb(None, f"Brak połączenia z {self.NAME}."); return
         cb(j if j is not None else {}, None)
 
 
+GOOGLE_LEGACY_SCOPES = "gmail.readonly calendar.readonly auth/tasks"  # sesje sprzed dodania Dysku
+
+
+class GoogleService(OAuthService):
+    NAME, SECTION, TOKEN_KEY, NEEDS_SECRET = "Google", "google", "refresh", True
+    AUTH_URL, TOKEN_URL = "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token"
+    SCOPES = GOOGLE_SCOPES
+
+    def extra_auth(self):
+        return {"access_type": "offline", "prompt": "consent"}
+
+    def email(self):
+        return self.cfg().get("email", "")
+
+    def scopes(self):
+        return (self.cfg().get("scopes") or GOOGLE_LEGACY_SCOPES).split()
+
+    def has_scope(self, key):
+        return any(key in x for x in self.scopes())
+
+    def on_tokens(self, j):
+        if j.get("scope"):
+            self.store.settings.setdefault("google", {})["scopes"] = j["scope"]; self.store.save_soon()
+
+    def after_login(self):
+        def got(info, err):
+            self.store.settings.setdefault("google", {})["email"] = (info or {}).get("email", "")
+            self.store.save_settings(); self.state_changed.emit()
+        self.request("GET", "https://openidconnect.googleapis.com/v1/userinfo", got)
+
+    def on_logout(self):
+        g = self.store.settings.get("google", {}); g.pop("email", None); g.pop("scopes", None)
+
+    def revoke(self, tok):
+        req = QNetworkRequest(QUrl("https://oauth2.googleapis.com/revoke?token=" + quote(tok)))
+        req.setHeader(self.CT, "application/x-www-form-urlencoded")
+        r = self.store.nam.post(req, b""); r.finished.connect(r.deleteLater)
+
+    def import_client_json(self, path):
+        """Wczytuje plik „client_secret_….json” pobrany z Google Cloud (bez ręcznego przepisywania kluczy)."""
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            c = data.get("installed") or data.get("web") or {}
+            cid, sec = c["client_id"], c["client_secret"]
+        except Exception:
+            return False
+        self.store.settings.setdefault("google", {}).update(client_id=cid, client_secret=sec)
+        self.store.save_settings(); self.state_changed.emit()
+        return True
+
+
+class SpotifyService(OAuthService):
+    """Spotify Web API – logowanie PKCE (bez Client Secret). Stały port, bo Spotify wymaga dokładnego Redirect URI."""
+    NAME, SECTION, TOKEN_KEY = "Spotify", "spotify", "spotify_refresh"
+    AUTH_URL, TOKEN_URL = "https://accounts.spotify.com/authorize", "https://accounts.spotify.com/api/token"
+    SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
+    CALLBACK = "/callback"
+
+    def port(self):
+        try:
+            return int(self.cfg().get("port") or 8888)
+        except (TypeError, ValueError):
+            return 8888
+
+
 class GoogleWidget(WidgetFrame):
-    """Wspólna baza widgetów Google: stany (brak konfiguracji / wylogowany / wygasła sesja / ładowanie / błąd)."""
-    INTERVAL = 120000  # synchronizacja w tle co 2 min – tylko gdy widget jest widoczny
+    """Wspólna baza widgetów Google. Logowanie jest centralne (jedno dla wszystkich widgetów, przycisk także na pasku
+    narzędzi): widget tylko reaguje na stan usługi oraz na wspólny sygnał synchronizacji."""
+    NEEDS = None  # fragment nazwy wymaganego zakresu OAuth, np. "gmail.readonly"
 
     def build(self):
-        self.gen, self.loaded, self._mode = 0, False, "login"
-        self.msg = lbl("", "muted2", wrap=True); self.act = QPushButton(); self.act.clicked.connect(self.on_action)
+        self.gen, self.loaded = 0, False
+        self.msg = lbl("", "muted2", wrap=True)
+        self.gbtn = GoogleButton(); self.gbtn.clicked.connect(lambda: self.host.browser.google_login())
+        self.cfgbtn = QPushButton("Skonfiguruj Google"); self.cfgbtn.clicked.connect(lambda: self.host.browser.open_settings("google"))
         self.skel = Skeleton(3); self.err = lbl("", "muted2", wrap=True)
         self.content = QVBoxLayout(); self.content.setSpacing(4)
-        for w in (self.msg, self.act, self.skel, self.err):
+        for w in (self.msg, self.gbtn, self.cfgbtn, self.skel, self.err):
             self.lay.addWidget(w)
         self.lay.addLayout(self.content)
-        self.timer = QTimer(self); self.timer.timeout.connect(self.refresh)
         self.extra_build()
 
     def extra_build(self): pass
@@ -3128,45 +3306,40 @@ class GoogleWidget(WidgetFrame):
     def start(self):
         g = self.svc()
         if g is not None:
-            g.state_changed.connect(self.sync_state); self.sync_state(); self.timer.start(self.INTERVAL)
+            g.register(); g.state_changed.connect(self.sync_state); g.sync.connect(self.refresh); self.sync_state()
 
     def stop(self):
         g = self.svc()
         if g is not None:
-            safe_disconnect(g.state_changed, self.sync_state)
-        self.timer.stop()
+            g.unregister(); safe_disconnect(g.state_changed, self.sync_state); safe_disconnect(g.sync, self.refresh)
 
     def sync_state(self):
         g = self.svc()
-        for w in (self.msg, self.act, self.skel, self.err):
+        for w in (self.msg, self.gbtn, self.cfgbtn, self.skel, self.err):
             w.hide()
         if g is None:
             return
+        btn = self.gbtn
         if not g.configured():
-            self._mode = "cfg"; self.msg.setText("Skonfiguruj logowanie Google (Client ID i Secret) w Ustawieniach.")
-            self.act.setText("Otwórz ustawienia")
+            self.msg.setText("Zaloguj się raz kontem Google – to wymaga jednorazowej konfiguracji w Ustawieniach."); btn = self.cfgbtn
         elif g.expired:
-            self._mode = "login"; self.msg.setText("Sesja wygasła – zaloguj się ponownie."); self.act.setText("Zaloguj przez Google")
+            self.msg.setText("Sesja Google wygasła. Zaloguj się ponownie – jedno logowanie obsłuży wszystkie widgety.")
         elif not g.logged_in():
-            self._mode = "login"; self.msg.setText("Zaloguj się kontem Google, aby zobaczyć dane."); self.act.setText("Zaloguj przez Google")
+            self.msg.setText("Zaloguj się raz – Gmail, Kalendarz, Zadania i Dysk zaczną działać automatycznie.")
         elif g.busy:
             self.msg.setText("Dokończ logowanie w oknie przeglądarki…"); self.msg.show(); return
+        elif self.NEEDS and not g.has_scope(self.NEEDS):
+            self.msg.setText("Ten widget potrzebuje dodatkowego dostępu. Zaloguj się ponownie, aby go przyznać.")
+            self.gbtn.setText("Zaloguj ponownie")
         else:
-            self.refresh(); return
-        self.loaded = False; self.clear(); self.msg.show(); self.act.show()
-
-    def on_action(self):
-        g = self.svc()
-        if self._mode == "cfg":
-            self.host.browser.open_settings("google")
-        elif g is not None:
-            g.login()
+            self.gbtn.setText("Zaloguj przez Google"); self.refresh(); return
+        self.loaded = False; self.clear(); self.msg.show(); btn.show()
 
     def refresh(self):
         g = self.svc()
-        if g is None or not g.logged_in():
+        if g is None or not g.logged_in() or (self.NEEDS and not g.has_scope(self.NEEDS)):
             self.sync_state(); return
-        self.msg.hide(); self.act.hide()
+        self.msg.hide(); self.gbtn.hide(); self.cfgbtn.hide()
         if not self.loaded:
             self.skel.show()
         self.fetch()
@@ -3192,6 +3365,8 @@ def _sender(v):
 
 
 class GmailWidget(GoogleWidget):
+    NEEDS = "gmail.readonly"
+
     def fetch(self):
         g = self.svc()
         g.request("GET", "https://gmail.googleapis.com/gmail/v1/users/me/labels/INBOX", self.guard(self._label))
@@ -3238,6 +3413,8 @@ class GmailWidget(GoogleWidget):
 
 
 class CalendarWidget(GoogleWidget):
+    NEEDS = "calendar.readonly"
+
     def fetch(self):
         now = datetime.now().astimezone(); end = (now + timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
         q = urlencode({"timeMin": now.isoformat(), "timeMax": end.isoformat(), "singleEvents": "true",
@@ -3270,6 +3447,7 @@ class CalendarWidget(GoogleWidget):
 
 
 class GTasksWidget(GoogleWidget):
+    NEEDS = "auth/tasks"
     BASE = "https://tasks.googleapis.com/tasks/v1/lists/@default/tasks"
 
     def extra_build(self):
@@ -3305,11 +3483,38 @@ class GTasksWidget(GoogleWidget):
         self.svc().request("PATCH", f"{self.BASE}/{tid}", self.guard(lambda j, e: self.refresh()), {"status": "completed"})
 
 
+class DriveWidget(GoogleWidget):
+    """Ostatnio zmieniane pliki z Dysku Google (tylko metadane – zakres drive.metadata.readonly)."""
+    NEEDS = "drive.metadata"
+
+    def fetch(self):
+        q = urlencode({"orderBy": "modifiedTime desc", "pageSize": 6, "q": "trashed=false",
+                       "fields": "files(id,name,mimeType,modifiedTime,webViewLink)"})
+        self.svc().request("GET", "https://www.googleapis.com/drive/v3/files?" + q, self.guard(self._files))
+
+    def _files(self, j, err):
+        if err:
+            self.finish(err); return
+        self.clear(); self.finish()
+        files = (j or {}).get("files", [])
+        if not files:
+            self.content.addWidget(lbl("Brak plików.", "muted2")); return
+        for f in files:
+            try:
+                d = datetime.fromisoformat(f["modifiedTime"].replace("Z", "+00:00")).astimezone()
+                when = d.strftime("%H:%M") if d.date() == date.today() else d.strftime("%d.%m")
+            except Exception:
+                when = ""
+            b = QPushButton(f"{f.get('name', '(bez nazwy)')[:34]}\n{when}"); b.setObjectName("mailitem")
+            b.clicked.connect(lambda _=False, u=f.get("webViewLink"): u and self.host.browser.open_url_new_tab(u))
+            self.content.addWidget(b)
+
+
 WIDGET_CLASSES = {"streak": StreakWidget, "clock": ClockWidget, "weather": WeatherWidget, "markets": MarketsWidget,
                   "currency": CurrencyWidget, "notes": NotesWidget, "todo": TodoWidget, "pomodoro": PomodoroWidget,
                   "clipboard": ClipboardWidget, "calc": CalcWidget, "translate": TranslateWidget, "system": SystemWidget,
                   "audio": AudioWidget, "rss": RssWidget, "gmail": GmailWidget, "calendar": CalendarWidget,
-                  "gtasks": GTasksWidget}
+                  "gtasks": GTasksWidget, "drive": DriveWidget}
 
 
 def make_widget(wid, store, host):
@@ -3497,13 +3702,17 @@ def page_widgets(dlg):
 
 @settings_page("google", "Konto Google")
 def page_google(dlg):
-    w, l = page_box("Konto Google", "Gmail, Kalendarz i Zadania. Logowanie odbywa się w Twojej zwykłej przeglądarce "
-                                    "(OAuth 2.0 + PKCE); sesja jest trwała i odnawiana w tle.")
+    w, l = page_box("Konto Google", "Jedno logowanie dla wszystkich widgetów: Gmail, Kalendarz, Zadania i Dysk. "
+                                    "Sesja jest trwała, a token odświeża się w tle.")
     g = dlg.host.google
     if g is None:
         l.addWidget(lbl("Integracja z Google jest wyłączona (Ustawienia → Funkcje).", "muted2", wrap=True)); l.addStretch(1)
         return scroll_page(w)
     store = dlg.store; cfg = g.cfg()
+    status = lbl("", "h3", wrap=True)
+    b_in = GoogleButton(); b_out = QPushButton("Wyloguj")
+    b_in.clicked.connect(lambda: (save(), g.login())); b_out.clicked.connect(g.logout)
+    row = QHBoxLayout(); row.addWidget(b_in); row.addWidget(b_out); row.addStretch()
     cid = QLineEdit(cfg.get("client_id", "")); cid.setObjectName("glassin"); cid.setPlaceholderText("Client ID  (…apps.googleusercontent.com)")
     sec = QLineEdit(cfg.get("client_secret", "")); sec.setObjectName("glassin"); sec.setPlaceholderText("Client Secret")
     sec.setEchoMode(QLineEdit.EchoMode.Password)
@@ -3511,48 +3720,93 @@ def page_google(dlg):
     def save():
         store.settings.setdefault("google", {}).update(client_id=cid.text().strip(), client_secret=sec.text().strip())
         store.save_settings(); g.state_changed.emit()
+
+    def import_json():
+        path, _ = QFileDialog.getOpenFileName(dlg, "Plik JSON z Google Cloud", str(Path.home()), "JSON (*.json)")
+        if path and g.import_client_json(path):
+            c = g.cfg(); cid.setText(c.get("client_id", "")); sec.setText(c.get("client_secret", ""))
+        elif path:
+            status.setText("Nie rozpoznano pliku – pobierz „client_secret_….json” dla aplikacji na komputer.")
     cid.editingFinished.connect(save); sec.editingFinished.connect(save)
-    status = lbl("", "h3", wrap=True)
-    b_in = QPushButton("Zaloguj przez Google"); b_out = QPushButton("Wyloguj")
-    b_in.clicked.connect(lambda: (save(), g.login())); b_out.clicked.connect(g.logout)
-    row = QHBoxLayout(); row.addWidget(b_in); row.addWidget(b_out); row.addStretch()
+    imp = QPushButton("Importuj plik JSON z Google Cloud…"); imp.clicked.connect(lambda: import_json())
 
     def refresh():
         if g.logged_in():
-            t = f"Zalogowano jako {g.email() or 'konto Google'}"
+            t = f"Zalogowano jako {g.email() or 'konto Google'} – wszystkie widgety Google działają."
         elif g.expired:
             t = "Sesja wygasła – zaloguj się ponownie."
         elif g.busy:
             t = "Dokończ logowanie w oknie przeglądarki…"
         elif not g.configured():
-            t = "Podaj Client ID i Client Secret."
+            t = "Najpierw wczytaj dane logowania (poniżej) – to robisz tylko raz."
         else:
             t = "Nie zalogowano."
         status.setText(t + (f"\n{g.last_error}" if g.last_error else ""))
         b_in.setVisible(not g.logged_in()); b_out.setVisible(g.logged_in())
     g.state_changed.connect(refresh); dlg.finished.connect(lambda _=0: safe_disconnect(g.state_changed, refresh)); refresh()
-    help_ = lbl("Jak uzyskać dane logowania (jednorazowo):\n"
-                "1. Wejdź na console.cloud.google.com/apis/credentials, utwórz projekt i włącz API: Gmail, Google Calendar, Google Tasks.\n"
-                "2. Utwórz „Identyfikator klienta OAuth” typu Aplikacja na komputer.\n"
-                "3. Wklej Client ID i Secret powyżej i kliknij „Zaloguj przez Google”.\n\n"
-                "Uwaga: gdy ekran zgody ma status „Testing”, dodaj swoje konto do użytkowników testowych – Google "
-                "unieważnia wtedy sesję co 7 dni (Luna pokaże komunikat i poprosi o ponowne logowanie). "
-                "Token odświeżania trafia do systemowego pęku kluczy (pakiet keyring), a gdy go brak – do pliku ustawień.",
-                "muted", wrap=True)
+    help_ = lbl("Jednorazowa konfiguracja:\n"
+                "1. W console.cloud.google.com utwórz projekt i włącz API: Gmail, Google Calendar, Google Tasks, Google Drive.\n"
+                "2. Utwórz „Identyfikator klienta OAuth” typu Aplikacja na komputer i pobierz plik JSON.\n"
+                "3. Kliknij „Importuj plik JSON…” (albo wklej Client ID i Secret) i „Zaloguj przez Google”.\n\n"
+                "Zakresy (tylko odczyt, poza Zadaniami): Gmail, Kalendarz, Zadania, metadane Dysku. Google Keep nie ma publicznego API, "
+                "więc notatki zastępują Zadania. Gdy ekran zgody ma status „Testing”, dodaj swoje konto do użytkowników testowych – "
+                "Google unieważnia wtedy sesję co 7 dni, a Luna poprosi o ponowne logowanie. Token odświeżania trafia do pęku kluczy "
+                "systemu (pakiet keyring), a gdy go brak – do pliku ustawień.", "muted", wrap=True)
     openc = QPushButton("Otwórz konsolę Google Cloud")
     openc.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://console.cloud.google.com/apis/credentials")))
-    for x in (status, cid, sec):
-        l.addWidget(x)
-    l.addLayout(row); l.addSpacing(10); l.addWidget(help_); l.addWidget(openc, 0, Qt.AlignmentFlag.AlignLeft); l.addStretch(1)
+    l.addWidget(status); l.addLayout(row); l.addSpacing(10); l.addWidget(lbl("Dane logowania aplikacji", "h3"))
+    l.addWidget(imp); l.addWidget(cid); l.addWidget(sec); l.addSpacing(10); l.addWidget(help_)
+    l.addWidget(openc, 0, Qt.AlignmentFlag.AlignLeft); l.addStretch(1)
+    return scroll_page(w)
+
+
+@settings_page("spotify", "Spotify")
+def page_spotify(dlg):
+    w, l = page_box("Spotify", "Widget dźwięku pokazuje aktualny utwór i steruje odtwarzaniem przez Spotify Web API "
+                               "(logowanie OAuth + PKCE – bez hasła i bez Client Secret).")
+    sp = dlg.host.spotify; store = dlg.store; cfg = sp.cfg()
+    cid = QLineEdit(cfg.get("client_id", "")); cid.setObjectName("glassin"); cid.setPlaceholderText("Client ID aplikacji Spotify")
+    port = QLineEdit(str(cfg.get("port") or 8888)); port.setObjectName("glassin"); port.setMaximumWidth(120)
+    uri = lbl("", "h3", wrap=True); uri.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+    status = lbl("", "h3", wrap=True)
+    b_in = QPushButton("Połącz ze Spotify"); b_out = QPushButton("Rozłącz")
+
+    def save():
+        p = port.text().strip()
+        store.settings.setdefault("spotify", {}).update(client_id=cid.text().strip(), port=int(p) if p.isdigit() else 8888)
+        store.save_settings(); uri.setText(f"Redirect URI: http://127.0.0.1:{sp.port()}/callback"); sp.state_changed.emit()
+    cid.editingFinished.connect(save); port.editingFinished.connect(save)
+    b_in.clicked.connect(lambda: (save(), sp.login())); b_out.clicked.connect(sp.logout)
+
+    def refresh():
+        t = ("Połączono ze Spotify." if sp.logged_in() else "Sesja wygasła – połącz ponownie." if sp.expired else
+             "Dokończ logowanie w oknie przeglądarki…" if sp.busy else "Podaj Client ID." if not sp.configured() else "Nie połączono.")
+        status.setText(t + (f"\n{sp.last_error}" if sp.last_error else ""))
+        b_in.setVisible(not sp.logged_in()); b_out.setVisible(sp.logged_in())
+    sp.state_changed.connect(refresh); dlg.finished.connect(lambda _=0: safe_disconnect(sp.state_changed, refresh))
+    uri.setText(f"Redirect URI: http://127.0.0.1:{sp.port()}/callback"); refresh()
+    help_ = lbl("Jednorazowa konfiguracja:\n"
+                "1. Wejdź na developer.spotify.com/dashboard i utwórz aplikację (API: Web API).\n"
+                "2. W polu Redirect URIs wpisz dokładnie adres widoczny wyżej i zapisz.\n"
+                "3. Skopiuj Client ID, wklej powyżej i kliknij „Połącz ze Spotify”.\n\n"
+                "Uwagi: aplikacje w trybie deweloperskim wymagają konta Premium właściciela i dodania Twojego konta w „User Management”. "
+                "Sterowanie (pauza, następny, poprzedni) działa tylko z Premium; podgląd utworu – także bez. Luna steruje odtwarzaczem "
+                "na Twoim telefonie lub w aplikacji Spotify; samo odtwarzanie wewnątrz Luny jest niemożliwe, bo osadzony Chromium nie ma DRM "
+                "(Web Playback SDK). Dźwięk z innych kart (YouTube itp.) obsługuje tryb „Karty”.", "muted", wrap=True)
+    opend = QPushButton("Otwórz panel deweloperski Spotify")
+    opend.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://developer.spotify.com/dashboard")))
+    l.addWidget(status); l.addWidget(b_in); l.addWidget(b_out); l.addSpacing(8); l.addWidget(lbl("Aplikacja Spotify", "h3"))
+    l.addWidget(cid); l.addWidget(lbl("Port lokalny (domyślnie 8888)", "muted2")); l.addWidget(port); l.addWidget(uri)
+    l.addSpacing(10); l.addWidget(help_); l.addWidget(opend, 0, Qt.AlignmentFlag.AlignLeft); l.addStretch(1)
     return scroll_page(w)
 
 
 @settings_page("look", "Wygląd")
 def page_look(dlg):
-    w, l = page_box("Wygląd", "Tło ekranu głównego skaluje się w trybie „cover” (wypełnia i centruje bez zniekształceń).")
+    w, l = page_box("Wygląd", "Tło jest grafiką wektorową (SVG) renderowaną w rozdzielczości ekranu – ostrą także na Retina/HiDPI. Skaluje się w trybie „cover”.")
     store = dlg.store
     combo = QComboBox()
-    for key, name in (("image", "Obraz – ciemne ukośne paski"), ("gradient", "Gradient"), ("solid", "Jednolite czarne")):
+    for key, name in (("image", "Wektorowe – ukośne arkusze i poświata (ostre na HiDPI)"), ("gradient", "Gradient"), ("solid", "Jednolite czarne")):
         combo.addItem(name, key)
     combo.setCurrentIndex(max(0, combo.findData(store.settings.get("bg", "image"))))
 
@@ -3824,6 +4078,7 @@ class Tab(QStackedWidget):
             self.web = WebView()
             self.web.link_requested.connect(self.browser.open_url_new_tab)
             self.addWidget(self.web)
+            self.web.page().recentlyAudibleChanged.connect(lambda _: self.browser.audio_changed.emit())
             self.web.titleChanged.connect(lambda t: self.browser.on_title(self, t))
             self.web.urlChanged.connect(lambda u: self.browser.on_url(self, u))
             self.web.iconChanged.connect(lambda i: self.browser.on_icon(self, i))
@@ -4012,10 +4267,17 @@ class TitleStrip(QWidget):
 
 
 class Browser(QMainWindow):
+    audio_changed = pyqtSignal()   # któraś karta zaczęła/przestała odtwarzać dźwięk
+    MIN_CENTER, HARD_CENTER = 480, 300   # minimalna szerokość środka (px) przy automatycznym zwijaniu paneli
+
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Luna"); self.setWindowIcon(app_icon()); self.resize(1300, 860)
-        self.setMinimumSize(640, 480)
+        self._laid, self._g_ref, self._pinned = False, None, None
+        self.setWindowTitle("Luna"); self.setWindowIcon(app_icon())
+        scr = QGuiApplication.primaryScreen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
+        self.resize(min(1300, int(scr.width() * 0.94)), min(860, int(scr.height() * 0.92)))
+        self.move(scr.center() - self.rect().center())
+        self.setMinimumSize(min(640, scr.width()), min(480, scr.height()))
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)  # bez ramki systemowej
         self.store = Store()
 
@@ -4068,9 +4330,15 @@ class Browser(QMainWindow):
         self.ai_btn = self.btn("assistant", "Asystent AI (Ctrl+J)", self.toggle_assistant)
         tl.addWidget(self.ai_btn)
         tl.addWidget(self.btn("gear", "Ustawienia (Ctrl+,)", self.open_settings))
+        self.acct_btn = QToolButton(); self.acct_btn.setObjectName("acct"); self.acct_btn.setFixedSize(34, 34)
+        self.acct_btn.setIconSize(QSize(22, 22)); self.acct_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.acct_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        am = QMenu(self.acct_btn); am.aboutToShow.connect(self.build_account_menu); self.acct_btn.setMenu(am)
+        tl.addWidget(self.acct_btn)
         v.addWidget(tool)
 
         self.stack = QStackedWidget()
+        self.stack.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding); self.stack.setMinimumWidth(0)
         self.bgframe = BgFrame()
         body = QHBoxLayout(self.bgframe); body.setContentsMargins(0, 0, 0, 0); body.setSpacing(0)
         self.host = WidgetHost(self.store, self)
@@ -4131,14 +4399,79 @@ class Browser(QMainWindow):
         self.ai_btn.setVisible(ai)
         if not ai:
             self.assistant.hide(); self.assistant.release()
+        self.update_account_btn()
         self.update_sidebars()
 
-    def update_sidebars(self):
+    # --- centralne logowanie Google (przycisk na pasku + wszystkie widgety) ---
+    def google_login(self):
+        g = self.host.google
+        if g is not None and g.configured():
+            g.login()
+        else:
+            self.open_settings("google")
+
+    def update_account_btn(self):
+        g = self.host.google
+        self.acct_btn.setVisible(g is not None)
+        if g is None:
+            return
+        if g is not self._g_ref:
+            self._g_ref = g; g.state_changed.connect(self.update_account_btn)
+        if g.logged_in():
+            self.acct_btn.setIcon(avatar_icon(g.email() or "G")); self.acct_btn.setToolTip(f"Konto Google: {g.email() or 'zalogowano'}")
+        else:
+            self.acct_btn.setIcon(google_g_icon())
+            self.acct_btn.setToolTip("Zaloguj przez Google" if g.configured() else "Połącz Google (wymaga jednorazowej konfiguracji)")
+
+    def build_account_menu(self):
+        m = self.acct_btn.menu(); m.clear(); g = self.host.google
+        if g is None:
+            return
+        if not g.configured():
+            m.addAction(google_g_icon(), "Skonfiguruj logowanie Google…", lambda _=False: self.open_settings("google"))
+        elif g.logged_in():
+            m.addAction(f"Zalogowano: {g.email() or 'konto Google'}").setEnabled(False)
+            m.addAction("Synchronizuj teraz", lambda _=False: self.host.refresh_all())
+            m.addAction("Ustawienia Google…", lambda _=False: self.open_settings("google"))
+            m.addSeparator(); m.addAction("Wyloguj", lambda _=False: g.logout())
+        else:
+            m.addAction(google_g_icon(), "Zaloguj przez Google", lambda _=False: g.login())
+            m.addAction("Ustawienia Google…", lambda _=False: self.open_settings("google"))
+
+    # --- responsywne panele boczne ---
+    def update_sidebars(self, prefer=None):
+        """Panele nigdy nie wystają poza okno: gdy brakuje miejsca, zwijają się do szyn (drawer); panel wskazany
+        przez użytkownika ma pierwszeństwo. Zwraca zbiór paneli, które mogą być rozwinięte."""
         t = self.cur()
         ok = bool(t and t.on_home()) or self.store.feature("everywhere")
-        avail = self.width() - (self.assistant.width() if self.assistant.isVisible() else 0)
+        sbs = [sb for sb in (self.host.left, self.host.right)
+               if self.store.feature(sb.side) and ok and sb.has_widgets()]
         for sb in (self.host.left, self.host.right):
-            sb.setVisible(self.store.feature(sb.side) and ok and avail >= 1020 and sb.has_widgets())
+            sb.setVisible(sb in sbs)
+        ai = self.assistant.isVisible()
+        if ai:   # asystent też się dopasowuje do szerokości okna
+            self.assistant.setFixedWidth(max(300, min(440, int(self.width() * 0.36))))
+        total = self.width() - 12 - (self.assistant.width() if ai else 0)
+        rails = len(sbs) * Sidebar.RAIL
+        cap = max(0, int((total - rails - self.MIN_CENTER) // Sidebar.W))
+        prefer = prefer or self._pinned     # panel otwarty ręcznie zostaje otwarty, dopóki mieści się w oknie
+        wants = sorted((sb for sb in sbs if not sb.user_collapsed), key=lambda sb: sb.side != prefer)
+        if prefer and cap == 0 and any(sb.side == prefer for sb in wants):   # jawna prośba: pozwól zmniejszyć środek
+            cap = max(0, int((total - rails - self.HARD_CENTER) // Sidebar.W))
+        keep = set(wants[:cap])
+        for sb in sbs:
+            sb.set_state(sb not in keep, animate=self._laid)
+        self._laid = True
+        return keep
+
+    def toggle_sidebar(self, side):
+        sb = self.host.left if side == "left" else self.host.right
+        open_it = sb.collapsed
+        sb.set_user_collapsed(not open_it)
+        self._pinned = side if open_it else (None if self._pinned == side else self._pinned)
+        keep = self.update_sidebars(prefer=side if open_it else None)
+        if open_it and sb not in keep:
+            QToolTip.showText(QCursor.pos(), "Za mało miejsca – powiększ okno albo zamknij asystenta.", self)
 
     def update_sidebars_soon(self):
         self._sb_t.start(40)
