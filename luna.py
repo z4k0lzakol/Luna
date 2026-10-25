@@ -1668,6 +1668,7 @@ class WidgetFrame(QFrame):
         super().__init__()
         self.wid, self.store, self.host = wid, store, host
         self.setObjectName("wf"); self.running = False; self._alive = True
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)  # szerokość narzuca panel, nie zawartość
         v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
         self.head = QWidget(); self.head.setObjectName("clear")
         h = QHBoxLayout(self.head); h.setContentsMargins(16, 9, 8, 4); h.setSpacing(2)
@@ -1757,6 +1758,16 @@ class WidgetFrame(QFrame):
         paint_glass(self)
 
 
+class SidebarScroll(QScrollArea):
+    """Przewijany obszar panelu o stałej szerokości docelowej. Bez tego Qt przydzielał mu szerokość zawartości (bez
+    pionowego paska); gdy pasek się pojawiał (wysoki panel), widok kurczył się o 8 px i obcinał prawą krawędź kart."""
+    def sizeHint(self):
+        return QSize(Sidebar.W, 400)
+
+    def minimumSizeHint(self):
+        return QSize(0, 0)
+
+
 class Sidebar(QWidget):
     """Boczny panel: przewijana kolumna widgetów + wąska szyna (drawer). Panel sam zwija się do szyny, gdy w oknie
     brakuje miejsca; kliknięcie szyny wysuwa go z powrotem (przeglądarka zwija wtedy drugi, jeśli trzeba)."""
@@ -1768,13 +1779,19 @@ class Sidebar(QWidget):
         self.side, self.store = side, store
         self.setObjectName("clear")
         lay = QHBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(0)
-        self.scroll = QScrollArea(); self.scroll.setObjectName("sb"); self.scroll.setWidgetResizable(True)
+        self.scroll = SidebarScroll(); self.scroll.setObjectName("sb"); self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll.viewport().setAutoFillBackground(False)
-        self.inner = QWidget(); self.inner.setObjectName("clear"); self.inner.setFixedWidth(self.W - 12)
-        self.col = QVBoxLayout(self.inner); self.col.setContentsMargins(10, 12, 2, 12); self.col.setSpacing(12)
+        # szerokość zawartości < widok (300 − pasek 8 = 292), więc nic nie jest obcinane z pasekiem ani bez niego
+        self.inner = QWidget(); self.inner.setObjectName("clear"); self.inner.setFixedWidth(self.W - 16)
+        self.col = QVBoxLayout(self.inner)
+        # marginesy lustrzane: większy po stronie krawędzi okna, mniejszy po stronie szyny
+        self.col.setContentsMargins(*((8, 12, 0, 12) if side == "left" else (0, 12, 8, 12))); self.col.setSpacing(12)
         self.scroll.setWidget(self.inner)
+        self.scroll.setAlignment((Qt.AlignmentFlag.AlignLeft if side == "left" else Qt.AlignmentFlag.AlignRight)
+                                 | Qt.AlignmentFlag.AlignTop)
+        self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding)
         # półprzezroczyste tło: wymuś pełne odmalowanie przy przewijaniu (bez artefaktów po kopiowaniu pikseli)
         self.scroll.verticalScrollBar().valueChanged.connect(lambda _: self.scroll.viewport().update())
         self.scroll.setMinimumWidth(0); self.scroll.setMaximumWidth(self.W)
@@ -1908,8 +1925,80 @@ class WidgetHost(QObject):
 # ======================================================================================
 #  WIDGETY (każdy niezależny; tworzony dopiero po włączeniu, usuwany po wyłączeniu)
 # ======================================================================================
+def elide_lines(fm, full, width):
+    return "\n".join(fm.elidedText(x, Qt.TextElideMode.ElideRight, max(20, width)) for x in full.split("\n"))
+
+
+class ElideLabel(QLabel):
+    """Etykieta skracająca długi tekst („…”) – nie rozpycha panelu (minimalna szerokość 0)."""
+    def paintEvent(self, ev):
+        if (self.wordWrap() or self.textFormat() == Qt.TextFormat.RichText
+                or self.textInteractionFlags() != Qt.TextInteractionFlag.NoTextInteraction):
+            return super().paintEvent(ev)
+        p = QPainter(self); r = self.contentsRect()
+        p.setPen(self.palette().color(QPalette.ColorRole.WindowText))
+        p.drawText(r, self.alignment(), self.fontMetrics().elidedText(self.text(), Qt.TextElideMode.ElideRight, r.width()))
+
+    def minimumSizeHint(self):
+        return QSize(0, super().minimumSizeHint().height())
+
+
+class ElideButton(QPushButton):
+    """Przycisk z długim tekstem (nagłówki RSS, maile, schowek): tekst jest skracany do szerokości panelu."""
+    def __init__(self, text=""):
+        super().__init__(); self._full = ""; self.setText(text)
+
+    def setText(self, t):
+        self._full = t; self._elide()
+
+    def _elide(self):
+        t = elide_lines(self.fontMetrics(), self._full, self.width() - 26)
+        if t != QPushButton.text(self):
+            QPushButton.setText(self, t)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev); self._elide()
+
+    def minimumSizeHint(self):
+        return QSize(40, super().minimumSizeHint().height())
+
+    def sizeHint(self):
+        return QSize(min(super().sizeHint().width(), 240), super().sizeHint().height())
+
+
+class ElideCheck(QCheckBox):
+    """Pole wyboru ze skracanym tekstem (listy zadań)."""
+    def __init__(self, text=""):
+        super().__init__(); self._full = ""; self.setText(text)
+
+    def setText(self, t):
+        self._full = t; self._elide()
+
+    def _elide(self):
+        t = elide_lines(self.fontMetrics(), self._full, self.width() - 36)
+        if t != QCheckBox.text(self):
+            QCheckBox.setText(self, t)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev); self._elide()
+
+    def minimumSizeHint(self):
+        return QSize(40, super().minimumSizeHint().height())
+
+    def sizeHint(self):
+        return QSize(min(super().sizeHint().width(), 240), super().sizeHint().height())
+
+
+def shrinkable(combo):
+    """Lista rozwijana bez wymuszania szerokości najdłuższą pozycją."""
+    combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+    combo.setMinimumContentsLength(5)
+    combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+    return combo
+
+
 def lbl(text="", obj=None, wrap=False, align=None):
-    w = QLabel(text)
+    w = QLabel(text) if wrap else ElideLabel(text)
     if obj:
         w.setObjectName(obj)
     if wrap:
@@ -2182,7 +2271,7 @@ class CurrencyWidget(WidgetFrame):
         l = self.lay
         self.amount = QLineEdit("100"); self.amount.setObjectName("glassin"); self.amount.textChanged.connect(self.calc)
         row = QHBoxLayout(); row.setSpacing(6)
-        self.a, self.b = QComboBox(), QComboBox()
+        self.a, self.b = shrinkable(QComboBox()), shrinkable(QComboBox())
         for c in self.CODES:
             self.a.addItem(c); self.b.addItem(c)
         self.a.setCurrentText("PLN"); self.b.setCurrentText("USD")
@@ -2281,7 +2370,7 @@ class TodoWidget(WidgetFrame):
             if w:
                 w.deleteLater()
         for it in self.items[:12]:
-            cb = QCheckBox(it["t"]); cb.setObjectName("todo"); cb.setChecked(it["d"]); cb.setToolTip(it["t"])
+            cb = ElideCheck(it["t"]); cb.setObjectName("todo"); cb.setChecked(it["d"]); cb.setToolTip(it["t"])
             cb.setStyleSheet("color:#7a7a7a; text-decoration:line-through;" if it["d"] else "")
             cb.toggled.connect(lambda v, it=it: self.toggled(it, v))
             self.rows.addWidget(cb)
@@ -2380,7 +2469,7 @@ class ClipboardWidget(WidgetFrame):
             if w:
                 w.deleteLater()
         for t in self.hist:
-            b = QPushButton(t.replace("\n", " ")[:42] + ("…" if len(t) > 42 else "")); b.setObjectName("clipitem")
+            b = ElideButton(t.replace("\n", " ")[:42] + ("…" if len(t) > 42 else "")); b.setObjectName("clipitem")
             b.setToolTip("Kliknij, aby skopiować ponownie"); b.clicked.connect(lambda _=False, t=t: self.copy(t))
             self.rows.addWidget(b)
         if not self.hist:
@@ -2461,7 +2550,7 @@ class TranslateWidget(WidgetFrame):
         self.src = QPlainTextEdit(); self.src.setObjectName("note"); self.src.setFixedHeight(70)
         self.src.setPlaceholderText("Wpisz tekst do przetłumaczenia…")
         row = QHBoxLayout(); row.setSpacing(6)
-        self.a, self.b = QComboBox(), QComboBox()
+        self.a, self.b = shrinkable(QComboBox()), shrinkable(QComboBox())
         for c, n in self.LANGS:
             self.a.addItem(n, c); self.b.addItem(n, c)
         self.a.setCurrentIndex(0); self.b.setCurrentIndex(1)
@@ -2918,7 +3007,7 @@ class RssWidget(WidgetFrame):
                 link = it.findtext("link") or ""
                 if not link:
                     le = it.find(f"{ns}link"); link = le.get("href") if le is not None else ""
-                b = QPushButton(title[:90]); b.setObjectName("newsitem"); b.setToolTip(title)
+                b = ElideButton(title[:90]); b.setObjectName("newsitem"); b.setToolTip(title)
                 b.clicked.connect(lambda _=False, u=link: u and self.host.browser.open_url_new_tab(u))
                 self.rows.addWidget(b)
             host = host_of(self.feed()); self.src.setText(f"Źródło: {host}")
@@ -3441,7 +3530,7 @@ class CalendarWidget(GoogleWidget):
             day = "Dziś" if d.date() == today else "Jutro" if d.date() == today + timedelta(days=1) else d.strftime("%d.%m")
             if day != last:
                 self.content.addWidget(section(day)); last = day
-            b = QPushButton(f"{hh}   {(ev.get('summary') or '(bez tytułu)')[:36]}"); b.setObjectName("mailitem")
+            b = ElideButton(f"{hh}   {(ev.get('summary') or '(bez tytułu)')[:36]}"); b.setObjectName("mailitem")
             b.clicked.connect(lambda _=False, u=ev.get("htmlLink"): u and self.host.browser.open_url_new_tab(u))
             self.content.addWidget(b)
 
@@ -3470,7 +3559,7 @@ class GTasksWidget(GoogleWidget):
         if not items:
             self.content.addWidget(lbl("Brak zadań.", "muted2")); return
         for t in items:
-            cb = QCheckBox(t["title"][:44]); cb.setObjectName("todo"); cb.setToolTip(t["title"])
+            cb = ElideCheck(t["title"][:44]); cb.setObjectName("todo"); cb.setToolTip(t["title"])
             cb.toggled.connect(lambda v, tid=t["id"]: v and self.complete(tid)); self.content.addWidget(cb)
 
     def add(self):
@@ -3505,7 +3594,7 @@ class DriveWidget(GoogleWidget):
                 when = d.strftime("%H:%M") if d.date() == date.today() else d.strftime("%d.%m")
             except Exception:
                 when = ""
-            b = QPushButton(f"{f.get('name', '(bez nazwy)')[:34]}\n{when}"); b.setObjectName("mailitem")
+            b = ElideButton(f"{f.get('name', '(bez nazwy)')[:34]}\n{when}"); b.setObjectName("mailitem")
             b.clicked.connect(lambda _=False, u=f.get("webViewLink"): u and self.host.browser.open_url_new_tab(u))
             self.content.addWidget(b)
 
