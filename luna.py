@@ -5,10 +5,13 @@ Instalacja:   pip install PyQt6 PyQt6-WebEngine   (opcjonalnie: psutil – monit
 Uruchomienie: python luna.py
 
 Dane w katalogu domowym (odpowiednik localStorage):
-  .luna_ustawienia.json   ustawienia: funkcje, widgety (widoczność/strona/kolejność/zwinięcie), notatki, zadania…
-  .luna.json              kafelki          .luna_ostatnie.json  ostatnio odwiedzone
-  .luna_ikony/            favicony         .luna_fonty/         fonty (pobierane przy 1. uruchomieniu)
-  .luna_profile/          profil przeglądarki (zapamiętane logowania, w tym do paneli AI)
+  .luna_ustawienia.json   ustawienia: funkcje, widgety, sesje (tokeny, gdy brak pęku kluczy), notatki, zadania…
+  .luna.json (kafelki)    .luna_ostatnie.json (ostatnie)    .luna_historia.json (historia do podpowiedzi)
+  .luna_ikony/ favicony   .luna_fonty/ fonty                .luna_profile/ profil przeglądarki (zapamiętane logowania)
+
+Klucze aplikacji OAuth (Google, Spotify, Discord) wpisuje TWÓRCA raz – w luna_oauth.json obok luna.py
+(wzór: luna_oauth.example.json), w ~/.luna_oauth.json, w zmiennych środowiskowych LUNA_<USŁUGA>_CLIENT_ID /
+_CLIENT_SECRET albo w Ustawieniach → Dla twórców. Użytkownik końcowy widzi tylko przyciski „Połącz”.
 """
 import sys, json, math, re, html, os, random, base64, time, ast, operator, secrets, hashlib
 import urllib.parse
@@ -26,7 +29,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget,
                              QListWidget, QListWidgetItem, QListView, QAbstractItemView, QMenu, QInputDialog,
                              QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QDialog, QDialogButtonBox, QFrame,
                              QScrollArea, QPlainTextEdit, QGraphicsOpacityEffect, QButtonGroup, QToolTip, QComboBox,
-                             QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy)
+                             QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy, QMessageBox, QStyledItemDelegate, QStyle,
+                             QGraphicsDropShadowEffect)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
@@ -37,6 +41,7 @@ from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
 HOME = Path.home()
 DATA = HOME / ".luna.json"
 RECENT = HOME / ".luna_ostatnie.json"
+HIST = HOME / ".luna_historia.json"
 SETTINGS = HOME / ".luna_ustawienia.json"
 ICONS = HOME / ".luna_ikony"
 FONT_DIR = HOME / ".luna_fonty"
@@ -520,6 +525,27 @@ def app_icon() -> QIcon:
     return ic
 
 
+# Dane aplikacji OAuth rejestruje TWÓRCA raz dla całej aplikacji; użytkownik końcowy klika tylko „Połącz”.
+# Źródła (od najniższego priorytetu): ta stała < luna_oauth.json obok luna.py < ~/.luna_oauth.json < zmienne środowiskowe
+# LUNA_GOOGLE_CLIENT_ID, LUNA_GOOGLE_CLIENT_SECRET, LUNA_SPOTIFY_CLIENT_ID, LUNA_DISCORD_CLIENT_ID… < pola w Ustawieniach → Dla twórców.
+BUILTIN_OAUTH = {"google": {"client_id": "", "client_secret": ""}, "spotify": {"client_id": ""},
+                 "discord": {"client_id": "", "client_secret": ""}}
+
+
+def builtin_oauth(name):
+    c = dict(BUILTIN_OAUTH.get(name, {}))
+    for path in (Path(__file__).with_name("luna_oauth.json"), HOME / ".luna_oauth.json"):
+        try:
+            c.update({k: v for k, v in json.loads(path.read_text(encoding="utf-8")).get(name, {}).items() if v})
+        except Exception:
+            pass
+    for k in ("client_id", "client_secret"):
+        v = os.environ.get(f"LUNA_{name.upper()}_{k.upper()}")
+        if v:
+            c[k] = v
+    return c
+
+
 ENGINES = {"Brave": "https://search.brave.com/search?q=",
            "Google": "https://www.google.com/search?q=",
            "DuckDuckGo": "https://duckduckgo.com/?q=",
@@ -579,6 +605,14 @@ QPushButton#gbtn { background:#ffffff; color:#1f1f1f; border-radius:18px; paddin
 QPushButton#gbtn:hover { background:#e9e9e9; }
 QToolButton#acct { border-radius:17px; }
 QToolButton#acct::menu-indicator { image:none; width:0; }
+QFrame#sugg_popup { background:transparent; border:0; }
+QFrame#sugg_card { background:#18181b; border:1px solid #2e2e33; border-radius:14px; }
+QListWidget#sugg_list { background:transparent; border:0; }
+QFrame#acc { background:#161618; border:1px solid #26262a; border-radius:16px; }
+QPushButton#spotbtn { background:#1db954; color:#08140c; border-radius:18px; padding:8px 18px; font-weight:700; }
+QPushButton#spotbtn:hover { background:#25d366; }
+QPushButton#discbtn { background:#5865f2; color:#ffffff; border-radius:18px; padding:8px 18px; font-weight:700; }
+QPushButton#discbtn:hover { background:#6b77f5; }
 QToolButton#rail { background:rgba(255,255,255,0.06); border-radius:8px; }
 QToolButton#rail:hover { background:rgba(255,255,255,0.15); }
 QLabel#badge { background:#ececec; color:#111111; border-radius:8px; padding:0 6px; font-size:10px; font-weight:700; }
@@ -775,6 +809,14 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         p.drawPolyline(P((13, 17), (22, 26), (31, 17)))
     elif kind == "chev_right":
         p.drawPolyline(P((17, 13), (26, 22), (17, 31)))
+    elif kind == "history":
+        p.drawEllipse(QPointF(22, 22), 12, 12); p.drawPolyline(P((22, 14), (22, 22), (28, 26)))
+    elif kind == "tabs":
+        p.drawRoundedRect(QRectF(9, 17, 20, 17), 3, 3); p.drawPolyline(P((15, 12), (35, 12), (35, 28)))
+    elif kind == "app":
+        for gx in (11, 24):
+            for gy in (11, 24):
+                p.drawRoundedRect(QRectF(gx, gy, 9, 9), 2, 2)
     elif kind == "external":
         p.drawPolyline(P((19, 13), (12, 13), (12, 32), (31, 32), (31, 25)))
         p.drawPolyline(P((24, 10), (34, 10), (34, 20))); p.drawLine(34, 10, 22, 22)
@@ -927,9 +969,11 @@ class Store(QObject):
         super().__init__()
         self.nam = QNetworkAccessManager(self)
         self.weather_ts = 0.0
+        self._hist_dirty = False
         self._save_timer = QTimer(self); self._save_timer.setSingleShot(True); self._save_timer.timeout.connect(self.save_settings)
         self.items = self._load(DATA, list(DEFAULTS))
         self.recent = self._load(RECENT, [])
+        self.history = self._load(HIST, [])
         self.settings = self._load(SETTINGS, {})
         old_keys = [k for k in ("gemini_key", "gemini_model", "ai_keys", "ai_models") if k in self.settings]
         for k in old_keys:
@@ -940,7 +984,7 @@ class Store(QObject):
         CURRENT[0] = eng if eng in ENGINES else "Brave"
         for b in self.items + self.recent:
             self.fetch_icon(b["url"])
-        for u in list(ENGINES.values()) + list(PROVIDERS.values()):
+        for u in list(ENGINES.values()) + list(PROVIDERS.values()) + ["https://open.spotify.com", "https://discord.com"]:
             self.fetch_icon(u)
         self.weather = {}
         GLASS_ALPHA[0] = int(self.settings.get("glass", 168)); BG.store = self
@@ -967,6 +1011,8 @@ class Store(QObject):
         self.changed.emit()
 
     def save_settings(self):
+        if self._hist_dirty:
+            self._write(HIST, self.history); self._hist_dirty = False
         self._write(SETTINGS, self.settings)
         try:
             os.chmod(SETTINGS, 0o600)  # klucz API tylko dla Ciebie (Linux/macOS)
@@ -974,6 +1020,10 @@ class Store(QObject):
             pass
 
     # --- ustawienia (odpowiednik localStorage: plik JSON w katalogu domowym) ---
+    def clear_history(self):
+        self.history, self.recent = [], []; self._hist_dirty = True
+        self._write(RECENT, []); self.save_settings(); self.changed.emit()
+
     def save_soon(self):
         self._save_timer.start(500)   # debounce zapisu
 
@@ -1024,7 +1074,11 @@ class Store(QObject):
             if raw:
                 cb(data, err, status); return
             try:
-                j = json.loads(data.decode("utf-8"))
+                try:
+                    txt = data.decode("utf-8")
+                except UnicodeDecodeError:
+                    txt = data.decode("latin-1")
+                j = json.loads(txt)
             except Exception:
                 j = None
             cb(j, err, status)
@@ -1139,6 +1193,9 @@ class Store(QObject):
         self.recent.insert(0, {"name": name, "url": url})
         self.recent = self.recent[:8]
         self._write(RECENT, self.recent)
+        self.history = [h for h in self.history if h["url"] != url]    # pełna historia dla podpowiedzi (max 400 wpisów)
+        self.history.insert(0, {"name": name, "url": url}); del self.history[400:]
+        self._hist_dirty = True; self.save_soon()
         self.fetch_icon(url)
         self.changed.emit()
 
@@ -1439,6 +1496,7 @@ WIDGETS = {  # id: (tytuł, domyślna strona, kolejność, domyślnie włączony
     "gtasks": ("Zadania Google", "right", 6, False, "google"),
     "audio": ("Odtwarzacz audio", "right", 7, False, None),
     "drive": ("Dysk Google", "right", 10, False, "google"),
+    "discord": ("Discord", "right", 11, False, "discord"),
     "system": ("Monitor zasobów", "right", 8, False, None),
     "rss": ("Wiadomości (RSS)", "right", 9, False, None),
 }
@@ -1448,6 +1506,9 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "left": ("Lewy panel boczny", "Pokazuje widgety przypisane do lewej strony.", True),
     "right": ("Prawy panel boczny", "Pokazuje widgety przypisane do prawej strony.", True),
     "everywhere": ("Panele także na stronach WWW", "Domyślnie panele są widoczne tylko na ekranie głównym.", False),
+    "suggest": ("Podpowiedzi wyszukiwania", "Lista pod paskiem adresu: historia, kafelki i otwarte karty (lokalnie, bez sieci).", True),
+    "suggest_net": ("Podpowiedzi z sieci", "Wysyła wpisywany tekst do wybranej wyszukiwarki po propozycje. Wyłącz dla pełnej prywatności.", True),
+    "discord": ("Integracja z Discordem", "Widget Discord i połączenie konta. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
 }
@@ -1737,7 +1798,7 @@ class WidgetFrame(QFrame):
         self.body.setMaximumHeight(16777215)
 
     def _sync_active(self):
-        want = self.isVisible() and not self.collapsed
+        want = self.isVisible() and not self.collapsed and getattr(self.host, "app_active", True)
         if want != self.running:
             self.running = want
             (self.start if want else self.stop)()
@@ -1858,7 +1919,8 @@ class WidgetHost(QObject):
         super().__init__()
         self.store, self.browser = store, browser
         self.inst = {}
-        self._google = self._spotify = None
+        self._google = self._spotify = self._discord = None
+        self.app_active = True
         self.left, self.right = Sidebar("left", store), Sidebar("right", store)
         self.left.rail_clicked.connect(browser.toggle_sidebar); self.right.rail_clicked.connect(browser.toggle_sidebar)
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.sync)
@@ -1867,13 +1929,25 @@ class WidgetHost(QObject):
     @property
     def google(self):
         if self._google is None and self.store.feature("google"):
-            self._google = GoogleService(self.store)
+            self._google = GoogleService(self.store); self._google.need_setup.connect(self.browser.on_need_setup)
         return self._google
+
+    @property
+    def discord(self):
+        if self._discord is None and self.store.feature("discord"):
+            self._discord = DiscordService(self.store); self._discord.need_setup.connect(self.browser.on_need_setup)
+        return self._discord
+
+    def set_active(self, active):
+        """Okno nieaktywne → wstrzymujemy odpytywanie API i timery widgetów (oszczędność baterii/CPU)."""
+        self.app_active = active
+        for w in list(self.inst.values()):
+            w._sync_active()
 
     @property
     def spotify(self):
         if self._spotify is None:
-            self._spotify = SpotifyService(self.store)
+            self._spotify = SpotifyService(self.store); self._spotify.need_setup.connect(self.browser.on_need_setup)
         return self._spotify
 
     def enabled(self, wid):
@@ -1889,6 +1963,8 @@ class WidgetHost(QObject):
                 w = self.inst.pop(wid); w.shutdown(); w.setParent(None); w.deleteLater()
         if not self.store.feature("google"):
             self._google = None  # funkcja wyłączona: usuń usługę (bez zapytań i nasłuchiwaczy)
+        if not self.store.feature("discord"):
+            self._discord = None
         for sb in (self.left, self.right):
             ws = sorted((w for wid, w in self.inst.items() if self.store.wcfg(wid)["side"] == sb.side),
                         key=lambda w: self.store.wcfg(w.wid)["order"])
@@ -2652,7 +2728,8 @@ class SpotifyPane(QWidget):
         super().__init__(); self.setObjectName("clear")
         self.o, self.playing, self.cover_url, self._mode = owner, False, None, "login"
         l = QVBoxLayout(self); l.setContentsMargins(0, 0, 0, 0); l.setSpacing(6)
-        self.msg = lbl("", "muted2", wrap=True); self.btn = QPushButton(); self.btn.clicked.connect(lambda: self.on_btn())
+        self.msg = lbl("", "muted2", wrap=True); self.btn = QPushButton(); self.btn.setObjectName("spotbtn")
+        self.btn.clicked.connect(lambda: self.on_btn())
         self.card = QWidget(); self.card.setObjectName("clear")
         c = QVBoxLayout(self.card); c.setContentsMargins(0, 0, 0, 0); c.setSpacing(6)
         top = QHBoxLayout(); top.setSpacing(10)
@@ -2685,10 +2762,7 @@ class SpotifyPane(QWidget):
 
     def sync(self):
         s = self.sp(); self.timer.stop(); self.card.hide(); self.btn.hide(); self.msg.show()
-        if not s.configured():
-            self._mode = "cfg"; self.msg.setText("Podaj Client ID aplikacji Spotify (jednorazowo) w Ustawieniach → Spotify.")
-            self.btn.setText("Otwórz ustawienia"); self.btn.show()
-        elif s.expired or not s.logged_in():
+        if s.expired or not s.logged_in():
             self._mode = "login"
             self.msg.setText("Sesja Spotify wygasła – połącz konto ponownie." if s.expired else
                              "Połącz konto Spotify, aby widzieć i sterować odtwarzaniem.")
@@ -2699,10 +2773,7 @@ class SpotifyPane(QWidget):
             self.msg.hide(); self.card.show(); self.poll(); self.timer.start(3000)
 
     def on_btn(self):
-        if self._mode == "cfg":
-            self.o.host.browser.open_settings("spotify")
-        else:
-            self.sp().login()
+        self.sp().login()
 
     @staticmethod
     def friendly(err):
@@ -3078,7 +3149,7 @@ def avatar_icon(text) -> QIcon:
 class GoogleButton(QPushButton):
     """Jeden, rozpoznawalny przycisk „Zaloguj przez Google” (to samo centralne logowanie we wszystkich miejscach)."""
 
-    def __init__(self, text="Zaloguj przez Google"):
+    def __init__(self, text="Połącz z Google"):
         super().__init__(text)
         self.setObjectName("gbtn"); self.setIcon(google_g_icon()); self.setIconSize(QSize(18, 18))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -3087,6 +3158,7 @@ class GoogleButton(QPushButton):
 class OAuthListener(QObject):
     """Jednorazowy lokalny serwer (127.0.0.1) odbierający przekierowanie OAuth z kodem."""
     done = pyqtSignal(dict)
+    timeout = pyqtSignal()
 
     def __init__(self, port=0):
         super().__init__()
@@ -3094,7 +3166,11 @@ class OAuthListener(QObject):
         self.ok = self.srv.listen(QHostAddress(QHostAddress.SpecialAddress.LocalHost), port)
         self.srv.newConnection.connect(self._conn)
         self.port = self.srv.serverPort()
-        QTimer.singleShot(180000, self.srv.close)  # limit czasu na logowanie: 3 minuty
+        QTimer.singleShot(180000, self._expire)  # limit czasu na logowanie: 3 minuty
+
+    def _expire(self):
+        if self.srv.isListening():
+            self.srv.close(); self.timeout.emit()
 
     def _conn(self):
         sock = self.srv.nextPendingConnection()
@@ -3114,23 +3190,39 @@ class OAuthListener(QObject):
         sock.disconnectFromHost(); self.srv.close(); self.done.emit(q)
 
 
+class LoginWindow(QWidget):
+    """Wbudowane okno logowania OAuth (WebView) – dla usług, które dopuszczają logowanie w osadzonej przeglądarce."""
+    closed = pyqtSignal()
+
+    def __init__(self, url, title):
+        super().__init__()
+        self.setWindowTitle(title); self.setWindowIcon(app_icon()); self.resize(520, 740)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0)
+        self.view = WebView(); v.addWidget(self.view); self.view.setUrl(QUrl(url))
+
+    def closeEvent(self, ev):
+        self.closed.emit(); super().closeEvent(ev)
+
+
 class OAuthService(QObject):
     """Wspólny klient OAuth 2.0 (kod autoryzacji + PKCE, przekierowanie na 127.0.0.1) dla Google i Spotify.
     Jedno logowanie dla wszystkich widgetów, trwały token odświeżania, odnawianie tokenu dostępu w tle
     i jeden wspólny timer synchronizacji (widgety tylko się „zapisują”, zamiast mieć własne timery)."""
     state_changed = pyqtSignal()
     sync = pyqtSignal()
+    need_setup = pyqtSignal(str)   # brak kluczy aplikacji w tej wersji Luny
     CT = QNetworkRequest.KnownHeaders.ContentTypeHeader
     STATUS = QNetworkRequest.Attribute.HttpStatusCodeAttribute
     NAME, SECTION, TOKEN_KEY = "?", "x", "refresh"
     AUTH_URL = TOKEN_URL = SCOPES = CALLBACK = ""
-    NEEDS_SECRET, SYNC_MS = False, 120000
+    NEEDS_SECRET, SYNC_MS, IN_APP = False, 120000, False
 
     def __init__(self, store):
         super().__init__()
         self.store, self.token, self.exp = store, None, 0.0
         self.expired = self.busy = False; self.last_error = ""
-        self._waiters = self._listener = None; self._subs = 0
+        self._waiters = self._listener = self._win = None; self._subs = 0
         self._timer = QTimer(self); self._timer.timeout.connect(self._tick)
         self.state_changed.connect(self._update_timer)
 
@@ -3141,8 +3233,43 @@ class OAuthService(QObject):
     def port(self):
         return 0
 
+    def client_id(self):          # pole w Ustawieniach (twórca) > klucze wbudowane w aplikację
+        return self.cfg().get("client_id") or builtin_oauth(self.SECTION).get("client_id", "")
+
+    def client_secret(self):
+        return self.cfg().get("client_secret") or builtin_oauth(self.SECTION).get("client_secret", "")
+
     def configured(self):
-        c = self.cfg(); return bool(c.get("client_id")) and (not self.NEEDS_SECRET or bool(c.get("client_secret")))
+        return bool(self.client_id()) and (not self.NEEDS_SECRET or bool(self.client_secret()))
+
+    def display_name(self):
+        return self.cfg().get("name", "")
+
+    def cancel(self):
+        if self._listener:
+            self._listener.srv.close()
+        self._close_win(); self.busy = False; self.state_changed.emit()
+
+    def _close_win(self):
+        w, self._win = self._win, None
+        if w is not None:
+            try:
+                w.closed.disconnect(self._win_closed); w.close()
+            except (TypeError, RuntimeError):
+                pass
+
+    def _win_closed(self):          # użytkownik sam zamknął okno logowania
+        self._win = None
+        if self.busy:
+            self.busy = False; self.last_error = "Logowanie anulowane."
+            if self._listener:
+                self._listener.srv.close()
+            self.state_changed.emit()
+
+    def _login_timeout(self):
+        self._close_win()
+        if self.busy:
+            self.busy = False; self.last_error = "Czas na zalogowanie minął."; self.state_changed.emit()
 
     def refresh_token(self):
         return secret_get(self.store, self.TOKEN_KEY, self.SECTION)
@@ -3178,25 +3305,29 @@ class OAuthService(QObject):
     # --- logowanie ---
     def login(self):
         if not self.configured():
-            return
+            self.need_setup.emit(self.NAME); return
         self.last_error = ""
         if self._listener:
             self._listener.srv.close()
-        self._listener = OAuthListener(self.port())
+        self._listener = OAuthListener(self.port()); self._listener.timeout.connect(self._login_timeout)
         if not self._listener.ok:
             self.last_error = f"Nie można użyć portu {self.port()} (zajęty?)."; self.state_changed.emit(); return
         self.verifier = base64.urlsafe_b64encode(secrets.token_bytes(48)).decode().rstrip("=")
         challenge = base64.urlsafe_b64encode(hashlib.sha256(self.verifier.encode()).digest()).decode().rstrip("=")
         self.state = secrets.token_urlsafe(16); self.redirect = f"http://127.0.0.1:{self._listener.port}{self.CALLBACK}"
-        q = {"client_id": self.cfg()["client_id"], "redirect_uri": self.redirect, "response_type": "code",
+        q = {"client_id": self.client_id(), "redirect_uri": self.redirect, "response_type": "code",
              "scope": self.SCOPES, "code_challenge": challenge, "code_challenge_method": "S256", "state": self.state}
         q.update(self.extra_auth())
         self._listener.done.connect(self._got_code)
         self.busy = True; self.state_changed.emit()
-        QDesktopServices.openUrl(QUrl(self.AUTH_URL + "?" + urlencode(q)))  # zwykła przeglądarka systemowa (bezpieczniej)
+        url = self.AUTH_URL + "?" + urlencode(q); self._close_win()
+        if self.IN_APP:       # Spotify i Discord: okno logowania w aplikacji (WebView z trwałym profilem)
+            self._win = LoginWindow(url, f"{self.NAME} – logowanie"); self._win.closed.connect(self._win_closed); self._win.show()
+        else:                 # Google nie dopuszcza logowania w osadzonej przeglądarce – używamy systemowej
+            QDesktopServices.openUrl(QUrl(url))
 
     def _got_code(self, q):
-        self.busy = False
+        self.busy = False; self._close_win()
         if q.get("state") != self.state or "code" not in q:
             self.last_error = q.get("error", "Logowanie przerwane."); self.state_changed.emit(); return
         self._token_post({"grant_type": "authorization_code", "code": q["code"], "redirect_uri": self.redirect,
@@ -3221,12 +3352,13 @@ class OAuthService(QObject):
 
     # --- tokeny ---
     def _token_post(self, extra, cb):
-        c = self.cfg(); body = {"client_id": c.get("client_id", "")}
-        if self.NEEDS_SECRET:
-            body["client_secret"] = c.get("client_secret", "")
+        body = {"client_id": self.client_id()}
+        if self.client_secret() and (self.NEEDS_SECRET or self.SECTION == "discord"):
+            body["client_secret"] = self.client_secret()
         body.update(extra)
         req = QNetworkRequest(QUrl(self.TOKEN_URL))
         req.setHeader(self.CT, "application/x-www-form-urlencoded"); req.setTransferTimeout(15000)
+        req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "Luna/1.0 (+desktop)")
         r = self.store.nam.post(req, urlencode(body).encode())
         r.finished.connect(lambda r=r: self._token_reply(r, cb))
 
@@ -3271,6 +3403,7 @@ class OAuthService(QObject):
             if not ok:
                 cb(None, "Sesja wygasła – zaloguj się ponownie." if self.expired else f"Brak połączenia z {self.NAME}."); return
             req = QNetworkRequest(QUrl(url)); req.setRawHeader(b"Authorization", ("Bearer " + self.token).encode())
+            req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "Luna/1.0 (+desktop)")
             req.setTransferTimeout(15000); data = b""
             if body is not None:
                 req.setHeader(self.CT, "application/json"); data = json.dumps(body).encode()
@@ -3318,6 +3451,9 @@ class GoogleService(OAuthService):
     def email(self):
         return self.cfg().get("email", "")
 
+    def display_name(self):
+        return self.email()
+
     def scopes(self):
         return (self.cfg().get("scopes") or GOOGLE_LEGACY_SCOPES).split()
 
@@ -3360,13 +3496,23 @@ class SpotifyService(OAuthService):
     NAME, SECTION, TOKEN_KEY = "Spotify", "spotify", "spotify_refresh"
     AUTH_URL, TOKEN_URL = "https://accounts.spotify.com/authorize", "https://accounts.spotify.com/api/token"
     SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
-    CALLBACK = "/callback"
+    CALLBACK, IN_APP = "/callback", True
 
     def port(self):
         try:
             return int(self.cfg().get("port") or 8888)
         except (TypeError, ValueError):
             return 8888
+
+    def after_login(self):
+        def got(j, err):
+            if j:
+                self.store.settings.setdefault("spotify", {})["name"] = j.get("display_name") or j.get("id", "")
+                self.store.save_settings(); self.state_changed.emit()
+        self.request("GET", "https://api.spotify.com/v1/me", got)
+
+    def on_logout(self):
+        self.store.settings.get("spotify", {}).pop("name", None)
 
 
 class GoogleWidget(WidgetFrame):
@@ -3378,7 +3524,7 @@ class GoogleWidget(WidgetFrame):
         self.gen, self.loaded = 0, False
         self.msg = lbl("", "muted2", wrap=True)
         self.gbtn = GoogleButton(); self.gbtn.clicked.connect(lambda: self.host.browser.google_login())
-        self.cfgbtn = QPushButton("Skonfiguruj Google"); self.cfgbtn.clicked.connect(lambda: self.host.browser.open_settings("google"))
+        self.cfgbtn = QPushButton("Konta i integracje"); self.cfgbtn.clicked.connect(lambda: self.host.browser.open_settings("accounts"))
         self.skel = Skeleton(3); self.err = lbl("", "muted2", wrap=True)
         self.content = QVBoxLayout(); self.content.setSpacing(4)
         for w in (self.msg, self.gbtn, self.cfgbtn, self.skel, self.err):
@@ -3409,19 +3555,17 @@ class GoogleWidget(WidgetFrame):
         if g is None:
             return
         btn = self.gbtn
-        if not g.configured():
-            self.msg.setText("Zaloguj się raz kontem Google – to wymaga jednorazowej konfiguracji w Ustawieniach."); btn = self.cfgbtn
-        elif g.expired:
+        if g.expired:
             self.msg.setText("Sesja Google wygasła. Zaloguj się ponownie – jedno logowanie obsłuży wszystkie widgety.")
         elif not g.logged_in():
-            self.msg.setText("Zaloguj się raz – Gmail, Kalendarz, Zadania i Dysk zaczną działać automatycznie.")
+            self.msg.setText("Połącz konto Google jednym kliknięciem – Gmail, Kalendarz, Zadania i Dysk zaczną działać automatycznie.")
         elif g.busy:
             self.msg.setText("Dokończ logowanie w oknie przeglądarki…"); self.msg.show(); return
         elif self.NEEDS and not g.has_scope(self.NEEDS):
             self.msg.setText("Ten widget potrzebuje dodatkowego dostępu. Zaloguj się ponownie, aby go przyznać.")
             self.gbtn.setText("Zaloguj ponownie")
         else:
-            self.gbtn.setText("Zaloguj przez Google"); self.refresh(); return
+            self.gbtn.setText("Połącz z Google"); self.refresh(); return
         self.loaded = False; self.clear(); self.msg.show(); btn.show()
 
     def refresh(self):
@@ -3599,11 +3743,205 @@ class DriveWidget(GoogleWidget):
             self.content.addWidget(b)
 
 
+DISCORD_API = "https://discord.com/api/v10"
+
+
+class DiscordService(OAuthService):
+    """Discord OAuth2 (kod + PKCE, zakresy publiczne: identify, guilds). Status obecności i powiadomienia użytkownika
+    są w API dostępne wyłącznie dla zatwierdzonych partnerów (zakres rpc), więc widget używa publicznego widgetu serwera."""
+    NAME, SECTION, TOKEN_KEY = "Discord", "discord", "discord_refresh"
+    AUTH_URL, TOKEN_URL = "https://discord.com/oauth2/authorize", "https://discord.com/api/oauth2/token"
+    SCOPES, CALLBACK, IN_APP, SYNC_MS = "identify guilds", "/callback", True, 60000
+
+    def port(self):
+        try:
+            return int(self.cfg().get("port") or 8889)
+        except (TypeError, ValueError):
+            return 8889
+
+    def after_login(self):
+        def got(j, err):
+            if j:
+                self.store.settings.setdefault("discord", {}).update(
+                    name=j.get("global_name") or j.get("username", ""), username=j.get("username", ""),
+                    uid=j.get("id", ""), avatar=j.get("avatar") or "")
+                self.store.save_settings(); self.state_changed.emit()
+        self.request("GET", DISCORD_API + "/users/@me", got)
+
+    def on_logout(self):
+        c = self.store.settings.get("discord", {})
+        for k in ("name", "username", "uid", "avatar", "guild_id", "guild_name"):
+            c.pop(k, None)
+
+
+def round_pixmap(pm, size):
+    out = QPixmap(size, size); out.fill(Qt.GlobalColor.transparent)
+    p = QPainter(out); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    path = QPainterPath(); path.addEllipse(0, 0, size, size); p.setClipPath(path)
+    p.drawPixmap(0, 0, pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+    p.end(); return out
+
+
+DISCORD_COLORS = {"online": "#3ddc84", "idle": "#f0b232", "dnd": "#f23f43", "offline": "#80848e"}
+DISCORD_STATUS = {"online": "Dostępny", "idle": "Zaraz wracam", "dnd": "Nie przeszkadzać", "offline": "Offline"}
+
+
+class DiscordWidget(WidgetFrame):
+    """Profil (OAuth) + statystyki wybranego serwera (publiczny widget serwera Discord) + tryb „Czat” z osadzonym
+    klientem Discord (tam widać nieprzeczytane wiadomości). Odpytuje API tylko, gdy widget jest widoczny i okno aktywne."""
+
+    def build(self):
+        self.menu.addAction("Wybierz serwer…", self.pick_guild)
+        self.menu.addAction("Otwórz Discord w karcie", lambda: self.host.browser.open_url_new_tab("https://discord.com/channels/@me"))
+        row = QHBoxLayout(); row.setSpacing(4); group = QButtonGroup(self); self.mode, self.mbtn, self.chat = "profile", {}, None
+        for key, name in (("profile", "Profil"), ("chat", "Czat")):
+            b = QToolButton(); b.setObjectName("aipick"); b.setCheckable(True); b.setText(name)
+            b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, k=key: self.select(k))
+            group.addButton(b); row.addWidget(b); self.mbtn[key] = b
+        row.addStretch(); self.lay.addLayout(row); self.mbtn["profile"].setChecked(True)
+        # --- profil ---
+        self.pro = QWidget(); self.pro.setObjectName("clear")
+        pl = QVBoxLayout(self.pro); pl.setContentsMargins(0, 0, 0, 0); pl.setSpacing(6)
+        self.msg = lbl("", "muted2", wrap=True)
+        self.dbtn = QPushButton("Połącz z Discordem"); self.dbtn.setObjectName("discbtn"); self.dbtn.clicked.connect(lambda: self.svc().login())
+        self.card = QWidget(); self.card.setObjectName("clear")
+        c = QVBoxLayout(self.card); c.setContentsMargins(0, 0, 0, 0); c.setSpacing(4)
+        top = QHBoxLayout(); top.setSpacing(10)
+        self.avatar = QLabel(); self.avatar.setFixedSize(44, 44); self.avatar.setObjectName("cover")
+        col = QVBoxLayout(); col.setSpacing(0)
+        self.name = lbl("", "h3"); self.status = lbl("", "muted2", wrap=True); self.status.setTextFormat(Qt.TextFormat.RichText)
+        col.addWidget(self.name); col.addWidget(self.status); top.addWidget(self.avatar); top.addLayout(col, 1); c.addLayout(top)
+        sep = QFrame(); sep.setObjectName("sep"); c.addSpacing(4); c.addWidget(sep); c.addSpacing(2)
+        self.srv_title = lbl("Serwer: nie wybrano", "h3"); self.srv_info = lbl("Wybierz serwer w menu ⋯.", "muted2", wrap=True)
+        self.members = QVBoxLayout(); self.members.setSpacing(2)
+        c.addWidget(self.srv_title); c.addWidget(self.srv_info); c.addLayout(self.members)
+        pl.addWidget(self.msg); pl.addWidget(self.dbtn); pl.addWidget(self.card); self.lay.addWidget(self.pro)
+        self.chat_box = QVBoxLayout(); self.lay.addLayout(self.chat_box)
+        self.avatar_url = None
+
+    def svc(self):
+        return self.host.discord
+
+    # --- cykl życia (tylko gdy widoczny i okno aktywne) ---
+    def start(self):
+        s = self.svc(); s.register(); s.state_changed.connect(self.sync_state); s.sync.connect(self.refresh); self.sync_state()
+        if self.chat is not None:
+            try:
+                self.chat.page().setLifecycleState(QWebEnginePage.LifecycleState.Active)
+            except Exception:
+                pass
+
+    def stop(self):
+        s = self.svc()
+        if s is not None:
+            s.unregister(); safe_disconnect(s.state_changed, self.sync_state); safe_disconnect(s.sync, self.refresh)
+        if self.chat is not None:   # zamrażamy ukryty Discord Web – mniej CPU/RAM/baterii
+            try:
+                self.chat.page().setLifecycleState(QWebEnginePage.LifecycleState.Frozen)
+            except Exception:
+                pass
+
+    def teardown(self):
+        if self.chat is not None:
+            self.chat.deleteLater(); self.chat = None
+
+    def select(self, key):
+        self.mode = key; self.mbtn[key].setChecked(True)
+        self.pro.setVisible(key == "profile")
+        if key == "chat" and self.chat is None:   # leniwie: ciężki klient WWW powstaje dopiero na życzenie
+            self.chat = WebView(); self.chat.setFixedHeight(420)
+            self.chat.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+            self.chat.link_requested.connect(self.host.browser.open_url_new_tab)
+            self.chat.setUrl(QUrl("https://discord.com/channels/@me")); self.chat_box.addWidget(self.chat)
+        if self.chat is not None:
+            self.chat.setVisible(key == "chat")
+
+    def sync_state(self):
+        s = self.svc()
+        if s is None:
+            return
+        self.card.hide(); self.dbtn.hide(); self.msg.show()
+        if s.busy:
+            self.msg.setText("Dokończ logowanie w oknie Discorda…")
+        elif s.logged_in():
+            self.msg.hide(); self.card.show(); self.refresh()
+        else:
+            self.msg.setText("Sesja Discorda wygasła – połącz ponownie." if s.expired else
+                             "Połącz konto Discord jednym kliknięciem. Tryb „Czat” działa też bez łączenia.")
+            self.dbtn.show()
+
+    def refresh(self):
+        s = self.svc()
+        if s is None or not s.logged_in():
+            return
+        c = s.cfg(); self.name.setText(c.get("name", "")); self.status.setText(
+            "<span style='color:#3ddc84'>●</span> Połączono jako <b>%s</b>" % html.escape(c.get("username") or c.get("name", "")))
+        uid, av = c.get("uid", ""), c.get("avatar", "")
+        url = (f"https://cdn.discordapp.com/avatars/{uid}/{av}.png?size=64" if av else
+               (f"https://cdn.discordapp.com/embed/avatars/{(int(uid) >> 22) % 6}.png" if uid.isdigit() else None))
+        if url and url != self.avatar_url:
+            self.avatar_url = url; self.store.http(url, self.guard(self.set_avatar), raw=True)
+        gid = c.get("guild_id")
+        if gid:
+            self.store.http(f"https://discord.com/api/guilds/{gid}/widget.json", self.guard(self.got_widget))
+        else:
+            self.srv_title.setText("Serwer: nie wybrano"); self.srv_info.setText("Wybierz serwer w menu ⋯ (potrzebny włączony widget serwera).")
+
+    refresh_now = refresh
+
+    def set_avatar(self, data, err, status):
+        pm = QPixmap()
+        if data and pm.loadFromData(data):
+            self.avatar.setPixmap(round_pixmap(pm, 44))
+
+    def pick_guild(self):
+        s = self.svc()
+        if s is None or not s.logged_in():
+            return
+        s.request("GET", DISCORD_API + "/users/@me/guilds", self.guard(self._guild_menu))
+
+    def _guild_menu(self, j, err):
+        m = QMenu(self)
+        if err or not j:
+            m.addAction(err or "Brak serwerów").setEnabled(False)
+        for g in (j or [])[:25]:
+            m.addAction(g.get("name", "?"), lambda _=False, g=g: self.set_guild(g))
+        m.exec(QCursor.pos())
+
+    def set_guild(self, g):
+        self.svc().store.settings.setdefault("discord", {}).update(guild_id=g.get("id", ""), guild_name=g.get("name", ""))
+        self.store.save_settings(); self.refresh()
+
+    def got_widget(self, j, err, status):
+        while self.members.count():
+            w = self.members.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        gname = self.svc().cfg().get("guild_name", "Serwer")
+        if not isinstance(j, dict) or "members" not in j:
+            self.srv_title.setText(gname)
+            self.srv_info.setText("Ten serwer ma wyłączony widget (Ustawienia serwera → Widget) – właściciel może go włączyć."
+                                  if (j or {}).get("code") == 50004 else "Nie udało się pobrać danych serwera.")
+            return
+        mem = j.get("members", []); me = (self.svc().cfg().get("username") or "").lower()
+        self.srv_title.setText(j.get("name", gname)); self.srv_info.setText(f"{j.get('presence_count', len(mem))} osób online")
+        mine = next((m for m in mem if (m.get("username") or "").lower() == me), None)
+        if mine:
+            st = mine.get("status", "online"); game = (mine.get("game") or {}).get("name")
+            self.status.setText(f"<span style='color:{DISCORD_COLORS.get(st, '#80848e')}'>●</span> {DISCORD_STATUS.get(st, st)}"
+                                + (f" · W grze: {html.escape(game)}" if game else ""))
+        for m in mem[:5]:
+            st = m.get("status", "online"); game = (m.get("game") or {}).get("name", "")
+            r = lbl(f"<span style='color:{DISCORD_COLORS.get(st, '#80848e')}'>●</span> {html.escape(m.get('username', ''))}"
+                    + (f" <span style='color:#7d7d85'>· {html.escape(game)}</span>" if game else ""), "muted2")
+            r.setTextFormat(Qt.TextFormat.RichText); self.members.addWidget(r)
+
+
 WIDGET_CLASSES = {"streak": StreakWidget, "clock": ClockWidget, "weather": WeatherWidget, "markets": MarketsWidget,
                   "currency": CurrencyWidget, "notes": NotesWidget, "todo": TodoWidget, "pomodoro": PomodoroWidget,
                   "clipboard": ClipboardWidget, "calc": CalcWidget, "translate": TranslateWidget, "system": SystemWidget,
                   "audio": AudioWidget, "rss": RssWidget, "gmail": GmailWidget, "calendar": CalendarWidget,
-                  "gtasks": GTasksWidget, "drive": DriveWidget}
+                  "gtasks": GTasksWidget, "drive": DriveWidget, "discord": DiscordWidget}
 
 
 def make_widget(wid, store, host):
@@ -3686,6 +4024,8 @@ def page_features(dlg):
     for fid, (name, desc, _) in FEATURES.items():
         l.addWidget(switch_row(name, desc, dlg.store.feature(fid), lambda v, f=fid: dlg.store.set_feature(f, v)))
         sep = QFrame(); sep.setObjectName("sep"); l.addWidget(sep)
+    clr = QPushButton("Wyczyść historię przeglądania"); clr.clicked.connect(lambda: dlg.store.clear_history())
+    l.addSpacing(6); l.addWidget(clr, 0, Qt.AlignmentFlag.AlignLeft)
     l.addStretch(1)
     return scroll_page(w)
 
@@ -3789,104 +4129,137 @@ def page_widgets(dlg):
     return WidgetsPage(dlg)
 
 
-@settings_page("google", "Konto Google")
-def page_google(dlg):
-    w, l = page_box("Konto Google", "Jedno logowanie dla wszystkich widgetów: Gmail, Kalendarz, Zadania i Dysk. "
-                                    "Sesja jest trwała, a token odświeża się w tle.")
-    g = dlg.host.google
-    if g is None:
-        l.addWidget(lbl("Integracja z Google jest wyłączona (Ustawienia → Funkcje).", "muted2", wrap=True)); l.addStretch(1)
-        return scroll_page(w)
-    store = dlg.store; cfg = g.cfg()
-    status = lbl("", "h3", wrap=True)
-    b_in = GoogleButton(); b_out = QPushButton("Wyloguj")
-    b_in.clicked.connect(lambda: (save(), g.login())); b_out.clicked.connect(g.logout)
-    row = QHBoxLayout(); row.addWidget(b_in); row.addWidget(b_out); row.addStretch()
-    cid = QLineEdit(cfg.get("client_id", "")); cid.setObjectName("glassin"); cid.setPlaceholderText("Client ID  (…apps.googleusercontent.com)")
-    sec = QLineEdit(cfg.get("client_secret", "")); sec.setObjectName("glassin"); sec.setPlaceholderText("Client Secret")
-    sec.setEchoMode(QLineEdit.EchoMode.Password)
+class AccountRow(QFrame):
+    """Wiersz konta: ikona, stan połączenia (zielona kropka / „Połączono jako …”) i jeden przycisk Połącz / Rozłącz."""
 
-    def save():
-        store.settings.setdefault("google", {}).update(client_id=cid.text().strip(), client_secret=sec.text().strip())
-        store.save_settings(); g.state_changed.emit()
+    def __init__(self, dlg, title, icon, getter, label, style):
+        super().__init__()
+        self.setObjectName("acc"); self.getter, self.label, self.style_name, self.dlg = getter, label, style, dlg
+        h = QHBoxLayout(self); h.setContentsMargins(16, 14, 16, 14); h.setSpacing(12)
+        ic = QLabel(); ic.setFixedSize(32, 32); ic.setPixmap(icon.pixmap(28, 28))
+        col = QVBoxLayout(); col.setSpacing(1); col.addWidget(lbl(title, "h3"))
+        self.status = lbl("", "muted2"); self.status.setTextFormat(Qt.TextFormat.RichText); col.addWidget(self.status)
+        self.btn = QPushButton(); self.btn.clicked.connect(lambda: self.act())
+        h.addWidget(ic); h.addLayout(col, 1); h.addWidget(self.btn)
+        s = getter()
+        if s is not None:
+            s.state_changed.connect(self.refresh); dlg.finished.connect(lambda _=0, s=s: safe_disconnect(s.state_changed, self.refresh))
+        self.refresh()
 
-    def import_json():
-        path, _ = QFileDialog.getOpenFileName(dlg, "Plik JSON z Google Cloud", str(Path.home()), "JSON (*.json)")
-        if path and g.import_client_json(path):
-            c = g.cfg(); cid.setText(c.get("client_id", "")); sec.setText(c.get("client_secret", ""))
-        elif path:
-            status.setText("Nie rozpoznano pliku – pobierz „client_secret_….json” dla aplikacji na komputer.")
-    cid.editingFinished.connect(save); sec.editingFinished.connect(save)
-    imp = QPushButton("Importuj plik JSON z Google Cloud…"); imp.clicked.connect(lambda: import_json())
+    def _style(self, name):
+        self.btn.setObjectName(name); self.btn.style().unpolish(self.btn); self.btn.style().polish(self.btn)
 
-    def refresh():
-        if g.logged_in():
-            t = f"Zalogowano jako {g.email() or 'konto Google'} – wszystkie widgety Google działają."
-        elif g.expired:
-            t = "Sesja wygasła – zaloguj się ponownie."
-        elif g.busy:
-            t = "Dokończ logowanie w oknie przeglądarki…"
-        elif not g.configured():
-            t = "Najpierw wczytaj dane logowania (poniżej) – to robisz tylko raz."
+    def refresh(self):
+        s = self.getter(); dot = lambda c: f"<span style='color:{c}'>●</span> "
+        if s is None:
+            self.status.setText(dot("#80848e") + "Wyłączone w Funkcjach"); self.btn.hide(); return
+        self.btn.show()
+        if s.logged_in():
+            who = html.escape(s.display_name() or "konto")
+            self.status.setText(dot("#3ddc84") + f"Połączono jako <b>{who}</b>"); self.btn.setText("Rozłącz"); self._style("")
+        elif s.busy:
+            self.status.setText(dot("#f0b232") + "Łączenie… dokończ logowanie w oknie"); self.btn.setText("Anuluj"); self._style("")
         else:
-            t = "Nie zalogowano."
-        status.setText(t + (f"\n{g.last_error}" if g.last_error else ""))
-        b_in.setVisible(not g.logged_in()); b_out.setVisible(g.logged_in())
-    g.state_changed.connect(refresh); dlg.finished.connect(lambda _=0: safe_disconnect(g.state_changed, refresh)); refresh()
-    help_ = lbl("Jednorazowa konfiguracja:\n"
-                "1. W console.cloud.google.com utwórz projekt i włącz API: Gmail, Google Calendar, Google Tasks, Google Drive.\n"
-                "2. Utwórz „Identyfikator klienta OAuth” typu Aplikacja na komputer i pobierz plik JSON.\n"
-                "3. Kliknij „Importuj plik JSON…” (albo wklej Client ID i Secret) i „Zaloguj przez Google”.\n\n"
-                "Zakresy (tylko odczyt, poza Zadaniami): Gmail, Kalendarz, Zadania, metadane Dysku. Google Keep nie ma publicznego API, "
-                "więc notatki zastępują Zadania. Gdy ekran zgody ma status „Testing”, dodaj swoje konto do użytkowników testowych – "
-                "Google unieważnia wtedy sesję co 7 dni, a Luna poprosi o ponowne logowanie. Token odświeżania trafia do pęku kluczy "
-                "systemu (pakiet keyring), a gdy go brak – do pliku ustawień.", "muted", wrap=True)
-    openc = QPushButton("Otwórz konsolę Google Cloud")
-    openc.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://console.cloud.google.com/apis/credentials")))
-    l.addWidget(status); l.addLayout(row); l.addSpacing(10); l.addWidget(lbl("Dane logowania aplikacji", "h3"))
-    l.addWidget(imp); l.addWidget(cid); l.addWidget(sec); l.addSpacing(10); l.addWidget(help_)
-    l.addWidget(openc, 0, Qt.AlignmentFlag.AlignLeft); l.addStretch(1)
+            txt = "Sesja wygasła" if s.expired else "Niepołączono"
+            if not s.configured():
+                txt += " · brak kluczy aplikacji (Dla twórców)"
+            self.status.setText(dot("#f0b232" if s.expired else "#80848e") + txt)
+            self.btn.setText(self.label); self._style(self.style_name)
+
+    def act(self):
+        s = self.getter()
+        if s is None:
+            return
+        if s.logged_in():
+            s.logout()
+        elif s.busy:
+            s.cancel()
+        else:
+            s.login()
+
+
+@settings_page("accounts", "Konta i integracje")
+def page_accounts(dlg):
+    w, l = page_box("Konta i integracje", "Połącz konto jednym kliknięciem: Luna otworzy bezpieczne okno logowania, "
+                                          "a sesja zapisze się automatycznie i będzie odnawiana w tle.")
+    h = dlg.host
+    for title, icon, getter, label, style in (
+            ("Google", google_g_icon(), lambda: h.google, "Połącz z Google", "gbtn"),
+            ("Spotify", mini_icon("Spotify", "https://open.spotify.com"), lambda: h.spotify, "Połącz ze Spotify", "spotbtn"),
+            ("Discord", mini_icon("Discord", "https://discord.com"), lambda: h.discord, "Połącz z Discordem", "discbtn")):
+        l.addWidget(AccountRow(dlg, title, icon, getter, label, style))
+    l.addSpacing(8)
+    l.addWidget(lbl("Google: Gmail, Kalendarz, Zadania, Dysk. Spotify: aktualny utwór i sterowanie (Premium). "
+                    "Discord: profil i statystyki serwera. Tokeny trafiają do pęku kluczy systemu (pakiet keyring) lub, gdy go brak, "
+                    "do pliku ustawień dostępnego tylko dla Ciebie.", "muted", wrap=True))
+    l.addStretch(1)
     return scroll_page(w)
 
 
-@settings_page("spotify", "Spotify")
-def page_spotify(dlg):
-    w, l = page_box("Spotify", "Widget dźwięku pokazuje aktualny utwór i steruje odtwarzaniem przez Spotify Web API "
-                               "(logowanie OAuth + PKCE – bez hasła i bez Client Secret).")
-    sp = dlg.host.spotify; store = dlg.store; cfg = sp.cfg()
-    cid = QLineEdit(cfg.get("client_id", "")); cid.setObjectName("glassin"); cid.setPlaceholderText("Client ID aplikacji Spotify")
-    port = QLineEdit(str(cfg.get("port") or 8888)); port.setObjectName("glassin"); port.setMaximumWidth(120)
-    uri = lbl("", "h3", wrap=True); uri.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-    status = lbl("", "h3", wrap=True)
-    b_in = QPushButton("Połącz ze Spotify"); b_out = QPushButton("Rozłącz")
+def dev_block(l, dlg, svc, title, fields, uri, steps, url, with_json=False):
+    box = QFrame(); box.setObjectName("acc")
+    bl = QVBoxLayout(box); bl.setContentsMargins(16, 14, 16, 14); bl.setSpacing(6)
+    bl.addWidget(lbl(title, "h3"))
+    if svc is None:
+        bl.addWidget(lbl("Integracja wyłączona (Funkcje).", "muted2")); l.addWidget(box); return
+    sect = svc.SECTION; has = bool(builtin_oauth(sect).get("client_id"))
+    bl.addWidget(lbl("Wbudowane klucze aplikacji: " + ("są (użytkownicy nic nie wpisują)" if has else "brak – wpisz poniżej lub w luna_oauth.json"),
+                     "muted2", wrap=True))
+    edits = {}
+    for key, ph, secret in fields:
+        e = QLineEdit(svc.cfg().get(key, "")); e.setObjectName("glassin"); e.setPlaceholderText(ph)
+        if secret:
+            e.setEchoMode(QLineEdit.EchoMode.Password)
+        edits[key] = e; bl.addWidget(e)
 
     def save():
-        p = port.text().strip()
-        store.settings.setdefault("spotify", {}).update(client_id=cid.text().strip(), port=int(p) if p.isdigit() else 8888)
-        store.save_settings(); uri.setText(f"Redirect URI: http://127.0.0.1:{sp.port()}/callback"); sp.state_changed.emit()
-    cid.editingFinished.connect(save); port.editingFinished.connect(save)
-    b_in.clicked.connect(lambda: (save(), sp.login())); b_out.clicked.connect(sp.logout)
+        dlg.store.settings.setdefault(sect, {}).update({k: e.text().strip() for k, e in edits.items()})
+        dlg.store.save_settings(); svc.state_changed.emit()
+    for e in edits.values():
+        e.editingFinished.connect(save)
+    if with_json:
+        def imp():
+            path, _ = QFileDialog.getOpenFileName(dlg, "Plik JSON z Google Cloud", str(Path.home()), "JSON (*.json)")
+            if path and svc.import_client_json(path):
+                for k, e in edits.items():
+                    e.setText(svc.cfg().get(k, ""))
+        b = QPushButton("Importuj plik JSON z Google Cloud…"); b.clicked.connect(lambda: imp()); bl.addWidget(b)
+    r = lbl(uri, "h3", wrap=True); r.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse); bl.addWidget(r)
+    bl.addWidget(lbl(steps, "muted", wrap=True))
+    ob = QPushButton("Otwórz panel dostawcy"); ob.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+    bl.addWidget(ob, 0, Qt.AlignmentFlag.AlignLeft); l.addWidget(box)
 
-    def refresh():
-        t = ("Połączono ze Spotify." if sp.logged_in() else "Sesja wygasła – połącz ponownie." if sp.expired else
-             "Dokończ logowanie w oknie przeglądarki…" if sp.busy else "Podaj Client ID." if not sp.configured() else "Nie połączono.")
-        status.setText(t + (f"\n{sp.last_error}" if sp.last_error else ""))
-        b_in.setVisible(not sp.logged_in()); b_out.setVisible(sp.logged_in())
-    sp.state_changed.connect(refresh); dlg.finished.connect(lambda _=0: safe_disconnect(sp.state_changed, refresh))
-    uri.setText(f"Redirect URI: http://127.0.0.1:{sp.port()}/callback"); refresh()
-    help_ = lbl("Jednorazowa konfiguracja:\n"
-                "1. Wejdź na developer.spotify.com/dashboard i utwórz aplikację (API: Web API).\n"
-                "2. W polu Redirect URIs wpisz dokładnie adres widoczny wyżej i zapisz.\n"
-                "3. Skopiuj Client ID, wklej powyżej i kliknij „Połącz ze Spotify”.\n\n"
-                "Uwagi: aplikacje w trybie deweloperskim wymagają konta Premium właściciela i dodania Twojego konta w „User Management”. "
-                "Sterowanie (pauza, następny, poprzedni) działa tylko z Premium; podgląd utworu – także bez. Luna steruje odtwarzaczem "
-                "na Twoim telefonie lub w aplikacji Spotify; samo odtwarzanie wewnątrz Luny jest niemożliwe, bo osadzony Chromium nie ma DRM "
-                "(Web Playback SDK). Dźwięk z innych kart (YouTube itp.) obsługuje tryb „Karty”.", "muted", wrap=True)
-    opend = QPushButton("Otwórz panel deweloperski Spotify")
-    opend.clicked.connect(lambda: QDesktopServices.openUrl(QUrl("https://developer.spotify.com/dashboard")))
-    l.addWidget(status); l.addWidget(b_in); l.addWidget(b_out); l.addSpacing(8); l.addWidget(lbl("Aplikacja Spotify", "h3"))
-    l.addWidget(cid); l.addWidget(lbl("Port lokalny (domyślnie 8888)", "muted2")); l.addWidget(port); l.addWidget(uri)
-    l.addSpacing(10); l.addWidget(help_); l.addWidget(opend, 0, Qt.AlignmentFlag.AlignLeft); l.addStretch(1)
+
+@settings_page("dev", "Dla twórców")
+def page_dev(dlg):
+    w, l = page_box("Dla twórców: klucze aplikacji",
+                    "Klucze OAuth rejestruje się RAZ dla całej aplikacji (u Google, Spotify i Discorda) – nie dla każdego użytkownika. "
+                    "Najwygodniej wpisać je w pliku luna_oauth.json obok luna.py (lub ~/.luna_oauth.json), a użytkownik końcowy "
+                    "zobaczy tylko przyciski „Połącz”. Pola poniżej są alternatywą i mają pierwszeństwo.")
+    l.addWidget(lbl('Przykład luna_oauth.json: {"google": {"client_id": "…", "client_secret": "…"}, '
+                    '"spotify": {"client_id": "…"}, "discord": {"client_id": "…"}}', "muted", wrap=True))
+    h = dlg.host
+    dev_block(l, dlg, h.google, "Google", (("client_id", "Client ID (…apps.googleusercontent.com)", False), ("client_secret", "Client Secret", True)),
+              "Typ klienta: Aplikacja na komputer (redirect na 127.0.0.1 jest dopuszczony automatycznie)",
+              "1. console.cloud.google.com → nowy projekt → włącz API: Gmail, Calendar, Tasks, Drive.\n"
+              "2. Dane uwierzytelniające → Identyfikator klienta OAuth → Aplikacja na komputer → pobierz JSON.\n"
+              "3. Ekran zgody w trybie „Testing”: dodaj konta testowe (sesja wygasa po 7 dniach). Aby tego uniknąć, opublikuj aplikację.",
+              "https://console.cloud.google.com/apis/credentials", with_json=True)
+    dev_block(l, dlg, h.spotify, "Spotify", (("client_id", "Client ID", False), ("port", "Port lokalny (domyślnie 8888)", False)),
+              f"Redirect URI do wpisania w panelu: http://127.0.0.1:{h.spotify.port()}/callback",
+              "1. developer.spotify.com/dashboard → Create app (Web API).\n2. Redirect URIs: adres powyżej.\n"
+              "3. W trybie deweloperskim właściciel aplikacji potrzebuje Premium, a konta użytkowników trzeba dodać w „User Management” "
+              "(rozszerzony dostęp wymaga zgłoszenia do Spotify). Sterowanie odtwarzaniem działa tylko z Premium.",
+              "https://developer.spotify.com/dashboard")
+    dev_block(l, dlg, h.discord, "Discord", (("client_id", "Client ID", False), ("client_secret", "Client Secret (puste, jeśli „Public Client”)", True),
+                                             ("port", "Port lokalny (domyślnie 8889)", False)),
+              f"Redirect URI do wpisania w panelu: http://127.0.0.1:{h.discord.port()}/callback" if h.discord else "",
+              "1. discord.com/developers/applications → New Application → OAuth2.\n2. Redirects: adres powyżej; włącz „Public Client”, "
+              "aby nie używać sekretu.\n3. Zakresy: identify, guilds. Status obecności i powiadomienia użytkownika są w API Discorda "
+              "dostępne tylko dla zatwierdzonych partnerów (rpc), więc widget pokazuje profil, statystyki serwera (widget serwera "
+              "musi być włączony) i osadzony Discord Web.",
+              "https://discord.com/developers/applications")
+    l.addStretch(1)
     return scroll_page(w)
 
 
@@ -3924,6 +4297,10 @@ def page_keys(dlg):
         row.addWidget(a); row.addStretch(); row.addWidget(b); l.addLayout(row)
     l.addStretch(1)
     return scroll_page(w)
+
+
+_ORDER = ["features", "widgets", "accounts", "look", "keys", "dev"]
+SETTINGS_PAGES.sort(key=lambda p: _ORDER.index(p[0]))
 
 
 class DragBar(QWidget):
@@ -4020,6 +4397,234 @@ class Caption(QLabel):
             self.phase = "idle"
 
 
+# ======================================================================================
+#  INTELIGENTNY PASEK WYSZUKIWANIA (podpowiedzi: sieć + historia + kafelki + otwarte karty)
+# ======================================================================================
+SUGGEST_URLS = {   # punkty podpowiedzi wybranej wyszukiwarki; pozostałe używają DuckDuckGo (prywatnie)
+    "Google": "https://suggestqueries.google.com/complete/search?client=chrome&q=",
+    "DuckDuckGo": "https://duckduckgo.com/ac/?type=list&q=",
+    "Brave": "https://search.brave.com/api/suggest?q=",
+    "Bing": "https://api.bing.com/osjson.aspx?query=",
+}
+_GPIX = {}
+
+
+def gpix(kind, color="#9a9a9a"):
+    if (kind, color) not in _GPIX:
+        _GPIX[(kind, color)] = glyph(kind, color).pixmap(16, 16)
+    return _GPIX[(kind, color)]
+
+
+class SuggestDelegate(QStyledItemDelegate):
+    """Rysuje wiersz: ikona typu, tekst (skracany) i wskazówka po prawej – bez widgetów-wierszy (lekko)."""
+    ROW = 36
+
+    def sizeHint(self, opt, idx):
+        return QSize(opt.rect.width(), self.ROW)
+
+    def paint(self, p, opt, idx):
+        d = idx.data(Qt.ItemDataRole.UserRole) or {}
+        p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(opt.rect).adjusted(3, 1, -3, -1)
+        if opt.state & QStyle.StateFlag.State_Selected:
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(255, 255, 255, 34)); p.drawRoundedRect(r, 9, 9)
+        elif opt.state & QStyle.StateFlag.State_MouseOver:
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(255, 255, 255, 16)); p.drawRoundedRect(r, 9, 9)
+        p.drawPixmap(int(r.left() + 10), int(r.center().y() - 8), gpix(d.get("icon", "search")))
+        hint = d.get("hint", ""); fm = opt.fontMetrics
+        hw = fm.horizontalAdvance(hint) + 6 if hint else 0
+        tr = QRectF(r.left() + 36, r.top(), max(20.0, r.width() - 36 - hw - 14), r.height())
+        p.setPen(QColor("#ececec"))
+        p.drawText(tr, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                   fm.elidedText(d.get("text", ""), Qt.TextElideMode.ElideRight, int(tr.width())))
+        if hint:
+            p.setPen(QColor("#7d7d85"))
+            p.drawText(QRectF(r.right() - hw - 10, r.top(), hw, r.height()),
+                       Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight, hint)
+        p.restore()
+
+
+class SuggestPopup(QFrame):
+    """Okno podpowiedzi: zaokrąglone, z miękkim cieniem; nie przejmuje fokusu, więc pisanie nie jest przerywane."""
+    activated = pyqtSignal(dict)
+
+    def __init__(self):
+        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+                         | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus)
+        self.owner = None
+        self.setObjectName("sugg_popup")
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating); self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        outer = QVBoxLayout(self); outer.setContentsMargins(12, 2, 12, 18)
+        self.card = QFrame(); self.card.setObjectName("sugg_card")
+        sh = QGraphicsDropShadowEffect(self.card); sh.setBlurRadius(30); sh.setOffset(0, 8); sh.setColor(QColor(0, 0, 0, 175))
+        self.card.setGraphicsEffect(sh)
+        cl = QVBoxLayout(self.card); cl.setContentsMargins(6, 6, 6, 6)
+        self.list = QListWidget(); self.list.setObjectName("sugg_list"); self.list.setFrameShape(QFrame.Shape.NoFrame)
+        self.list.setItemDelegate(SuggestDelegate(self.list)); self.list.setMouseTracking(True)
+        self.list.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.viewport().setAutoFillBackground(False)
+        self.list.itemClicked.connect(lambda it: self.activated.emit(it.data(Qt.ItemDataRole.UserRole)))
+        cl.addWidget(self.list); outer.addWidget(self.card)
+
+    def set_entries(self, entries):
+        self.list.clear()
+        for e in entries:
+            it = QListWidgetItem(e["text"]); it.setData(Qt.ItemDataRole.UserRole, e); self.list.addItem(it)
+        self.list.setFixedHeight(len(entries) * SuggestDelegate.ROW + 4)
+        self.list.setCurrentRow(-1)
+
+    def move_sel(self, d):
+        n = self.list.count(); cur = self.list.currentRow()
+        if n:
+            self.list.setCurrentRow((cur + d) % n if cur >= 0 else (0 if d > 0 else n - 1))
+
+    def current(self):
+        it = self.list.currentItem()
+        return it.data(Qt.ItemDataRole.UserRole) if it is not None and self.list.currentRow() >= 0 else None
+
+    def show_below(self, edit):
+        self.setFixedWidth(edit.width() + 24); self.adjustSize()
+        self.move(edit.mapToGlobal(QPoint(-12, edit.height() - 2)))
+        if not self.isVisible():
+            self.show()
+        self.raise_()
+
+
+class SuggestController(QObject):
+    """Podpowiedzi pod polem tekstowym. Sieć: zapytanie dopiero po 250 ms ciszy (debounce), poprzednie jest przerywane;
+    historia, kafelki i otwarte karty są filtrowane lokalnie (natychmiast, bez sieci). Strzałki / Enter / Esc działają."""
+
+    def __init__(self, edit, browser):
+        super().__init__(edit)
+        self.edit, self.br, self.store = edit, browser, browser.store
+        self.net, self.seq, self.reply = [], 0, None
+        self.timer = QTimer(self); self.timer.setSingleShot(True); self.timer.timeout.connect(self.fetch_net)
+        edit.installEventFilter(self); edit.textEdited.connect(self.on_text)
+
+    @staticmethod
+    def looks_like_url(t):
+        return "://" in t or (" " not in t and "." in t)
+
+    def visible(self):
+        p = self.br._suggest
+        return p is not None and p.isVisible() and p.owner is self
+
+    def hide(self):
+        self.timer.stop(); self.abort()
+        p = self.br._suggest
+        if p is not None and p.owner is self:
+            p.hide()
+
+    def abort(self):
+        self.seq += 1
+        if self.reply is not None:
+            try:
+                self.reply.abort()
+            except RuntimeError:
+                pass
+            self.reply = None
+
+    def on_text(self, t):
+        t = t.strip()
+        if not t or not self.store.feature("suggest"):
+            self.hide(); return
+        self.abort(); self.net = [] if len(t) < 2 else self.net
+        self.rebuild()
+        if self.store.feature("suggest_net") and len(t) >= 2 and not self.looks_like_url(t):
+            self.timer.start(250)    # debounce – zapytanie po 250 ms bez pisania
+
+    def fetch_net(self):
+        t = self.edit.text().strip()
+        if not t or not self.store.feature("suggest") or not self.store.feature("suggest_net"):
+            return
+        self.seq += 1; n = self.seq
+        url = SUGGEST_URLS.get(CURRENT[0], SUGGEST_URLS["DuckDuckGo"]) + quote(t)
+        self.reply = self.store.http(url, lambda j, e, s: self.got_net(n, j), timeout=6000)
+
+    def got_net(self, n, j):
+        try:
+            if n != self.seq or not self.edit.hasFocus():
+                return
+            if isinstance(j, list) and len(j) > 1 and isinstance(j[1], list):
+                self.net = [x for x in j[1][:6] if isinstance(x, str)]
+                self.rebuild()
+        except RuntimeError:     # pole zostało już usunięte (zamknięta karta)
+            pass
+
+    def entries(self, q):
+        ql = q.lower(); out = [{"type": "go", "text": q, "hint": "Enter", "icon": "search"}]; urls = set()
+        cur = self.br.stack.currentWidget(); tabs = 0
+        for i in range(self.br.stack.count()):
+            t = self.br.stack.widget(i); web = getattr(t, "web", None)
+            if web is None or t is cur or tabs >= 2:
+                continue
+            title, url = web.title() or "", web.url().toString()
+            if ql in title.lower() or ql in url.lower():
+                out.append({"type": "tab", "text": title or url, "hint": "Karta", "icon": "tabs", "index": i})
+                tabs += 1; urls.add(url)
+        apps = 0
+        for b in self.store.items:
+            if apps < 2 and (ql in b["name"].lower() or ql in host_of(b["url"])):
+                out.append({"type": "url", "text": b["name"], "hint": "Kafelek", "icon": "app", "url": b["url"]})
+                apps += 1; urls.add(b["url"])
+        hist = 0
+        for h in self.store.history:
+            if hist >= 4:
+                break
+            if h["url"] not in urls and (ql in h["name"].lower() or ql in h["url"].lower()):
+                out.append({"type": "url", "text": h["name"] or h["url"], "hint": host_of(h["url"]), "icon": "history", "url": h["url"]})
+                hist += 1
+        for s in self.net:
+            if s.lower() != ql and len(out) < 10:
+                out.append({"type": "search", "text": s, "hint": CURRENT[0], "icon": "search"})
+        return out
+
+    def rebuild(self):
+        q = self.edit.text().strip(); es = self.entries(q) if q else []
+        if len(es) < 2:
+            p = self.br._suggest
+            if p is not None and p.owner is self:
+                p.hide()
+            return
+        p = self.br.suggest_popup(); p.owner = self; p.set_entries(es); p.show_below(self.edit)
+
+    def choose(self, e):
+        self.hide(); kind = e.get("type"); tab = self.br.cur()
+        if kind == "tab":
+            self.br.bar.setCurrentIndex(e["index"])
+        elif kind == "url":
+            tab.go(e["url"])
+        elif kind == "search":
+            tab.go(ENGINES[CURRENT[0]] + quote(e["text"]))
+        else:
+            tab.go(self.edit.text())
+        if self.edit is not self.br.address:
+            self.edit.clear()
+
+    def eventFilter(self, obj, ev):
+        if obj is not self.edit:
+            return False
+        t = ev.type()
+        if t == QEvent.Type.FocusOut:
+            self.hide()
+        elif t == QEvent.Type.KeyPress and self.store.feature("suggest"):
+            k = ev.key(); p = self.br._suggest
+            if self.visible():
+                if k == Qt.Key.Key_Down:
+                    p.move_sel(1); return True
+                if k == Qt.Key.Key_Up:
+                    p.move_sel(-1); return True
+                if k == Qt.Key.Key_Escape:
+                    self.hide(); return True
+                if k in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and p.current() is not None:
+                    self.choose(p.current()); return True
+            elif k == Qt.Key.Key_Down and self.edit.text().strip():
+                self.rebuild(); return True
+        return False
+
+
 class HomePage(QWidget):
     opened = pyqtSignal(str)
 
@@ -4084,6 +4689,10 @@ class HomePage(QWidget):
             self._rt.start(120)
         else:
             self._dirty = True
+
+    def attach_suggest(self, browser):
+        self.sugg = SuggestController(self.search, browser)
+        self.search.returnPressed.connect(lambda: self.sugg.hide())
 
     def showEvent(self, ev):
         super().showEvent(ev)
@@ -4160,6 +4769,7 @@ class Tab(QStackedWidget):
         self.browser, self.web = browser, None
         self.home = HomePage(store)
         self.addWidget(self.home)
+        self.home.attach_suggest(browser)
         self.home.opened.connect(self.go)
 
     def go(self, url):
@@ -4361,7 +4971,7 @@ class Browser(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self._laid, self._g_ref, self._pinned = False, None, None
+        self._laid, self._g_ref, self._pinned, self._suggest = False, None, None, None
         self.setWindowTitle("Luna"); self.setWindowIcon(app_icon())
         scr = QGuiApplication.primaryScreen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
         self.resize(min(1300, int(scr.width() * 0.94)), min(860, int(scr.height() * 0.92)))
@@ -4404,6 +5014,8 @@ class Browser(QMainWindow):
         self.address = QLineEdit(); self.address.setObjectName("addr")
         self.address.addAction(glyph("search"), QLineEdit.ActionPosition.LeadingPosition)
         self.address.returnPressed.connect(self.submit)
+        self.addr_sugg = SuggestController(self.address, self)
+        self.address.returnPressed.connect(lambda: self.addr_sugg.hide())
         self.chip = QToolButton(self.address); self.chip.setObjectName("engine")
         self.chip.setCursor(Qt.CursorShape.PointingHandCursor)
         self.chip.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -4431,6 +5043,8 @@ class Browser(QMainWindow):
         self.bgframe = BgFrame()
         body = QHBoxLayout(self.bgframe); body.setContentsMargins(0, 0, 0, 0); body.setSpacing(0)
         self.host = WidgetHost(self.store, self)
+        self._state_cb = lambda st: self.host.set_active(st == Qt.ApplicationState.ApplicationActive)
+        QGuiApplication.instance().applicationStateChanged.connect(self._state_cb)
         self.assistant = Assistant(self.store, self); self.assistant.hide()
         body.addWidget(self.host.left); body.addWidget(self.stack, 1); body.addWidget(self.host.right)
         body.addWidget(self.assistant)
@@ -4491,13 +5105,36 @@ class Browser(QMainWindow):
         self.update_account_btn()
         self.update_sidebars()
 
-    # --- centralne logowanie Google (przycisk na pasku + wszystkie widgety) ---
+    # --- podpowiedzi wyszukiwania (jedno współdzielone okno) ---
+    def suggest_popup(self):
+        if self._suggest is None:
+            self._suggest = SuggestPopup(); self._suggest.activated.connect(self._suggest_choose)
+        return self._suggest
+
+    def _suggest_choose(self, entry):
+        p = self._suggest
+        if p is not None and p.owner is not None:
+            p.owner.choose(entry)
+
+    def hide_suggest(self):
+        if self._suggest is not None and self._suggest.isVisible():
+            self._suggest.hide()
+
+    def moveEvent(self, ev):
+        super().moveEvent(ev); self.hide_suggest()
+
+    # --- konta: centralne logowanie (Google tu, Spotify i Discord w widgetach/Ustawieniach → Konta) ---
     def google_login(self):
         g = self.host.google
-        if g is not None and g.configured():
-            g.login()
-        else:
-            self.open_settings("google")
+        if g is not None:
+            g.login()    # bez kluczy aplikacji pokaże wyjaśnienie (on_need_setup)
+
+    def on_need_setup(self, name):
+        QMessageBox.information(
+            self, "Luna", f"Połączenie z usługą {name} nie jest jeszcze skonfigurowane w tej wersji Luny.\n\n"
+            "Aplikację rejestruje się u dostawcy RAZ dla całej Luny (nie dla każdego użytkownika): twórca wpisuje jej identyfikator "
+            "w pliku luna_oauth.json albo w Ustawienia → Dla twórców. Użytkownik końcowy nie musi niczego wklejać – "
+            "wystarczy jedno kliknięcie „Połącz”.")
 
     def update_account_btn(self):
         g = self.host.google
@@ -4507,25 +5144,22 @@ class Browser(QMainWindow):
         if g is not self._g_ref:
             self._g_ref = g; g.state_changed.connect(self.update_account_btn)
         if g.logged_in():
-            self.acct_btn.setIcon(avatar_icon(g.email() or "G")); self.acct_btn.setToolTip(f"Konto Google: {g.email() or 'zalogowano'}")
+            self.acct_btn.setIcon(avatar_icon(g.email() or "G")); self.acct_btn.setToolTip(f"Połączono z Google: {g.email() or 'konto'}")
         else:
-            self.acct_btn.setIcon(google_g_icon())
-            self.acct_btn.setToolTip("Zaloguj przez Google" if g.configured() else "Połącz Google (wymaga jednorazowej konfiguracji)")
+            self.acct_btn.setIcon(google_g_icon()); self.acct_btn.setToolTip("Połącz z Google")
 
     def build_account_menu(self):
         m = self.acct_btn.menu(); m.clear(); g = self.host.google
         if g is None:
             return
-        if not g.configured():
-            m.addAction(google_g_icon(), "Skonfiguruj logowanie Google…", lambda _=False: self.open_settings("google"))
-        elif g.logged_in():
-            m.addAction(f"Zalogowano: {g.email() or 'konto Google'}").setEnabled(False)
+        if g.logged_in():
+            m.addAction(f"● Połączono jako {g.email() or 'konto Google'}").setEnabled(False)
             m.addAction("Synchronizuj teraz", lambda _=False: self.host.refresh_all())
-            m.addAction("Ustawienia Google…", lambda _=False: self.open_settings("google"))
-            m.addSeparator(); m.addAction("Wyloguj", lambda _=False: g.logout())
+            m.addAction("Konta i integracje…", lambda _=False: self.open_settings("accounts"))
+            m.addSeparator(); m.addAction("Rozłącz", lambda _=False: g.logout())
         else:
-            m.addAction(google_g_icon(), "Zaloguj przez Google", lambda _=False: g.login())
-            m.addAction("Ustawienia Google…", lambda _=False: self.open_settings("google"))
+            m.addAction(google_g_icon(), "Połącz z Google", lambda _=False: g.login())
+            m.addAction("Konta i integracje…", lambda _=False: self.open_settings("accounts"))
 
     # --- responsywne panele boczne ---
     def update_sidebars(self, prefer=None):
@@ -4617,7 +5251,8 @@ class Browser(QMainWindow):
         self.new_tab(); self.cur().go(url)
 
     def closeEvent(self, ev):
-        self.host.shutdown_all(); self.store.save_settings()
+        safe_disconnect(QGuiApplication.instance().applicationStateChanged, self._state_cb)   # sprzątanie nasłuchiwaczy
+        self.hide_suggest(); self.host.shutdown_all(); self.store.save_settings()
         super().closeEvent(ev)
 
     def toggle_max(self):
@@ -4659,7 +5294,7 @@ class Browser(QMainWindow):
         if 0 <= i < self.stack.count():
             self.stack.setCurrentIndex(i)
         self.sync_address()
-        self.refresh_close_icons(); self.update_sidebars_soon()
+        self.refresh_close_icons(); self.update_sidebars_soon(); self.hide_suggest()
 
     def on_tab_moved(self, frm, to):
         w = self.stack.widget(frm)
