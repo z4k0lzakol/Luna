@@ -1889,6 +1889,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "discord": ("Integracja z Discordem", "Widget Discord i połączenie konta. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
     "vertical_tabs": ("Panel kart przypięty po lewej", "Lista kart z grupami na stałe po lewej stronie zamiast paska kart u góry. "
                       "Wyłączone: lista kart i grup otwiera się przyciskiem na pasku narzędzi.", False),
+    "workspaces": ("Przestrzenie robocze", "Ikona przestrzeni na pasku kart (np. Praca, Zakupy, Hobby) – lista rozwija się po kliknięciu. "
+                   "Wyłączone: ikona znika, a wszystkie karty są widoczne razem.", True),
     "restore_tabs": ("Przywracanie kart", "Po uruchomieniu wracają karty, grupy, przestrzenie i kontenery (strony wczytują się "
                      "dopiero po wejściu na kartę).", True),
     "sleep_tabs": ("Usypianie nieaktywnych kart", "Karty nieużywane przez dłuższy czas zwalniają pamięć RAM i nie zużywają baterii "
@@ -5330,7 +5332,7 @@ def page_tabs(dlg):
     w, l = page_box("Karty i przestrzenie", "Pionowe karty z grupami, przestrzenie robocze (np. Praca, Zakupy, Hobby), "
                                             "podział ekranu i usypianie nieaktywnych kart.")
     st, b = dlg.store, dlg.browser
-    for fid in ("vertical_tabs", "restore_tabs", "sleep_tabs"):
+    for fid in ("workspaces", "vertical_tabs", "restore_tabs", "sleep_tabs"):
         name, desc, _ = FEATURES[fid]
         l.addWidget(switch_row(name, desc, st.feature(fid), lambda v, f=fid: st.set_feature(f, v)))
     combo = QComboBox()
@@ -5340,7 +5342,7 @@ def page_tabs(dlg):
     combo.currentIndexChanged.connect(lambda _: (st.settings.__setitem__("sleep_after", combo.currentData()), st.save_soon()))
     l.addWidget(lbl("Usypiaj karty", "h3")); l.addWidget(combo); l.addSpacing(12)
     l.addWidget(lbl("Przestrzenie robocze", "h3"))
-    l.addWidget(lbl("Każda przestrzeń ma własne karty – nie mieszają się. Przełączasz je przyciskiem obok logo na pasku kart.",
+    l.addWidget(lbl("Każda przestrzeń ma własne karty – nie mieszają się. Przełączasz je ikoną obok logo na pasku kart.",
                     "muted", wrap=True))
     lw = QListWidget(); lw.setObjectName("wlist"); lw.setMaximumHeight(150); lw.viewport().setAutoFillBackground(False)
 
@@ -6056,10 +6058,10 @@ class TabPanel(QWidget):
     def rebuild(self):
         b = self.b; self.tree.blockSignals(True); self.tree.clear(); self.tabs = {}; groups = {}; cur = b.cur(); sel = None
         folded = b.store.settings.get("tab_groups", {})
-        self.title.setText(b.ws.upper())
+        self.title.setText(b.ws.upper() if b.store.feature("workspaces") else "KARTY")
         for i in range(b.stack.count()):
             t = b.stack.widget(i)
-            if t.ws != b.ws:
+            if not b.in_view(t):
                 continue
             parent = self.tree.invisibleRootItem()
             if t.group:
@@ -6413,8 +6415,8 @@ class Browser(QMainWindow):
         sl.addWidget(lg); sl.addSpacing(4)
         self.ws = self.store.settings.get("ws_current") if self.store.settings.get("ws_current") in self.workspaces() \
             else self.workspaces()[0]
-        self.ws_btn = QToolButton(); self.ws_btn.setObjectName("chip"); self.ws_btn.setIcon(glyph("layers"))
-        self.ws_btn.setIconSize(QSize(16, 16)); self.ws_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.ws_btn = QToolButton(); self.ws_btn.setObjectName("acct"); self.ws_btn.setIcon(glyph("layers"))   # sama ikona, lista po kliknięciu
+        self.ws_btn.setIconSize(QSize(18, 18)); self.ws_btn.setFixedSize(30, 30)
         self.ws_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup); self.ws_btn.setToolTip("Przestrzeń robocza")
         self.ws_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         wm = QMenu(self.ws_btn); wm.aboutToShow.connect(self.ws_menu); self.ws_btn.setMenu(wm)
@@ -6550,6 +6552,7 @@ class Browser(QMainWindow):
         if not ai:
             self.assistant.hide(); self.assistant.release()
         self.update_account_btn()
+        self.ws_btn.setVisible(self.store.feature("workspaces"))
         vt = self.store.feature("vertical_tabs")
         self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.tabs_btn.setVisible(not vt)
         if SHIELD:
@@ -6750,7 +6753,7 @@ class Browser(QMainWindow):
             return
         if self.bar.count() <= 1:
             self.close(); return
-        if sum(1 for t in self.all_tabs() if t.ws == tab.ws) == 1:   # przestrzeń nie zostaje pusta
+        if self.store.feature("workspaces") and sum(1 for t in self.all_tabs() if t.ws == tab.ws) == 1:   # przestrzeń nie zostaje pusta
             self.new_tab(ws=tab.ws, activate=False)
         i = self.stack.indexOf(tab)
         self.store.session.forget_tab(tab)
@@ -6798,9 +6801,9 @@ class Browser(QMainWindow):
     def _apply_tabs(self):
         """Pokazuje tylko karty bieżącej przestrzeni roboczej, odświeża pionowy panel i zapisuje sesję."""
         for i in range(self.bar.count()):
-            self.bar.setTabVisible(i, self.stack.widget(i).ws == self.ws)
+            self.bar.setTabVisible(i, self.in_view(self.stack.widget(i)))
         c = self.cur()
-        if c is not None and c.ws != self.ws:
+        if c is not None and not self.in_view(c):
             mine = [t for t in self.all_tabs() if t.ws == self.ws]
             last = self._ws_last.get(self.ws)
             target = last if last in mine else (mine[0] if mine else None)
@@ -6813,7 +6816,7 @@ class Browser(QMainWindow):
             self.tabpanel.rebuild()
             if self.tab_popup.isVisible() and self.cur() is not self._popup_from:   # wybrano kartę z listy – zamknij
                 self.tab_popup.hide()
-        self.ws_btn.setText(self.ws)
+        self.ws_btn.setToolTip(f"Przestrzeń robocza: {self.ws}")
         self.store.settings["session"] = self.session_data(); self.store.save_soon()
 
     def cycle_tab(self, d):
@@ -6881,8 +6884,13 @@ class Browser(QMainWindow):
         self.ws = name; self.store.settings["ws_current"] = name; self.store.save_soon()
         self._apply_tabs()
 
+    def in_view(self, t):
+        """Karta widoczna w bieżącym widoku (bez przestrzeni roboczych widać wszystkie karty)."""
+        return not self.store.feature("workspaces") or t.ws == self.ws
+
     def ws_menu(self):
         m = self.ws_btn.menu(); m.clear()
+        m.addAction(glyph("layers"), "Przestrzenie robocze").setEnabled(False)
         for name in self.workspaces():
             n = sum(1 for t in self.all_tabs() if t.ws == name)
             a = m.addAction(f"{name}  ·  {n}"); a.setCheckable(True); a.setChecked(name == self.ws)
@@ -6929,7 +6937,7 @@ class Browser(QMainWindow):
     def groups(self):
         seen = []
         for t in self.all_tabs():
-            if t.ws == self.ws and t.group and t.group not in seen:
+            if self.in_view(t) and t.group and t.group not in seen:
                 seen.append(t.group)
         return seen
 
@@ -6977,7 +6985,7 @@ class Browser(QMainWindow):
 
     def set_group(self, old, new):
         for t in self.all_tabs():
-            if t.ws == self.ws and t.group == old:
+            if self.in_view(t) and t.group == old:
                 t.group = new; self.decorate(t)
         self.tabs_changed()
 
@@ -6987,7 +6995,7 @@ class Browser(QMainWindow):
             self.set_group(name, new.strip())
 
     def close_group(self, name):
-        for t in [t for t in self.all_tabs() if t.ws == self.ws and t.group == name]:
+        for t in [t for t in self.all_tabs() if self.in_view(t) and t.group == name]:
             self.close_tab(t)
 
     # --- kontenery (osobne ciasteczka i logowania) ---
@@ -7047,7 +7055,7 @@ class Browser(QMainWindow):
         gm.addAction("Nowa grupa…", lambda: self.group_dialog(t))
         if t.group:
             gm.addAction("Usuń z grupy", lambda: (setattr(t, "group", ""), self.decorate(t), self.tabs_changed()))
-        wm = m.addMenu("Przenieś do przestrzeni")
+        wm = m.addMenu("Przenieś do przestrzeni"); wm.menuAction().setVisible(self.store.feature("workspaces"))
         for w in self.workspaces():
             if w != t.ws:
                 wm.addAction(w, lambda _=False, w=w: self.move_to_ws(t, w))
@@ -7058,7 +7066,7 @@ class Browser(QMainWindow):
             sm.setEnabled(False)
         sm.addAction("Z pustą stroną", lambda: (self.activate(t), t.split_with("")))
         for o in self.all_tabs():
-            if o is not t and o.ws == t.ws:
+            if o is not t and self.in_view(o):
                 url = o.pending or (o.web.url().toString() if o.web is not None and not o.on_home() else "")
                 if url:
                     sm.addAction(tab_icon(o.icon), (o.title_text or url)[:40],
