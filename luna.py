@@ -1538,6 +1538,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "suggest": ("Podpowiedzi wyszukiwania", "Lista pod paskiem adresu: historia, kafelki i otwarte karty (lokalnie, bez sieci).", True),
     "suggest_net": ("Podpowiedzi z sieci", "Wysyła wpisywany tekst do wybranej wyszukiwarki po propozycje. Wyłącz dla pełnej prywatności.", True),
     "discord": ("Integracja z Discordem", "Widget Discord i połączenie konta. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
+    "discord_watch": ("Licznik Discorda w tle", "Ukryty Discord Web (wyciszony) liczy wzmianki dla widgetu i kafelka – ok. 200–300 MB RAM. "
+                      "Wyłączony: licznik tylko z otwartych kart Discorda.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
 }
@@ -3777,6 +3779,7 @@ class SpotifyService(OAuthService):
 
 ATOM = "{http://purl.org/atom/ns#}"
 GMAIL_FEED = "https://mail.google.com/mail/u/0/feed/atom"
+DISCORD_APP = "https://discord.com/channels/@me"
 HOST_ALIAS = {"gmail.com": "mail.google.com", "inbox.google.com": "mail.google.com"}
 # licznik w tytule karty: „(3) Discord”, „Odebrane (5) - … - Gmail”; 1–3 cyfry, żeby nie łapać lat w tytułach filmów
 TITLE_COUNT = re.compile(r"^\((\d{1,3})\+?\)\s|\s\((\d{1,3})\+?\)\s+[-–|]")
@@ -3787,7 +3790,7 @@ class SessionBridge(QObject):
     WebEngine), a most kopiuje ciasteczka wybranych usług do własnego QNetworkAccessManagera. Dzięki temu widgety
     i kafelki dostają dane jako zalogowany użytkownik. Źródła liczników: kanał Atom Gmaila (odpytywany tylko, gdy
     ktoś go potrzebuje i okno jest aktywne) oraz tytuły otwartych kart („(3) …”) – te bez żadnych zapytań."""
-    changed = pyqtSignal()          # zmiana stanu logowania lub nowe dane Gmaila
+    changed = pyqtSignal()          # zmiana stanu logowania (Google/Discord) lub nowe dane Gmaila
     counts_changed = pyqtSignal()   # liczniki na kafelkach
     DOMAINS = ("google.com",)       # tylko te ciasteczka trafiają do mostu
     LOGIN = {"google": ("google.com", ("SID", "__Secure-1PSID", "__Secure-3PSID"))}
@@ -3800,11 +3803,12 @@ class SessionBridge(QObject):
         self.nam = QNetworkAccessManager(self); self.nam.setCookieJar(self.jar)
         self.counts, self._tab_host = {}, {}
         self.gmail = {"count": None, "items": [], "error": "", "ts": 0.0}
-        self._busy = False; self._state = {}
+        self._busy = False; self._state = {}; self._dpage = None
         self._emit = QTimer(self); self._emit.setSingleShot(True); self._emit.timeout.connect(self._cookies_settled)
         self._poll = QTimer(self); self._poll.timeout.connect(self.poll)
         self._eval = QTimer(self); self._eval.setSingleShot(True); self._eval.timeout.connect(self._update_poll)
-        store.changed.connect(lambda: self._eval.start(400))   # nowy/usunięty kafelek Gmaila
+        for sig in (store.changed, store.layout_changed, store.features_changed):   # kafelki, widgety, funkcje
+            sig.connect(lambda: self._eval.start(400))
         cs = get_profile().cookieStore()
         cs.cookieAdded.connect(self._added); cs.cookieRemoved.connect(self._removed)
         cs.loadAllCookies()
@@ -3857,6 +3861,8 @@ class SessionBridge(QObject):
 
     def on_tab_title(self, tab, url, title):
         host = self._host(url)
+        if host == "discord.com":
+            self._discord_url(url)
         old = self._tab_host.get(id(tab))
         if old and old != host:
             self._drop(old, tab)
@@ -3872,7 +3878,8 @@ class SessionBridge(QObject):
 
     def _drop(self, host, tab):
         others = [t for k, t in self._tab_host.items() if k != id(tab) and t == host]
-        if host not in self.POLLED and not others:
+        polled = host in self.POLLED or (host == "discord.com" and self._dpage is not None)   # ukryty Discord liczy dalej
+        if not polled and not others:
             self._set_count(host, 0)
 
     # --- Gmail (kanał Atom skrzynki odbiorczej) ---
@@ -3890,6 +3897,7 @@ class SessionBridge(QObject):
         return self.active and (self._subs > 0 or tile) and self.logged_in("google")
 
     def _update_poll(self):
+        self._update_discord()
         if self._wanted():
             if not self._poll.isActive():
                 self._poll.start(180000)
@@ -3908,6 +3916,41 @@ class SessionBridge(QObject):
         req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, get_profile().httpUserAgent())
         req.setTransferTimeout(15000)
         r = self.nam.get(req); r.finished.connect(lambda r=r: self._gmail_reply(r))
+
+    # --- Discord (licznik wzmianek z tytułu klienta WWW: „(3) Discord | …”) ---
+    def discord_logged_in(self):
+        return bool(self.store.settings.get("discord", {}).get("web"))
+
+    def _discord_url(self, url):
+        """Każdy widok Discorda (karta, Czat w widgecie, ukryta strona) mówi, czy sesja jest aktywna."""
+        path = QUrl(url).path()
+        if path.startswith("/channels"):
+            self._set_discord_web(True)
+        elif path.startswith("/login"):
+            self._set_discord_web(False)
+
+    def _set_discord_web(self, on):
+        if on != self.discord_logged_in():
+            self.store.settings.setdefault("discord", {})["web"] = on; self.store.save_soon()
+            if not on:
+                self._set_count("discord.com", 0)
+            self.changed.emit(); self._update_discord()
+
+    def _discord_wanted(self):
+        st = self.store
+        used = st.wcfg("discord")["on"] or any(self._host(b["url"]) == "discord.com" for b in st.items)
+        return st.feature("discord") and st.feature("discord_watch") and used and self.discord_logged_in()
+
+    def _update_discord(self):
+        if self._discord_wanted() and self._dpage is None:
+            pg = self._dpage = QWebEnginePage(get_profile(), self)
+            pg.setAudioMuted(True)      # dźwięki powiadomień tylko z widocznego Discorda
+            pg.titleChanged.connect(lambda t: self.on_tab_title(pg, pg.url().toString(), t))
+            pg.urlChanged.connect(lambda u: self._discord_url(u.toString()))
+            pg.setUrl(QUrl(DISCORD_APP))
+        elif not self._discord_wanted() and self._dpage is not None:
+            pg, self._dpage = self._dpage, None
+            self.forget_tab(pg); pg.deleteLater()
 
     def _gmail_reply(self, r):
         self._busy = False
@@ -4288,7 +4331,7 @@ class DiscordWidget(WidgetFrame):
         self.pro = QWidget(); self.pro.setObjectName("clear")
         pl = QVBoxLayout(self.pro); pl.setContentsMargins(0, 0, 0, 0); pl.setSpacing(6)
         self.msg = lbl("", "muted2", wrap=True)
-        self.dbtn = QPushButton("Połącz z Discordem"); self.dbtn.setObjectName("discbtn"); self.dbtn.clicked.connect(lambda: self.svc().login())
+        self.dbtn = QPushButton("Połącz z Discordem"); self.dbtn.setObjectName("discbtn"); self.dbtn.clicked.connect(lambda: self.connect_acc())
         self.card = QWidget(); self.card.setObjectName("clear")
         c = QVBoxLayout(self.card); c.setContentsMargins(0, 0, 0, 0); c.setSpacing(4)
         top = QHBoxLayout(); top.setSpacing(10)
@@ -4307,8 +4350,23 @@ class DiscordWidget(WidgetFrame):
     def svc(self):
         return self.host.discord
 
+    def connect_acc(self):
+        """Z kluczami aplikacji – OAuth; bez nich – logowanie w karcie Luny (licznik działa wtedy przez sesję)."""
+        s = self.svc()
+        if s.configured():
+            s.login()
+        else:
+            self.host.browser.open_url_new_tab(DISCORD_APP)
+
+    def show_count(self):
+        n = self.store.session.count_for("https://discord.com"); self.set_badge(n)
+        if self.store.session.discord_logged_in() and not self.svc().logged_in():
+            self.msg.setText(f"Połączono przez sesję w Lunie. Nieprzeczytane wzmianki: {n}." if n else
+                             "Połączono przez sesję w Lunie. Brak nowych wzmianek.")
+
     # --- cykl życia (tylko gdy widoczny i okno aktywne) ---
     def start(self):
+        b = self.store.session; b.counts_changed.connect(self.show_count); b.changed.connect(self.sync_state)
         s = self.svc(); s.register(); s.state_changed.connect(self.sync_state); s.sync.connect(self.refresh); self.sync_state()
         if self.chat is not None:
             try:
@@ -4317,6 +4375,7 @@ class DiscordWidget(WidgetFrame):
                 pass
 
     def stop(self):
+        b = self.store.session; safe_disconnect(b.counts_changed, self.show_count); safe_disconnect(b.changed, self.sync_state)
         s = self.svc()
         if s is not None:
             s.unregister(); safe_disconnect(s.state_changed, self.sync_state); safe_disconnect(s.sync, self.refresh)
@@ -4328,7 +4387,7 @@ class DiscordWidget(WidgetFrame):
 
     def teardown(self):
         if self.chat is not None:
-            self.chat.deleteLater(); self.chat = None
+            self.store.session.forget_tab(self.chat); self.chat.deleteLater(); self.chat = None
 
     def select(self, key):
         self.mode = key; self.mbtn[key].setChecked(True)
@@ -4337,7 +4396,10 @@ class DiscordWidget(WidgetFrame):
             self.chat = WebView(); self.chat.setFixedHeight(420)
             self.chat.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             self.chat.link_requested.connect(self.host.browser.open_url_new_tab)
-            self.chat.setUrl(QUrl("https://discord.com/channels/@me")); self.chat_box.addWidget(self.chat)
+            v = self.chat   # Czat też zasila licznik i wykrywa zalogowanie
+            v.titleChanged.connect(lambda t, v=v: self.store.session.on_tab_title(v, v.url().toString(), t))
+            v.urlChanged.connect(lambda u: self.store.session._discord_url(u.toString()))
+            self.chat.setUrl(QUrl(DISCORD_APP)); self.chat_box.addWidget(self.chat)
         if self.chat is not None:
             self.chat.setVisible(key == "chat")
 
@@ -4350,10 +4412,16 @@ class DiscordWidget(WidgetFrame):
             self.msg.setText("Dokończ logowanie w oknie Discorda…")
         elif s.logged_in():
             self.msg.hide(); self.card.show(); self.refresh()
+        elif self.store.session.discord_logged_in():
+            self.show_count()
+        elif not s.configured():
+            self.msg.setText("Zaloguj się do Discorda w karcie Luny – licznik wzmianek zadziała sam, bez kluczy. "
+                             "Tryb „Czat” działa od razu."); self.dbtn.setText("Zaloguj w karcie"); self.dbtn.show()
         else:
             self.msg.setText("Sesja Discorda wygasła – połącz ponownie." if s.expired else
                              "Połącz konto Discord jednym kliknięciem. Tryb „Czat” działa też bez łączenia.")
-            self.dbtn.show()
+            self.dbtn.setText("Połącz z Discordem"); self.dbtn.show()
+        self.set_badge(self.store.session.count_for("https://discord.com"))
 
     def refresh(self):
         s = self.svc()
@@ -4682,10 +4750,10 @@ def page_accounts(dlg):
     l.addWidget(AccountRow(dlg, "Google", google_g_icon(), lambda: h.google, "Połącz z Google", "gbtn",
                            session=lambda: h.store.session.logged_in("google"),
                            login_url="https://mail.google.com/mail/u/0/#inbox"))
-    for title, icon, getter, label, style in (
-            ("Spotify", mini_icon("Spotify", "https://open.spotify.com"), lambda: h.spotify, "Połącz ze Spotify", "spotbtn"),
-            ("Discord", mini_icon("Discord", "https://discord.com"), lambda: h.discord, "Połącz z Discordem", "discbtn")):
-        l.addWidget(AccountRow(dlg, title, icon, getter, label, style))
+    l.addWidget(AccountRow(dlg, "Spotify", mini_icon("Spotify", "https://open.spotify.com"), lambda: h.spotify,
+                           "Połącz ze Spotify", "spotbtn"))
+    l.addWidget(AccountRow(dlg, "Discord", mini_icon("Discord", "https://discord.com"), lambda: h.discord, "Połącz z Discordem",
+                           "discbtn", session=lambda: h.store.session.discord_logged_in(), login_url=DISCORD_APP))
     l.addSpacing(8)
     l.addWidget(lbl("Google: Gmail, Kalendarz, Zadania, Dysk. Spotify: aktualny utwór i sterowanie (Premium). "
                     "Discord: profil i statystyki serwera. Tokeny trafiają do pęku kluczy systemu (pakiet keyring) lub, gdy go brak, "
