@@ -34,13 +34,13 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget,
                              QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QDialog, QDialogButtonBox, QFrame,
                              QScrollArea, QPlainTextEdit, QGraphicsOpacityEffect, QButtonGroup, QToolTip, QComboBox,
                              QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy, QMessageBox, QStyledItemDelegate, QStyle,
-                             QGraphicsDropShadowEffect)
+                             QGraphicsDropShadowEffect, QSplitter, QTreeWidget, QTreeWidgetItem)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
 except ImportError:
     QSvgRenderer = None
-from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor, QWebEngineScript
 try:   # systemowe sterowanie multimediami Windows (SMTC): pip install winrt-Windows.Media.Control winrt-Windows.Storage.Streams
     import asyncio, threading
     from winrt.windows.media.control import (GlobalSystemMediaTransportControlsSessionManager as _SMTC,
@@ -775,6 +775,15 @@ def plural(n: int) -> str:
     return "aplikacji"
 
 
+def _path(pts, close=False):
+    path = QPainterPath(QPointF(*pts[0]))
+    for x, y in pts[1:]:
+        path.lineTo(x, y)
+    if close:
+        path.closeSubpath()
+    return path
+
+
 def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
     """Ikony paska rysowane liniowo (spójna, cienka kreska)."""
     S = 44
@@ -845,6 +854,19 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
     elif kind == "search":
         p.setPen(QPen(QColor("#9a9a9a"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         p.drawEllipse(9, 9, 18, 18); p.drawLine(24, 24, 34, 34)
+    elif kind == "shield":
+        p.drawPath(_path([(22, 8), (34, 13), (33, 24), (22, 36), (11, 24), (10, 13)], True))
+    elif kind == "key":
+        p.drawEllipse(9, 15, 13, 13); p.drawLine(21, 21, 35, 21); p.drawLine(30, 21, 30, 27); p.drawLine(35, 21, 35, 26)
+    elif kind == "split":
+        p.drawRoundedRect(QRectF(9, 11, 26, 22), 4, 4); p.drawLine(22, 11, 22, 33)
+    elif kind == "folder":
+        p.drawPath(_path([(8, 14), (17, 14), (20, 17), (36, 17), (36, 32), (8, 32)], True))
+    elif kind == "swap":
+        p.drawPolyline(P((11, 16), (33, 16))); p.drawPolyline(P((28, 11), (33, 16), (28, 21)))
+        p.drawPolyline(P((33, 28), (11, 28))); p.drawPolyline(P((16, 23), (11, 28), (16, 33)))
+    elif kind == "layers":
+        p.drawPolygon(P((22, 9), (36, 16), (22, 23), (8, 16))); p.drawPolyline(P((8, 22), (22, 29), (36, 22)))
     elif kind == "play":
         p.setBrush(QColor(color)); p.drawPolygon(P((15, 11), (33, 22), (15, 33)))
     elif kind == "pause":
@@ -930,6 +952,24 @@ def chevron_path() -> str:
     return f.as_posix()
 
 
+STYLE += """
+QWidget#tabpanel { background:rgba(10,10,10,0.92); border-right:1px solid #1d1d1d; }
+QTreeWidget#vtabs { background:transparent; border:none; color:#c9c9c9; outline:0; font-size:13px; show-decoration-selected:0; }
+QTreeWidget#vtabs::item { height:30px; border-radius:8px; padding-left:2px; }
+QTreeWidget#vtabs::item:hover { background:#1c1c1c; color:#ffffff; }
+QTreeWidget#vtabs::item:selected { background:#ececec; color:#111111; }
+QTreeWidget#vtabs::item:selected { border-top-left-radius:0; border-bottom-left-radius:0; }
+QTreeWidget#vtabs::branch:selected { background:#ececec; border-top-left-radius:8px; border-bottom-left-radius:8px; }   /* zaznaczona jest zawsze karta (bez strzałki), więc pigułka obejmuje też margines */
+QFrame#notice { background:#1b1b1b; border-bottom:1px solid #2a2a2a; }
+QPushButton#primary { background:#ececec; color:#111111; font-weight:600; }
+QPushButton#primary:hover { background:#ffffff; }
+QWidget#splithead { background:#141414; border-bottom:1px solid #222222; }
+QLineEdit#splitaddr { background:#1d1d1d; border:1px solid #2a2a2a; border-radius:13px; padding:3px 10px; color:#dcdcdc; }
+QSplitter#split::handle { background:#1d1d1d; }
+QSplitter#split::handle:hover { background:#3a3a3a; }
+"""
+
+
 def full_style() -> str:
     s = STYLE.replace("%CHEV%", chevron_path())
     imgs = ui_images()
@@ -941,43 +981,348 @@ def full_style() -> str:
 POPUPS, _PROFILE = [], []
 
 
-def get_profile() -> QWebEngineProfile:
-    """Jeden trwały profil dla całej Luny: logowania na stronach (też w panelu AI) zostają po restarcie."""
+def get_profile(container: str = "") -> QWebEngineProfile:
+    """Jeden trwały profil dla całej Luny: logowania na stronach (też w panelu AI) zostają po restarcie.
+    container != "" → osobny profil kontenera (własne ciasteczka i logowania, np. drugie konto w tym samym serwisie)."""
+    if container:
+        if container not in _CONTAINER_PROFILES:
+            prof = QWebEngineProfile("Luna-" + container, QApplication.instance())
+            _setup_profile(prof, HOME / ".luna_profile" / "kontenery" / container)
+            _CONTAINER_PROFILES[container] = prof
+        return _CONTAINER_PROFILES[container]
     if not _PROFILE:
         prof = QWebEngineProfile("Luna", QApplication.instance())
-        base = HOME / ".luna_profile"
-        try:
-            base.mkdir(exist_ok=True)
-        except OSError:
-            pass
-        prof.setPersistentStoragePath(str(base / "data")); prof.setCachePath(str(base / "cache"))
-        prof.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
-        # zwykły Chromium zamiast „QtWebEngine” w User-Agent – logowanie (np. Google) rzadziej jest blokowane
-        prof.setHttpUserAgent(re.sub(r"\s*QtWebEngine/\S+", "", prof.httpUserAgent()))
+        _setup_profile(prof, HOME / ".luna_profile")
         _PROFILE.append(prof)
     return _PROFILE[0]
+
+
+def _setup_profile(prof, base):
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    prof.setPersistentStoragePath(str(base / "data")); prof.setCachePath(str(base / "cache"))
+    prof.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+    # zwykły Chromium zamiast „QtWebEngine” w User-Agent – logowanie (np. Google) rzadziej jest blokowane
+    prof.setHttpUserAgent(re.sub(r"\s*QtWebEngine/\S+", "", prof.httpUserAgent()))
+    if SHIELD:
+        prof.setUrlRequestInterceptor(SHIELD[0])
+    for name, src, world, point in ((("luna-hasla", PW_JS.replace("%K%", PW_KEY), QWebEngineScript.ScriptWorldId.ApplicationWorld,
+                                       QWebEngineScript.InjectionPoint.DocumentReady)),
+                                     ("luna-ddg", DDG_JS.replace("%K%", PW_KEY), QWebEngineScript.ScriptWorldId.MainWorld,
+                                      QWebEngineScript.InjectionPoint.DocumentCreation)):
+        s = QWebEngineScript(); s.setName(name); s.setSourceCode(src); s.setWorldId(world)
+        s.setInjectionPoint(point); s.setRunsOnSubFrames(False); prof.scripts().insert(s)
+
+
+_CONTAINER_PROFILES = {}
+CONTAINER_COLORS = ["#5b9bff", "#3ddc84", "#f0b232", "#ff5c5c", "#c77dff", "#2ec4b6"]
+
+# --- blokada śledzenia i reklam (na poziomie sieci, bez wtyczek) ---
+TRACKERS = set("""doubleclick.net googlesyndication.com googleadservices.com google-analytics.com googletagmanager.com
+googletagservices.com adservice.google.com pagead2.googlesyndication.com connect.facebook.net scorecardresearch.com
+quantserve.com adnxs.com criteo.com criteo.net taboola.com outbrain.com hotjar.com moatads.com amazon-adsystem.com
+adsrvr.org rubiconproject.com pubmatic.com openx.net casalemedia.com 2mdn.net smartadserver.com bidswitch.net teads.tv
+mgid.com zemanta.com clarity.ms bat.bing.com mouseflow.com fullstory.com mixpanel.com segment.io segment.com
+gemius.pl hit.gemius.pl adocean.pl adform.net adform.com yandex.ru/metrika mc.yandex.ru ads.linkedin.com
+analytics.tiktok.com ads-twitter.com static.ads-twitter.com ads.yahoo.com adroll.com doubleverify.com
+adsafeprotected.com media.net yieldmo.com sharethrough.com indexww.com lijit.com sovrn.com""".split())
+BLOCKLIST = HOME / ".luna_blokady.txt"
+BLOCKLIST_URL = "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0&mimetype=plaintext"
+_SLD = {"co", "com", "org", "net", "gov", "edu", "ac", "gob"}
+
+
+def base_domain(host):
+    """Przybliżona domena główna: sklep.allegro.pl → allegro.pl, news.bbc.co.uk → bbc.co.uk."""
+    p = (host or "").lower().strip(".").split(".")
+    return ".".join(p[-3:] if len(p) >= 3 and p[-2] in _SLD else p[-2:])
+
+
+class Shield(QWebEngineUrlRequestInterceptor):
+    """Blokuje zapytania do domen reklamowych i śledzących, ale tylko z cudzych domen (third-party) – strona sama
+    w sobie działa. Wywoływane w wątku sieci Chromium, więc tylko szybkie sprawdzenie w zbiorze domen."""
+
+    def __init__(self, store):
+        super().__init__(QApplication.instance())
+        self.store, self.domains = store, set(TRACKERS)
+        self.blocked = {}    # domena strony → liczba zablokowanych zapytań od ostatniego wczytania
+        self.total = int(store.settings.get("shield_total", 0))
+        self.reload()
+
+    def reload(self):
+        self.on = self.store.feature("adblock")
+        self.allow = set(self.store.settings.get("shield_allow", []))
+        try:
+            self.domains = TRACKERS | {x.strip().lower() for x in BLOCKLIST.read_text(encoding="utf-8").split()
+                                       if "." in x and not x.startswith("#")}
+        except OSError:
+            self.domains = set(TRACKERS)
+
+    def update_list(self, done=None):
+        """Lista Petera Lowe'a (ok. 3500 domen) – pobierana raz na tydzień, działa też bez niej (lista wbudowana)."""
+        def got(data, err, status):
+            ok = bool(data) and status == 200 and b"." in data
+            if ok:
+                try:
+                    BLOCKLIST.write_bytes(data); self.reload()
+                except OSError:
+                    ok = False
+            if done:
+                done(ok)
+        self.store.http(BLOCKLIST_URL, got, raw=True, timeout=20000)
+
+    def maybe_update(self):
+        try:
+            old = time.time() - BLOCKLIST.stat().st_mtime > 7 * 86400
+        except OSError:
+            old = True
+        if old and self.on:
+            self.update_list()
+
+    def interceptRequest(self, info):
+        if not self.on:
+            return
+        h = info.requestUrl().host().lower()
+        fp = info.firstPartyUrl().host().lower()
+        if not h or not fp or base_domain(h) == base_domain(fp) or base_domain(fp) in self.allow:
+            return
+        parts = h.split(".")
+        for i in range(len(parts) - 1):
+            if ".".join(parts[i:]) in self.domains:
+                info.block(True)
+                self.blocked[fp] = self.blocked.get(fp, 0) + 1; self.total += 1
+                return
+
+    def count(self, url):
+        return self.blocked.get(QUrl(url).host().lower(), 0)
+
+    def reset(self, url):
+        self.blocked.pop(QUrl(url).host().lower(), None)
+
+
+SHIELD = []
+
+# --- hasła: przechwytywanie formularzy logowania (świat izolowany – skrypty strony go nie widzą) ---
+PW_KEY = "__luna_" + secrets.token_hex(8) + ":"
+PW_JS = r"""(function(){
+ if (window.__lunaPw) return; window.__lunaPw = 1; var K = "%K%", last = 0;
+ function grab(root){
+   var now = Date.now(); if (now - last < 800) return;
+   root = root || document;
+   var pws = [].slice.call(root.querySelectorAll('input[type=password]')).filter(function(p){return p.value;});
+   var inputs = [].slice.call(root.querySelectorAll('input'));
+   function isUser(x){var t=(x.type||'text').toLowerCase(); return (t=='text'||t=='email'||t=='tel') && x.value;}
+   if (!pws.length) {   // logowanie dwuetapowe (np. Google): najpierw tylko login
+     var u0 = inputs.filter(isUser)[0];
+     if (u0 && /mail|user|login|identifier|konto/i.test((u0.name||'')+(u0.id||'')+(u0.autocomplete||'')+(u0.type||'')))
+       console.log(K + JSON.stringify({u:u0.value, p:''}));
+     return;
+   }
+   last = now; var pw = pws[0], idx = inputs.indexOf(pw), user = '';
+   for (var i = idx - 1; i >= 0; i--) if (isUser(inputs[i])) { user = inputs[i].value; break; }
+   if (!user) { var u = document.querySelector('input[autocomplete=username],input[type=email]'); if (u) user = u.value || ''; }
+   console.log(K + JSON.stringify({u:user, p:pw.value, n:pws.length}));
+ }
+ document.addEventListener('submit', function(e){ grab(e.target); }, true);
+ document.addEventListener('click', function(e){
+   var b = e.target.closest && e.target.closest('button,input[type=submit],[role=button]');
+   if (b) setTimeout(function(){ grab(b.form || null); }, 0); }, true);
+ document.addEventListener('keydown', function(e){
+   if (e.key === 'Enter' && e.target && e.target.tagName === 'INPUT') grab(e.target.form || null); }, true);
+})();"""
+# DuckDuckGo Email Protection: panel duckduckgo.com/email wysyła token w nagłówku Authorization przy tworzeniu adresu
+DDG_JS = r"""(function(){
+ if (!/(^|\.)duckduckgo\.com$/.test(location.hostname) || window.__lunaDdg) return; window.__lunaDdg = 1; var K = "%K%";
+ function seen(url, auth){ if (auth && /quack\.duckduckgo\.com\/api\/email\/addresses/.test(String(url)) && /^Bearer /i.test(auth))
+   console.log(K + "ddg:" + auth.slice(7)); }
+ var f = window.fetch; if (f) window.fetch = function(input, init){
+   try { var h = (init && init.headers) || (input && input.headers), a = '';
+     if (h) a = h.get ? h.get('Authorization') : (h.Authorization || h.authorization || '');
+     seen(input && input.url || input, a); } catch (e) {}
+   return f.apply(this, arguments); };
+ var o = XMLHttpRequest.prototype.open, s = XMLHttpRequest.prototype.setRequestHeader;
+ XMLHttpRequest.prototype.open = function(m, u){ this.__lunaU = u; return o.apply(this, arguments); };
+ XMLHttpRequest.prototype.setRequestHeader = function(k, v){
+   if (/^authorization$/i.test(k)) seen(this.__lunaU, v); return s.apply(this, arguments); };
+})();"""
+FILL_JS = r"""(function(u, p){
+ var pw = [].slice.call(document.querySelectorAll('input[type=password]')).filter(function(x){return x.offsetParent !== null;})[0];
+ function set(el, v){ if (!el || v === null) return; el.focus(); el.value = v;
+   el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); }
+ var inputs = [].slice.call(document.querySelectorAll('input')), user = null;
+ if (pw) { for (var i = inputs.indexOf(pw) - 1; i >= 0; i--) { var t = (inputs[i].type||'text').toLowerCase();
+   if ((t=='text'||t=='email'||t=='tel') && inputs[i].offsetParent !== null) { user = inputs[i]; break; } } }
+ if (!user) user = document.querySelector('input[autocomplete=username],input[type=email]');
+ if (u !== null) set(user, u); if (p !== null && pw) set(pw, p);
+ return !!pw || !!user;
+})(%U%, %P%)"""
+GEN_FILL_JS = r"""(function(p){
+ var all = [].slice.call(document.querySelectorAll('input[type=password]')).filter(function(x){return x.offsetParent !== null;});
+ all.forEach(function(el){ el.focus(); el.value = p;
+   el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); });
+ return all.length;
+})(%P%)"""
+EMAIL_FILL_JS = r"""(function(v){
+ var a = document.activeElement, el = (a && a.tagName === 'INPUT' && /email|text/.test(a.type||'text')) ? a :
+   document.querySelector('input[type=email],input[autocomplete=email],input[name*=mail i]');
+ if (!el) return false; el.focus(); el.value = v;
+ el.dispatchEvent(new Event('input', {bubbles:true})); el.dispatchEvent(new Event('change', {bubbles:true})); return true;
+})(%V%)"""
+
+
+class LunaPage(QWebEnginePage):
+    """Strona z kanałem zwrotnym z naszych skryptów (hasła, token DuckDuckGo) przez komunikaty konsoli z kluczem sesji."""
+    pw_captured = pyqtSignal(dict)
+
+    def javaScriptConsoleMessage(self, level, msg, line, src):
+        if not msg.startswith(PW_KEY):
+            return super().javaScriptConsoleMessage(level, msg, line, src)
+        body = msg[len(PW_KEY):]
+        if body.startswith("ddg:"):
+            if self.url().host().endswith("duckduckgo.com") and VAULT:
+                VAULT[0].set_ddg_token(body[4:].strip())
+            return
+        try:
+            d = json.loads(body)
+        except ValueError:
+            return
+        if isinstance(d, dict):
+            d["origin"] = origin_of(self.url().toString()); self.pw_captured.emit(d)
+
+
+def origin_of(url):
+    u = QUrl(url)
+    return f"{u.scheme()}://{u.host()}" + (f":{u.port()}" if u.port() > 0 else "")
+
+
+def gen_password(n=20):
+    """Silne hasło: litery, cyfry i znaki, bez mylących (l, I, 0, O)."""
+    sets = ["abcdefghijkmnopqrstuvwxyz", "ABCDEFGHJKLMNPQRSTUVWXYZ", "23456789", "!#$%&*+-=?@_"]
+    pw = [secrets.choice(s) for s in sets] + [secrets.choice("".join(sets)) for _ in range(max(4, n) - 4)]
+    random.SystemRandom().shuffle(pw)
+    return "".join(pw)
+
+
+def _dpapi(data: bytes, protect: bool) -> bytes:
+    """Szyfrowanie Windows DPAPI – klucz związany z kontem użytkownika Windows (jak w Chrome i Edge)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+    buf = ctypes.create_string_buffer(data, len(data)); ent = ctypes.create_string_buffer(b"Luna-hasla", 10)
+    inp = BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))
+    extra = BLOB(10, ctypes.cast(ent, ctypes.POINTER(ctypes.c_char))); out = BLOB()
+    fn = ctypes.windll.crypt32.CryptProtectData if protect else ctypes.windll.crypt32.CryptUnprotectData
+    if not fn(ctypes.byref(inp), None, ctypes.byref(extra), None, None, 0x01, ctypes.byref(out)):
+        raise OSError("DPAPI")
+    try:
+        return ctypes.string_at(out.pbData, out.cbData)
+    finally:
+        ctypes.windll.kernel32.LocalFree(ctypes.cast(out.pbData, ctypes.c_void_p))
+
+
+class Vault(QObject):
+    """Menedżer haseł: zaszyfrowany plik ~/.luna_hasla.bin (Windows DPAPI) albo pęk kluczy systemu (pakiet keyring).
+    Odszyfrowany tylko w pamięci tego procesu. Zawiera też token DuckDuckGo do aliasów e-mail."""
+    changed = pyqtSignal()
+    PATH = HOME / ".luna_hasla.bin"
+
+    def __init__(self):
+        super().__init__()
+        self.mode = "dpapi" if sys.platform == "win32" else ("keyring" if _keyring() else "")
+        self.data = {"logins": [], "never": [], "ddg": ""}
+        self.error = ""
+        self._load()
+
+    def available(self):
+        return bool(self.mode)
+
+    def _load(self):
+        raw = None
+        try:
+            if self.mode == "dpapi" and self.PATH.exists():
+                raw = _dpapi(self.PATH.read_bytes(), False)
+            elif self.mode == "keyring":
+                v = _keyring().get_password("Luna", "hasla"); raw = v.encode() if v else None
+            if raw:
+                self.data.update(json.loads(raw.decode("utf-8")))
+        except Exception:
+            self.error = "Nie udało się odczytać zapisanych haseł (inne konto Windows albo uszkodzony plik)."
+
+    def save(self):
+        raw = json.dumps(self.data, ensure_ascii=False).encode("utf-8")
+        try:
+            if self.mode == "dpapi":
+                tmp = self.PATH.with_suffix(".tmp"); tmp.write_bytes(_dpapi(raw, True)); tmp.replace(self.PATH)
+            elif self.mode == "keyring":
+                _keyring().set_password("Luna", "hasla", raw.decode("utf-8"))
+        except Exception:
+            self.error = "Nie udało się zapisać haseł."
+        self.changed.emit()
+
+    def logins(self, origin=None):
+        return [x for x in self.data["logins"] if origin is None or x["origin"] == origin]
+
+    def find(self, origin, user):
+        return next((x for x in self.data["logins"] if x["origin"] == origin and x["user"] == user), None)
+
+    def put(self, origin, user, pw):
+        x = self.find(origin, user)
+        if x:
+            x.update(pw=pw, ts=int(time.time()))
+        else:
+            self.data["logins"].append({"origin": origin, "user": user, "pw": pw, "ts": int(time.time())})
+        self.save()
+
+    def remove(self, origin, user):
+        self.data["logins"] = [x for x in self.data["logins"] if not (x["origin"] == origin and x["user"] == user)]
+        self.save()
+
+    def never(self, origin, add=None):
+        if add is None:
+            return origin in self.data["never"]
+        lst = [o for o in self.data["never"] if o != origin] + ([origin] if add else [])
+        self.data["never"] = lst; self.save()
+
+    def set_ddg_token(self, tok):
+        if tok and tok != self.data.get("ddg"):
+            self.data["ddg"] = tok; self.save()
+
+
+def _keyring():
+    try:
+        import keyring
+        return keyring
+    except Exception:
+        return None
+
+
+VAULT = []
 
 
 class WebView(QWebEngineView):
     """Widok strony: linki „w nowej karcie” otwierają kartę Luny, okna logowania – osobne okienko."""
     link_requested = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, container=""):
         super().__init__(parent)
-        self.setPage(QWebEnginePage(get_profile(), self))
+        self.container = container
+        self.setPage(LunaPage(get_profile(container), self))
         self.page().setBackgroundColor(QColor("#111111"))
 
     def createWindow(self, wtype):
         W = QWebEnginePage.WebWindowType
         if wtype in (W.WebDialog, W.WebBrowserWindow):  # np. okno logowania Google/OAuth
-            pop = WebView(); pop.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            pop = WebView(container=self.container); pop.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
             pop.resize(520, 720); pop.setWindowTitle("Luna – logowanie"); pop.setWindowIcon(app_icon())
             pop.page().windowCloseRequested.connect(pop.close)
             POPUPS.append(pop)
             pop.destroyed.connect(lambda _=None, p=pop: POPUPS.remove(p) if p in POPUPS else None)
             pop.show()
             return pop
-        tmp = WebView(self)  # zwykły link: łapiemy docelowy adres i otwieramy go w nowej karcie
+        tmp = WebView(self, self.container)  # zwykły link: łapiemy docelowy adres i otwieramy go w nowej karcie
         tmp.page().urlChanged.connect(lambda u, t=tmp: self._grab(u, t))
         return tmp
 
@@ -1017,6 +1362,7 @@ class Store(QObject):
         self.weather = {}
         GLASS_ALPHA[0] = int(self.settings.get("glass", 168)); BG.store = self
         self.bump_day(emit=False)  # samo uruchomienie przeglądarki liczy się do serii
+        SHIELD.append(Shield(self)); VAULT.append(Vault())   # przed pierwszym profilem WebEngine
         self.session = SessionBridge(self)  # logowania z kart Luny dostępne dla widgetów i kafelków
 
     @staticmethod
@@ -1538,6 +1884,15 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "suggest": ("Podpowiedzi wyszukiwania", "Lista pod paskiem adresu: historia, kafelki i otwarte karty (lokalnie, bez sieci).", True),
     "suggest_net": ("Podpowiedzi z sieci", "Wysyła wpisywany tekst do wybranej wyszukiwarki po propozycje. Wyłącz dla pełnej prywatności.", True),
     "discord": ("Integracja z Discordem", "Widget Discord i połączenie konta. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
+    "vertical_tabs": ("Pionowe karty i grupy", "Karty w panelu po lewej: pełne tytuły i zwijane grupy (foldery projektów). "
+                      "Wyłączone: klasyczny pasek kart u góry.", True),
+    "restore_tabs": ("Przywracanie kart", "Po uruchomieniu wracają karty, grupy, przestrzenie i kontenery (strony wczytują się "
+                     "dopiero po wejściu na kartę).", True),
+    "sleep_tabs": ("Usypianie nieaktywnych kart", "Karty nieużywane przez dłuższy czas zwalniają pamięć RAM i nie zużywają baterii "
+                   "(nie dotyczy kart odtwarzających dźwięk).", True),
+    "adblock": ("Blokada reklam i śledzenia", "Blokuje skrypty śledzące i reklamy z cudzych domen na poziomie sieci – bez wtyczek.", True),
+    "passwords": ("Menedżer haseł", "Proponuje zapis haseł po zalogowaniu i sam wypełnia formularze. Hasła są szyfrowane "
+                  "na tym komputerze.", True),
     "discord_watch": ("Licznik Discorda w tle", "Ukryty Discord Web (wyciszony) liczy wzmianki dla widgetu i kafelka – ok. 200–300 MB RAM. "
                       "Wyłączony: licznik tylko z otwartych kart Discorda.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
@@ -2568,6 +2923,8 @@ class ClipboardWidget(WidgetFrame):
         if self._self:
             self._self = False; return
         t = self.cb.text().strip()
+        if t and t == SECRET_CLIP[0]:   # hasło skopiowane przez menedżer haseł
+            return
         if t and (not self.hist or self.hist[0] != t):
             self.hist = [t] + [h for h in self.hist if h != t][:7]; self.render()
 
@@ -4002,6 +4359,9 @@ class SessionBridge(QObject):
             if root.tag != ATOM + "feed":   # np. strona logowania, która akurat jest poprawnym XML-em
                 raise ValueError
             count = int(root.findtext(ATOM + "fullcount") or 0)
+            m = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", root.findtext(ATOM + "title") or "")
+            if m:
+                self.gmail["email"] = m.group(0)
         except (ET.ParseError, ValueError):
             root = None
         if root is None:   # 401 albo strona logowania zamiast kanału
@@ -4912,7 +5272,8 @@ def page_keys(dlg):
     w, l = page_box("Skróty klawiszowe i gesty", "Można je wyłączyć w Funkcje → Skróty klawiszowe i gesty myszy.")
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
-                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"),
+                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"),
+                 ("Ctrl + Shift + G", "Dodaj kartę do grupy"),
                  ("Środkowy przycisk na karcie", "Zamyka kartę"), ("Środkowy przycisk na pustym pasku", "Nowa karta")):
         row = QHBoxLayout(); a = lbl(k, "h3"); b = lbl(d, "muted2")
         row.addWidget(a); row.addStretch(); row.addWidget(b); l.addLayout(row)
@@ -4920,7 +5281,237 @@ def page_keys(dlg):
     return scroll_page(w)
 
 
-_ORDER = ["features", "widgets", "accounts", "look", "keys", "dev"]
+SECRET_CLIP = [""]   # hasło skopiowane przez Lunę – widget Schowek go nie zapamiętuje
+
+
+def copy_secret(text):
+    SECRET_CLIP[0] = text; QGuiApplication.clipboard().setText(text)
+
+
+class NoticeBar(QFrame):
+    """Pasek pod narzędziami: pytanie (np. „Zapisać hasło?”) z przyciskami albo krótka informacja."""
+
+    def __init__(self):
+        super().__init__(); self.setObjectName("notice"); self.hide()
+        h = QHBoxLayout(self); h.setContentsMargins(16, 6, 10, 6); h.setSpacing(6)
+        self.ic = QLabel(); self.ic.setPixmap(glyph("key", "#ececec").pixmap(18, 18)); self.ic.setFixedSize(20, 20)
+        self.text = lbl("", "h3"); h.addWidget(self.ic); h.addWidget(self.text, 1)
+        self.btns = QHBoxLayout(); self.btns.setSpacing(6); h.addLayout(self.btns)
+        self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.hide)
+
+    def _clear(self):
+        while self.btns.count():
+            w = self.btns.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+
+    def ask(self, text, actions):
+        self._t.stop(); self._clear(); self.text.setText(text)
+        for label, fn, primary in actions:
+            b = QPushButton(label)
+            if primary:
+                b.setObjectName("primary")
+            b.clicked.connect(lambda _=False, f=fn: (self.hide(), f() if f else None))
+            self.btns.addWidget(b)
+        self.show()
+
+    def info(self, text, ms=6000):
+        self._clear(); self.text.setText(text); self.show(); self._t.start(ms)
+
+
+@settings_page("tabs", "Karty i przestrzenie")
+def page_tabs(dlg):
+    w, l = page_box("Karty i przestrzenie", "Pionowe karty z grupami, przestrzenie robocze (np. Praca, Zakupy, Hobby), "
+                                            "podział ekranu i usypianie nieaktywnych kart.")
+    st, b = dlg.store, dlg.browser
+    for fid in ("vertical_tabs", "restore_tabs", "sleep_tabs"):
+        name, desc, _ = FEATURES[fid]
+        l.addWidget(switch_row(name, desc, st.feature(fid), lambda v, f=fid: st.set_feature(f, v)))
+    combo = QComboBox()
+    for m in (5, 15, 30, 60, 120):
+        combo.addItem(f"po {m} min bez używania", m)
+    combo.setCurrentIndex(max(0, combo.findData(int(st.settings.get("sleep_after", 15)))))
+    combo.currentIndexChanged.connect(lambda _: (st.settings.__setitem__("sleep_after", combo.currentData()), st.save_soon()))
+    l.addWidget(lbl("Usypiaj karty", "h3")); l.addWidget(combo); l.addSpacing(12)
+    l.addWidget(lbl("Przestrzenie robocze", "h3"))
+    l.addWidget(lbl("Każda przestrzeń ma własne karty – nie mieszają się. Przełączasz je przyciskiem obok logo na pasku kart.",
+                    "muted", wrap=True))
+    lw = QListWidget(); lw.setObjectName("wlist"); lw.setMaximumHeight(150); lw.viewport().setAutoFillBackground(False)
+
+    def fill():
+        lw.clear()
+        for name in b.workspaces():
+            n = sum(1 for t in b.all_tabs() if t.ws == name)
+            lw.addItem(f"{name}  ·  {n} {'karta' if n == 1 else 'kart'}" + ("  (bieżąca)" if name == b.ws else ""))
+    fill(); l.addWidget(lw)
+    row = QHBoxLayout(); row.setSpacing(6)
+    for text, fn in (("Nowa przestrzeń…", b.new_ws), ("Zmień nazwę bieżącej…", b.rename_ws), ("Usuń bieżącą", b.delete_ws)):
+        bt = QPushButton(text); bt.clicked.connect(lambda _=False, f=fn: (f(), fill())); row.addWidget(bt)
+    row.addStretch(); l.addLayout(row); l.addSpacing(12)
+    l.addWidget(lbl("Podział ekranu", "h3"))
+    l.addWidget(lbl("Ctrl+\\ albo prawy klik na karcie → Podziel ekran: dwie strony obok siebie w jednej karcie.", "muted", wrap=True))
+    l.addStretch(1)
+    return scroll_page(w)
+
+
+@settings_page("privacy", "Prywatność")
+def page_privacy(dlg):
+    w, l = page_box("Prywatność i bezpieczeństwo", "Blokada śledzenia działa w silniku przeglądarki (bez wtyczek), "
+                                                  "a kontenery izolują ciasteczka i logowania.")
+    st, b = dlg.store, dlg.browser
+    name, desc, _ = FEATURES["adblock"]
+    l.addWidget(switch_row(name, desc, st.feature("adblock"), lambda v: st.set_feature("adblock", v)))
+    sh = SHIELD[0] if SHIELD else None
+    stat = lbl("", "muted2", wrap=True); l.addWidget(stat)
+
+    def show_stat(ok=None):
+        if sh is None:
+            stat.setText("Blokada niedostępna."); return
+        try:
+            when = datetime.fromtimestamp(BLOCKLIST.stat().st_mtime).strftime("%d.%m.%Y")
+        except OSError:
+            when = "nigdy (działa lista wbudowana)"
+        stat.setText(f"Domen na liście: {len(sh.domains)} · lista z sieci: {when} · zablokowano łącznie: {sh.total}"
+                     + ("" if ok is None else ("  ·  zaktualizowano" if ok else "  ·  nie udało się pobrać")))
+    show_stat()
+    up = QPushButton("Zaktualizuj listę teraz"); up.clicked.connect(lambda: sh and sh.update_list(show_stat))
+    l.addWidget(up, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(8)
+    l.addWidget(lbl("Strony z wyłączoną blokadą", "h3"))
+    al = QListWidget(); al.setObjectName("wlist"); al.setMaximumHeight(110); al.viewport().setAutoFillBackground(False)
+    al.addItems(st.settings.get("shield_allow", [])); l.addWidget(al)
+    rm = QPushButton("Usuń zaznaczoną (włącz blokadę)")
+    rm.clicked.connect(lambda: al.currentItem() and (b.shield_allow(al.currentItem().text(), False), al.takeItem(al.currentRow())))
+    l.addWidget(rm, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(14)
+    l.addWidget(lbl("Kontenery", "h3"))
+    l.addWidget(lbl("Karta w kontenerze ma osobne ciasteczka i logowania – np. trzy konta w tym samym serwisie jednocześnie, "
+                    "a serwisy z innych kontenerów nie widzą Twoich wizyt. Nową kartę w kontenerze otworzysz prawym "
+                    "klikiem na przycisku +.", "muted", wrap=True))
+    cl = QListWidget(); cl.setObjectName("wlist"); cl.setMaximumHeight(140); cl.viewport().setAutoFillBackground(False)
+
+    def fill():
+        cl.clear()
+        for c in b.containers():
+            it = QListWidgetItem(tab_icon(None, c["color"]), c["name"]); it.setData(Qt.ItemDataRole.UserRole, c["id"]); cl.addItem(it)
+    fill(); l.addWidget(cl)
+
+    def sel():
+        it = cl.currentItem()
+        return next((c for c in b.containers() if it and c["id"] == it.data(Qt.ItemDataRole.UserRole)), None)
+
+    def rename():
+        c = sel()
+        if c:
+            n, ok = QInputDialog.getText(dlg, "Zmień nazwę", "Nazwa kontenera:", text=c["name"])
+            if ok and n.strip():
+                c["name"] = n.strip(); st.save_soon(); fill(); b.tabs_changed()
+
+    def delete():
+        c = sel()
+        if c and QMessageBox.question(dlg, "Luna", f"Usunąć kontener „{c['name']}”? Jego karty przejdą do zwykłego profilu, "
+                                      "a zapisane w nim logowania zostaną usunięte.") == QMessageBox.StandardButton.Yes:
+            b.containers().remove(c); st.save_soon()
+            for t in b.all_tabs():
+                if t.container == c["id"]:
+                    b.reopen_in(t, "")
+            prof = _CONTAINER_PROFILES.pop(c["id"], None)
+            if prof is not None:
+                prof.cookieStore().deleteAllCookies(); prof.clearHttpCache()
+            fill()
+    row = QHBoxLayout(); row.setSpacing(6)
+    for text, fn in (("Nowy kontener…", lambda: (b.new_container(), fill())), ("Zmień nazwę…", rename), ("Usuń", delete)):
+        bt = QPushButton(text); bt.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(bt)
+    row.addStretch(); l.addLayout(row)
+    l.addStretch(1)
+    return scroll_page(w)
+
+
+@settings_page("passwords", "Hasła i aliasy")
+def page_passwords(dlg):
+    w, l = page_box("Hasła i aliasy e-mail", "Hasła są szyfrowane na tym komputerze (Windows DPAPI – tak jak w Chrome i Edge) "
+                                            "i nigdzie nie są wysyłane. Luna proponuje zapis po zalogowaniu i sama wypełnia formularz.")
+    st, b = dlg.store, dlg.browser
+    v = VAULT[0] if VAULT else None
+    name, desc, _ = FEATURES["passwords"]
+    l.addWidget(switch_row(name, desc, st.feature("passwords"), lambda on: st.set_feature("passwords", on)))
+    if v is None or not v.available():
+        l.addWidget(lbl("Menedżer haseł wymaga Windows albo pakietu keyring (pip install keyring).", "muted2", wrap=True))
+    elif v.error:
+        l.addWidget(lbl(v.error, "muted2", wrap=True))
+    flt = QLineEdit(); flt.setObjectName("glassin"); flt.setPlaceholderText("Szukaj strony lub loginu…"); l.addWidget(flt)
+    lw = QListWidget(); lw.setObjectName("wlist"); lw.setMinimumHeight(170); lw.viewport().setAutoFillBackground(False)
+    l.addWidget(lw)
+
+    def fill():
+        lw.clear()
+        if v is None:
+            return
+        q = flt.text().lower().strip()
+        for x in sorted(v.logins(), key=lambda x: x["origin"]):
+            if q and q not in x["origin"].lower() and q not in x["user"].lower():
+                continue
+            it = QListWidgetItem(f"{QUrl(x['origin']).host()}   ·   {x['user'] or '(bez loginu)'}   ·   ••••••••")
+            it.setData(Qt.ItemDataRole.UserRole, (x["origin"], x["user"])); lw.addItem(it)
+    flt.textChanged.connect(lambda _: fill()); fill()
+
+    def cur():
+        it = lw.currentItem()
+        return v.find(*it.data(Qt.ItemDataRole.UserRole)) if it and v else None
+
+    def show():
+        x = cur()
+        if x:
+            lw.currentItem().setText(f"{QUrl(x['origin']).host()}   ·   {x['user'] or '(bez loginu)'}   ·   {x['pw']}")
+
+    def remove():
+        x = cur()
+        if x and QMessageBox.question(dlg, "Luna", f"Usunąć hasło dla {QUrl(x['origin']).host()}?") == QMessageBox.StandardButton.Yes:
+            v.remove(x["origin"], x["user"]); fill()
+    row = QHBoxLayout(); row.setSpacing(6)
+    for text, fn in (("Pokaż", show), ("Kopiuj hasło", lambda: cur() and copy_secret(cur()["pw"])),
+                     ("Kopiuj login", lambda: cur() and QGuiApplication.clipboard().setText(cur()["user"])), ("Usuń", remove)):
+        bt = QPushButton(text); bt.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(bt)
+    row.addStretch(); l.addLayout(row)
+    if v is not None and v.data.get("never"):
+        nv = QPushButton(f"Wyczyść listę „Nigdy” ({len(v.data['never'])})")
+        nv.clicked.connect(lambda: (v.data.__setitem__("never", []), v.save(), nv.hide())); l.addWidget(nv, 0, Qt.AlignmentFlag.AlignLeft)
+    l.addSpacing(14); l.addWidget(lbl("Generator haseł", "h3"))
+    g = QHBoxLayout(); g.setSpacing(6)
+    out = QLineEdit(gen_password(int(st.settings.get("pw_len", 20)))); out.setObjectName("glassin"); out.setReadOnly(True)
+    ln = QComboBox()
+    for n in (12, 16, 20, 24, 32):
+        ln.addItem(f"{n} znaków", n)
+    ln.setCurrentIndex(max(0, ln.findData(int(st.settings.get("pw_len", 20)))))
+
+    def regen():
+        st.settings["pw_len"] = ln.currentData(); st.save_soon(); out.setText(gen_password(ln.currentData()))
+    ln.currentIndexChanged.connect(lambda _: regen())
+    nb = QPushButton("Nowe"); nb.clicked.connect(regen); cb = QPushButton("Kopiuj"); cb.clicked.connect(lambda: copy_secret(out.text()))
+    g.addWidget(out, 1); g.addWidget(ln); g.addWidget(nb); g.addWidget(cb); l.addLayout(g)
+    l.addSpacing(14); l.addWidget(lbl("Jednorazowe aliasy e-mail", "h3"))
+    has_ddg = bool(v and v.data.get("ddg"))
+    l.addWidget(lbl(("DuckDuckGo: połączono – aliasy @duck.com przekazują pocztę na Twoją skrzynkę i ukrywają prawdziwy adres."
+                     if has_ddg else
+                     "DuckDuckGo: niepołączono. Kliknij „Połącz DuckDuckGo”, zaloguj się w karcie i raz kliknij "
+                     "„Generate Private Duck Address” – Luna zapamięta sesję. Do tego czasu Luna tworzy aliasy z plusem "
+                     "(adres+strona@…), które pozwalają odfiltrować spam i wykryć wyciek."), "muted", wrap=True))
+    row2 = QHBoxLayout(); row2.setSpacing(6)
+    ddg = QPushButton("Rozłącz DuckDuckGo" if has_ddg else "Połącz DuckDuckGo")
+
+    def ddg_act():
+        if has_ddg:
+            v.data["ddg"] = ""; v.save(); ddg.setText("Połącz DuckDuckGo")
+        else:
+            b.open_url_new_tab("https://duckduckgo.com/email/"); dlg.close()
+    ddg.clicked.connect(ddg_act); row2.addWidget(ddg)
+    base = QLineEdit(st.settings.get("alias_base", "")); base.setObjectName("glassin")
+    base.setPlaceholderText("Adres do aliasów z plusem (np. ty@gmail.com)")
+    base.editingFinished.connect(lambda: (st.settings.__setitem__("alias_base", base.text().strip()), st.save_soon()))
+    row2.addWidget(base, 1); l.addLayout(row2)
+    l.addStretch(1)
+    return scroll_page(w)
+
+
+_ORDER = ["features", "tabs", "widgets", "accounts", "privacy", "passwords", "look", "keys", "dev"]
 SETTINGS_PAGES.sort(key=lambda p: _ORDER.index(p[0]))
 
 
@@ -5383,37 +5974,233 @@ class HomePage(QWidget):
                 self.store.fetch_icon(url); self.store.save()
 
 
-class Tab(QStackedWidget):
-    """Karta: ekran główny, a po wejściu na stronę – widok WWW (tworzony leniwie)."""
+def tab_icon(icon, color=None, asleep=False):
+    """Ikona karty: favicon (albo kropka) + kolorowa kropka kontenera; uśpiona karta – przygaszona."""
+    S = 32
+    pm = QPixmap(S, S); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    if asleep:
+        p.setOpacity(0.4)
+    if icon is not None and not icon.isNull():
+        p.drawPixmap(2, 2, icon.pixmap(28, 28))
+    else:
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#5a5a5a")); p.drawEllipse(9, 9, 14, 14)
+    p.setOpacity(1.0)
+    if color:
+        p.setPen(QPen(QColor("#111111"), 2)); p.setBrush(QColor(color)); p.drawEllipse(19, 19, 12, 12)
+    p.end()
+    return QIcon(pm)
 
-    def __init__(self, store, browser):
+
+class SplitPane(QWidget):
+    """Druga strona w podziale ekranu: własny pasek adresu i zamknięcie podziału."""
+
+    def __init__(self, tab, url):
+        super().__init__(); self.setObjectName("clear"); self.tab = tab
+        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
+        head = QWidget(); head.setObjectName("splithead"); head.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        h = QHBoxLayout(head); h.setContentsMargins(8, 4, 4, 4); h.setSpacing(4)
+        self.addr = QLineEdit(); self.addr.setObjectName("splitaddr"); self.addr.setPlaceholderText("Adres lub wyszukiwanie…")
+        self.addr.returnPressed.connect(lambda: self.web.setUrl(QUrl(normalize(self.addr.text()))) if self.addr.text().strip() else None)
+        sw = QToolButton(); sw.setIcon(glyph("swap")); sw.setIconSize(QSize(16, 16)); sw.setFixedSize(26, 26)
+        sw.setToolTip("Zamień strony miejscami"); sw.clicked.connect(lambda: tab.swap_split())
+        x = QToolButton(); x.setIcon(glyph("close")); x.setIconSize(QSize(16, 16)); x.setFixedSize(26, 26)
+        x.setToolTip("Zamknij podział (ta strona zniknie)"); x.clicked.connect(lambda: tab.unsplit())
+        h.addWidget(self.addr, 1); h.addWidget(sw); h.addWidget(x); v.addWidget(head)
+        self.web = WebView(container=tab.container); v.addWidget(self.web, 1)
+        self.web.link_requested.connect(lambda u: tab.browser.open_url_new_tab(u, tab.container))
+        self.web.urlChanged.connect(lambda u: self.addr.setText(u.toString()))
+        self.web.page().pw_captured.connect(lambda d: tab.browser.on_pw(d))
+        self.web.loadFinished.connect(lambda ok: tab.browser.autofill(self.web) if ok else None)
+        if url:
+            self.web.setUrl(QUrl(normalize(url)))
+        else:
+            QTimer.singleShot(0, self.addr.setFocus)
+
+
+class TabPanel(QWidget):
+    """Pionowe karty po lewej: pełne tytuły, zwijane grupy (foldery projektów), tylko karty bieżącej przestrzeni."""
+    W = 248
+
+    def __init__(self, browser):
+        super().__init__(); self.b = browser
+        self.setObjectName("tabpanel"); self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedWidth(self.W)
+        v = QVBoxLayout(self); v.setContentsMargins(8, 10, 8, 8); v.setSpacing(6)
+        head = QHBoxLayout(); head.setSpacing(4)
+        self.title = lbl("", "cap"); head.addWidget(self.title, 1)
+        g = QToolButton(); g.setIcon(glyph("folder")); g.setIconSize(QSize(18, 18)); g.setFixedSize(28, 28)
+        g.setToolTip("Nowa grupa z bieżącej karty"); g.clicked.connect(lambda: self.b.group_dialog(self.b.cur()))
+        n = QToolButton(); n.setIcon(glyph("plus")); n.setIconSize(QSize(18, 18)); n.setFixedSize(28, 28)
+        n.setToolTip("Nowa karta (Ctrl+T) – prawy klik: w kontenerze"); n.clicked.connect(lambda: self.b.new_tab())
+        n.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        n.customContextMenuRequested.connect(lambda _: self.b.container_menu(n.mapToGlobal(QPoint(0, n.height()))))
+        head.addWidget(g); head.addWidget(n); v.addLayout(head)
+        self.tree = QTreeWidget(); self.tree.setObjectName("vtabs"); self.tree.setHeaderHidden(True)
+        self.tree.setIndentation(12); self.tree.setIconSize(QSize(16, 16)); self.tree.setRootIsDecorated(True)
+        self.tree.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.tree.setTextElideMode(Qt.TextElideMode.ElideRight); self.tree.viewport().setAutoFillBackground(False)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._menu)
+        self.tree.itemClicked.connect(self._clicked)
+        self.tree.itemExpanded.connect(lambda it: self._fold(it, False)); self.tree.itemCollapsed.connect(lambda it: self._fold(it, True))
+        v.addWidget(self.tree, 1)
+        self.tabs = {}   # id(pozycja) → karta (odbudowywane przy każdej zmianie)
+
+    def rebuild(self):
+        b = self.b; self.tree.blockSignals(True); self.tree.clear(); self.tabs = {}; groups = {}; cur = b.cur(); sel = None
+        folded = b.store.settings.get("tab_groups", {})
+        self.title.setText(b.ws.upper())
+        for i in range(b.stack.count()):
+            t = b.stack.widget(i)
+            if t.ws != b.ws:
+                continue
+            parent = self.tree.invisibleRootItem()
+            if t.group:
+                if t.group not in groups:
+                    g = QTreeWidgetItem([t.group]); g.setData(0, Qt.ItemDataRole.UserRole, ("g", t.group))
+                    f = g.font(0); f.setBold(True); g.setFont(0, f); g.setIcon(0, glyph("folder", "#9a9a9a"))
+                    self.tree.addTopLevelItem(g); groups[t.group] = g
+                parent = groups[t.group]
+            it = QTreeWidgetItem([t.title_text or "Ekran główny"]); parent.addChild(it)
+            it.setIcon(0, tab_icon(t.icon, b.container_color(t.container), t.asleep or t.pending))
+            tip = t.title_text or "Ekran główny"
+            if t.container:
+                tip += f"\nKontener: {b.container_name(t.container)}"
+            if t.asleep or t.pending:
+                it.setForeground(0, QColor("#6f6f6f")); tip += "\nUśpiona – wybudzi się po kliknięciu"
+            it.setToolTip(0, tip); self.tabs[id(it)] = t
+            if t is cur:
+                sel = it
+        for name, g in groups.items():
+            g.setText(0, f"{name}  ·  {g.childCount()}"); g.setExpanded(not folded.get(name, False))
+        if sel is not None:
+            self.tree.setCurrentItem(sel)
+        self.tree.blockSignals(False)
+
+    def _clicked(self, it, col=0):
+        t = self.tabs.get(id(it))
+        if t is not None:
+            self.b.activate(t)
+
+    def _fold(self, it, folded):
+        d = it.data(0, Qt.ItemDataRole.UserRole)
+        if d and d[0] == "g":
+            self.b.store.settings.setdefault("tab_groups", {})[d[1]] = folded; self.b.store.save_soon()
+
+    def _menu(self, pos):
+        it = self.tree.itemAt(pos)
+        if it is None:
+            return
+        gp = self.tree.viewport().mapToGlobal(pos)
+        d = it.data(0, Qt.ItemDataRole.UserRole)
+        if d and d[0] == "g":
+            self.b.group_menu(d[1], gp)
+        elif id(it) in self.tabs:
+            self.b.tab_menu(self.tabs[id(it)], gp)
+
+
+class Tab(QStackedWidget):
+    """Karta: ekran główny, a po wejściu na stronę – widok WWW (tworzony leniwie). Należy do przestrzeni roboczej,
+    opcjonalnie do grupy i kontenera; może mieć podział ekranu (druga strona obok) i może zostać uśpiona."""
+
+    def __init__(self, store, browser, ws="", group="", container=""):
         super().__init__()
         self.browser, self.web = browser, None
+        self.ws, self.group, self.container = ws, group, container
+        self.title_text, self.icon, self.split = "", None, None
+        self.asleep, self.pending, self.last_active = False, "", time.time()
         self.home = HomePage(store)
         self.addWidget(self.home)
         self.home.attach_suggest(browser)
         self.home.opened.connect(self.go)
 
+    def _web_widget(self):
+        return self.split if self.split is not None else self.web
+
     def go(self, url):
+        self.pending = ""
         if self.web is None:
-            self.web = WebView()
-            self.web.link_requested.connect(self.browser.open_url_new_tab)
+            self.web = WebView(container=self.container)
+            self.web.link_requested.connect(lambda u: self.browser.open_url_new_tab(u, self.container))
             self.addWidget(self.web)
             self.web.page().recentlyAudibleChanged.connect(lambda _: self.browser.audio_changed.emit())
             self.web.titleChanged.connect(lambda t: self.browser.on_title(self, t))
             self.web.urlChanged.connect(lambda u: self.browser.on_url(self, u))
             self.web.iconChanged.connect(lambda i: self.browser.on_icon(self, i))
             self.web.loadFinished.connect(lambda ok: self.browser.on_loaded(self, ok))
+            self.web.loadStarted.connect(lambda: self.browser.on_load_started(self))
+            self.web.page().pw_captured.connect(lambda d: self.browser.on_pw(d))
         self.web.setUrl(QUrl(normalize(url)))
-        self.setCurrentWidget(self.web)
+        self.setCurrentWidget(self._web_widget())
         self.browser.update_sidebars_soon()
 
     def show_home(self):
         self.setCurrentWidget(self.home)
         self.browser.update_sidebars_soon()
 
+    def show_web(self):
+        if self.web is not None:
+            self.setCurrentWidget(self._web_widget())
+
     def on_home(self):
         return self.currentWidget() is self.home
+
+    # --- podział ekranu (dwie strony obok siebie w jednej karcie) ---
+    def split_with(self, url=""):
+        if self.web is None:
+            return
+        if self.split is None:
+            self.split = QSplitter(Qt.Orientation.Horizontal); self.split.setObjectName("split")
+            self.split.setChildrenCollapsible(False); self.split.setHandleWidth(6)
+            self.removeWidget(self.web); self.split.addWidget(self.web)
+            self.pane = SplitPane(self, url); self.split.addWidget(self.pane)
+            self.addWidget(self.split); self.split.setSizes([1, 1])
+        elif url:
+            self.pane.web.setUrl(QUrl(normalize(url)))
+        self.setCurrentWidget(self.split); self.browser.update_sidebars_soon()
+
+    def unsplit(self):
+        if self.split is None:
+            return
+        sp, self.split = self.split, None
+        self.web.setParent(None); self.addWidget(self.web); self.setCurrentWidget(self.web)
+        self.removeWidget(sp); sp.deleteLater(); self.pane = None
+        self.browser.update_sidebars_soon()
+
+    def swap_split(self):
+        if self.split is not None:
+            a, b = self.pane.web.url(), self.web.url()
+            self.web.setUrl(a); self.pane.web.setUrl(b)
+
+    # --- usypianie (zwalnia RAM; strona wczyta się ponownie po powrocie) ---
+    def views(self):
+        return [w for w in (self.web, getattr(self.pane, "web", None) if self.split is not None else None) if w is not None]
+
+    def audible(self):
+        return any(w.page().recentlyAudible() for w in self.views())
+
+    def sleep(self):
+        if self.asleep or self.web is None or self.audible():
+            return
+        for w in self.views():
+            try:
+                w.page().setLifecycleState(QWebEnginePage.LifecycleState.Discarded)
+            except Exception:
+                return
+        self.asleep = True
+
+    def wake(self):
+        self.last_active = time.time()
+        if self.pending:
+            self.go(self.pending)
+        if self.asleep:
+            self.asleep = False
+            for w in self.views():
+                try:
+                    w.page().setLifecycleState(QWebEnginePage.LifecycleState.Active)
+                except Exception:
+                    pass
 
 
 class Assistant(QWidget):
@@ -5594,6 +6381,7 @@ class Browser(QMainWindow):
     def __init__(self):
         super().__init__()
         self._laid, self._g_ref, self._pinned, self._suggest = False, None, None, None
+        self._prev_tab, self._ws_last, self._last_user, self._pw_pending = None, {}, {}, None
         self.setWindowTitle("Luna"); self.setWindowIcon(app_icon())
         scr = QGuiApplication.primaryScreen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
         self.resize(min(1300, int(scr.width() * 0.94)), min(860, int(scr.height() * 0.92)))
@@ -5614,9 +6402,22 @@ class Browser(QMainWindow):
         self.bar.tabMoved.connect(self.on_tab_moved)
         self.bar.middle_close.connect(lambda i: self.store.feature("shortcuts") and self.close_tab(self.stack.widget(i)))
         self.bar.middle_new.connect(lambda: self.mmb_new())
+        self.bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.bar.customContextMenuRequested.connect(self._bar_menu)
         lg = QLabel(); lg.setPixmap(logo_pixmap(22)); lg.setFixedSize(22, 22); lg.setToolTip("Luna")
         sl.addWidget(lg); sl.addSpacing(4)
-        sl.addWidget(self.bar); sl.addWidget(self.btn("plus", "Nowa karta (Ctrl+T)", self.new_tab, 30))
+        self.ws = self.store.settings.get("ws_current") if self.store.settings.get("ws_current") in self.workspaces() \
+            else self.workspaces()[0]
+        self.ws_btn = QToolButton(); self.ws_btn.setObjectName("chip"); self.ws_btn.setIcon(glyph("layers"))
+        self.ws_btn.setIconSize(QSize(16, 16)); self.ws_btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.ws_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup); self.ws_btn.setToolTip("Przestrzeń robocza")
+        self.ws_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        wm = QMenu(self.ws_btn); wm.aboutToShow.connect(self.ws_menu); self.ws_btn.setMenu(wm)
+        sl.addWidget(self.ws_btn); sl.addSpacing(4)
+        self.plus_btn = self.btn("plus", "Nowa karta (Ctrl+T) – prawy klik: w kontenerze", self.new_tab, 30)
+        self.plus_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.plus_btn.customContextMenuRequested.connect(
+            lambda _: self.container_menu(self.plus_btn.mapToGlobal(QPoint(0, self.plus_btn.height()))))
+        sl.addWidget(self.bar); sl.addWidget(self.plus_btn)
         sl.addStretch()
         self.max_btn = self.btn("max", "Maksymalizuj", self.toggle_max, 30)
         close_btn = self.btn("close", "Zamknij", self.close, 30); close_btn.setObjectName("winclose")
@@ -5648,6 +6449,13 @@ class Browser(QMainWindow):
         inner.addStretch(); inner.addWidget(self.chip)
         tl.addWidget(self.address, 1)
         tl.addSpacing(6)
+        self.shield_btn = self.btn("shield", "Blokada reklam i śledzenia", lambda: None)
+        self.key_btn = self.btn("key", "Hasła i aliasy e-mail", lambda: None)
+        for b_, fn in ((self.shield_btn, self.shield_menu), (self.key_btn, self.key_menu)):
+            b_.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup); b_.setObjectName("acct")
+            mm = QMenu(b_); mm.aboutToShow.connect(fn); b_.setMenu(mm); tl.addWidget(b_)
+        self.split_btn = self.btn("split", "Podziel ekran (Ctrl+\\)", self.split_current)
+        tl.addWidget(self.split_btn)
         self.star_btn = self.btn("star", "Dodaj stronę do ekranu głównego", self.pin_current)
         tl.addWidget(self.star_btn)
         self.ai_btn = self.btn("assistant", "Asystent AI (Ctrl+J)", self.toggle_assistant)
@@ -5659,6 +6467,7 @@ class Browser(QMainWindow):
         am = QMenu(self.acct_btn); am.aboutToShow.connect(self.build_account_menu); self.acct_btn.setMenu(am)
         tl.addWidget(self.acct_btn)
         v.addWidget(tool)
+        self.notice = NoticeBar(); v.addWidget(self.notice)
 
         self.stack = QStackedWidget()
         self.stack.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding); self.stack.setMinimumWidth(0)
@@ -5668,7 +6477,8 @@ class Browser(QMainWindow):
         self._state_cb = lambda st: self.host.set_active(st == Qt.ApplicationState.ApplicationActive)
         QGuiApplication.instance().applicationStateChanged.connect(self._state_cb)
         self.assistant = Assistant(self.store, self); self.assistant.hide()
-        body.addWidget(self.host.left); body.addWidget(self.stack, 1); body.addWidget(self.host.right)
+        self.tabpanel = TabPanel(self)
+        body.addWidget(self.tabpanel); body.addWidget(self.host.left); body.addWidget(self.stack, 1); body.addWidget(self.host.right)
         body.addWidget(self.assistant)
         v.addWidget(self.bgframe, 1)
         self.setCentralWidget(central)
@@ -5676,11 +6486,15 @@ class Browser(QMainWindow):
         self._ui_t = QTimer(self); self._ui_t.setSingleShot(True); self._ui_t.timeout.connect(self._ui_refresh)
         self.store.changed.connect(lambda: self._ui_t.start(150))
         self._sb_t = QTimer(self); self._sb_t.setSingleShot(True); self._sb_t.timeout.connect(self.update_sidebars)
+        self._tabs_t = QTimer(self); self._tabs_t.setSingleShot(True); self._tabs_t.timeout.connect(self._apply_tabs)
+        self._sleep_t = QTimer(self); self._sleep_t.timeout.connect(self._sleep_tick); self._sleep_t.start(60000)
         self.update_engine_ui()
         self.setup_shortcuts()
         self.store.features_changed.connect(self.apply_features)
-        self.new_tab()
+        self.restore_session()
         self.apply_features(); self.host.sync()
+        if SHIELD:
+            QTimer.singleShot(8000, SHIELD[0].maybe_update)   # lista domen raz w tygodniu, po starcie
         self.store.ensure_fonts()
 
     # --- pomocnicze ---
@@ -5711,7 +6525,8 @@ class Browser(QMainWindow):
                 ("Ctrl+Tab", lambda: self.cycle_tab(1)), ("Ctrl+Shift+Tab", lambda: self.cycle_tab(-1)),
                 ("Ctrl+Backtab", lambda: self.cycle_tab(-1)), ("Ctrl+PgDown", lambda: self.cycle_tab(1)),
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
-                ("Ctrl+,", self.open_settings),
+                ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
+                ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())),
                 ("Ctrl+L", lambda: (self.address.setFocus(), self.address.selectAll()))]
         self.shortcuts = [QShortcut(QKeySequence(k), self, fn) for k, fn in defs]
 
@@ -5725,6 +6540,11 @@ class Browser(QMainWindow):
         if not ai:
             self.assistant.hide(); self.assistant.release()
         self.update_account_btn()
+        vt = self.store.feature("vertical_tabs")
+        self.tabpanel.setVisible(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt)
+        if SHIELD:
+            SHIELD[0].reload()
+        self.update_shield(); self.tabs_changed()
         self.update_sidebars()
 
     # --- podpowiedzi wyszukiwania (jedno współdzielone okno) ---
@@ -5839,11 +6659,6 @@ class Browser(QMainWindow):
         else:
             self.host.refresh_all(); self.store.changed.emit()
 
-    def cycle_tab(self, d):
-        n = self.bar.count()
-        if n > 1:
-            self.bar.setCurrentIndex((self.bar.currentIndex() + d) % n)
-
     def refresh_close_icons(self):
         cur = self.bar.currentIndex()
         for i in range(self.bar.count()):
@@ -5869,12 +6684,15 @@ class Browser(QMainWindow):
             self.assistant.ensure()
         self.update_sidebars_soon()
 
-    def open_url_new_tab(self, url):
-        self.new_tab(); self.cur().go(url)
+    def open_url_new_tab(self, url, container=""):
+        c = self.cur()   # link z karty w grupie trafia do tej samej grupy
+        g = c.group if c is not None and c.container == container else ""
+        self.new_tab(container=container, group=g).go(url)
 
     def closeEvent(self, ev):
         safe_disconnect(QGuiApplication.instance().applicationStateChanged, self._state_cb)   # sprzątanie nasłuchiwaczy
-        self.hide_suggest(); self.host.shutdown_all(); self.store.save_settings()
+        self.hide_suggest(); self.host.shutdown_all()
+        self.store.settings["session"] = self.session_data(); self.store.save_settings()
         super().closeEvent(ev)
 
     def toggle_max(self):
@@ -5891,38 +6709,486 @@ class Browser(QMainWindow):
         return self.stack.currentWidget()
 
     # --- karty ---
-    def new_tab(self):
-        t = Tab(self.store, self)
+    def new_tab(self, container="", ws=None, group="", title="", lazy_url="", activate=True):
+        t = Tab(self.store, self, ws or self.ws, group or "", container if container in self.container_ids() else "")
         self.stack.addWidget(t)
-        i = self.bar.addTab("Ekran główny")
+        i = self.bar.addTab((title or "Ekran główny")[:26])
         cb = QToolButton(); cb.setObjectName("tabclose"); cb.setFixedSize(20, 20); cb.setIconSize(QSize(14, 14))
         cb.setIcon(glyph("close", "#8c8c8c")); cb.setCursor(Qt.CursorShape.PointingHandCursor); cb.setToolTip("Zamknij kartę")
         cb.clicked.connect(lambda: self.close_tab(t))
         self.bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, cb)
-        self.bar.setCurrentIndex(i)
-        self.refresh_close_icons()
+        if lazy_url:   # przywrócona karta: strona wczyta się dopiero po wejściu na kartę
+            t.pending, t.title_text = lazy_url, title
+        self.decorate(t)
+        if activate:
+            self.bar.setCurrentIndex(i)
+        self.refresh_close_icons(); self.tabs_changed()
+        return t
+
+    def all_tabs(self):
+        return [self.stack.widget(i) for i in range(self.stack.count())]
+
+    def activate(self, t):
+        i = self.stack.indexOf(t)
+        if i >= 0:
+            if self.bar.currentIndex() == i:
+                t.wake(); self.decorate(t)
+            self.bar.setCurrentIndex(i)
 
     def close_tab(self, tab):
         if tab is None:
             return
         if self.bar.count() <= 1:
             self.close(); return
+        if sum(1 for t in self.all_tabs() if t.ws == tab.ws) == 1:   # przestrzeń nie zostaje pusta
+            self.new_tab(ws=tab.ws, activate=False)
         i = self.stack.indexOf(tab)
         self.store.session.forget_tab(tab)
         self.bar.removeTab(i); self.stack.removeWidget(tab); tab.deleteLater()
         self.stack.setCurrentIndex(self.bar.currentIndex())
-        self.sync_address()
+        self.sync_address(); self.tabs_changed()
 
     def on_tab_changed(self, i):
+        prev = self._prev_tab
+        if prev is not None and prev in self.all_tabs():
+            prev.last_active = time.time()
         if 0 <= i < self.stack.count():
             self.stack.setCurrentIndex(i)
+            t = self.stack.widget(i); self._prev_tab = t
+            if t.asleep or t.pending:
+                t.wake(); self.decorate(t)
+            t.last_active = time.time()
         self.sync_address()
-        self.refresh_close_icons(); self.update_sidebars_soon(); self.hide_suggest()
+        self.refresh_close_icons(); self.update_sidebars_soon(); self.hide_suggest(); self.tabs_changed()
 
     def on_tab_moved(self, frm, to):
         w = self.stack.widget(frm)
         self.stack.removeWidget(w); self.stack.insertWidget(to, w)
-        self.stack.setCurrentIndex(self.bar.currentIndex())
+        self.stack.setCurrentIndex(self.bar.currentIndex()); self.tabs_changed()
+
+    def decorate(self, t):
+        i = self.stack.indexOf(t)
+        if i < 0:
+            return
+        col = self.container_color(t.container)
+        has = (t.icon is not None and not t.icon.isNull()) or col or t.asleep or t.pending
+        self.bar.setTabIcon(i, tab_icon(t.icon, col, t.asleep or bool(t.pending)) if has else QIcon())
+        tip = t.title_text or "Ekran główny"
+        if t.group:
+            tip += f"\nGrupa: {t.group}"
+        if t.container:
+            tip += f"\nKontener: {self.container_name(t.container)}"
+        if t.asleep or t.pending:
+            tip += "\nUśpiona – wybudzi się po kliknięciu"
+        self.bar.setTabToolTip(i, tip)
+
+    def tabs_changed(self):
+        self._tabs_t.start(30)
+
+    def _apply_tabs(self):
+        """Pokazuje tylko karty bieżącej przestrzeni roboczej, odświeża pionowy panel i zapisuje sesję."""
+        for i in range(self.bar.count()):
+            self.bar.setTabVisible(i, self.stack.widget(i).ws == self.ws)
+        c = self.cur()
+        if c is not None and c.ws != self.ws:
+            mine = [t for t in self.all_tabs() if t.ws == self.ws]
+            last = self._ws_last.get(self.ws)
+            target = last if last in mine else (mine[0] if mine else None)
+            if target is None:
+                self.new_tab(); return
+            self.activate(target); c = target
+        if c is not None:
+            self._ws_last[c.ws] = c
+        if self.tabpanel.isVisible():
+            self.tabpanel.rebuild()
+        self.ws_btn.setText(self.ws)
+        self.store.settings["session"] = self.session_data(); self.store.save_soon()
+
+    def cycle_tab(self, d):
+        vis = [i for i in range(self.bar.count()) if self.bar.isTabVisible(i)]
+        if len(vis) > 1:
+            cur = self.bar.currentIndex()
+            k = vis.index(cur) if cur in vis else 0
+            self.bar.setCurrentIndex(vis[(k + d) % len(vis)])
+
+    def _sleep_tick(self):
+        """Usypia karty nieużywane dłużej niż ustawiony czas (nie: bieżącą, grającą dźwięk ani ładującą się)."""
+        if not self.store.feature("sleep_tabs"):
+            return
+        limit = int(self.store.settings.get("sleep_after", 15)) * 60; now = time.time(); cur = self.cur(); changed = False
+        for t in self.all_tabs():
+            if t is not cur and not t.asleep and t.web is not None and now - t.last_active > limit:
+                t.sleep(); changed = changed or t.asleep
+                if t.asleep:
+                    self.decorate(t)
+        if changed:
+            self.tabs_changed()
+
+    def sleep_now(self, t):
+        if t is not self.cur():
+            t.sleep(); self.decorate(t); self.tabs_changed()
+
+    # --- sesja (karty, grupy, przestrzenie i kontenery po ponownym uruchomieniu) ---
+    def session_data(self):
+        tabs = []
+        for t in self.all_tabs():
+            url = t.pending or (t.web.url().toString() if t.web is not None and not t.on_home() else "")
+            tabs.append({"url": url, "title": t.title_text if url else "", "ws": t.ws, "group": t.group,
+                         "container": t.container})
+        return {"tabs": tabs, "current": self.stack.currentIndex()}
+
+    def restore_session(self):
+        s = self.store.settings.get("session") if self.store.feature("restore_tabs") else None
+        tabs = [d for d in (s or {}).get("tabs", []) if isinstance(d, dict)]
+        if not tabs:
+            self.new_tab(); return
+        known = self.workspaces()
+        for d in tabs:
+            self.new_tab(container=d.get("container", ""), ws=d.get("ws") if d.get("ws") in known else known[0],
+                         group=d.get("group", ""), title=d.get("title", ""), lazy_url=d.get("url", ""), activate=False)
+        i = s.get("current", 0)
+        t = self.stack.widget(i) if isinstance(i, int) and 0 <= i < self.stack.count() else self.stack.widget(0)
+        self.ws = t.ws; self.store.settings["ws_current"] = t.ws
+        self.activate(t)
+        if t.pending:
+            t.wake(); self.decorate(t)
+
+    # --- przestrzenie robocze ---
+    def workspaces(self):
+        ws = self.store.settings.setdefault("workspaces", ["Ogólna"])
+        if not ws:
+            ws.append("Ogólna")
+        return ws
+
+    def switch_ws(self, name):
+        if name == self.ws:
+            return
+        c = self.cur()
+        if c is not None:
+            self._ws_last[c.ws] = c
+        self.ws = name; self.store.settings["ws_current"] = name; self.store.save_soon()
+        self._apply_tabs()
+
+    def ws_menu(self):
+        m = self.ws_btn.menu(); m.clear()
+        for name in self.workspaces():
+            n = sum(1 for t in self.all_tabs() if t.ws == name)
+            a = m.addAction(f"{name}  ·  {n}"); a.setCheckable(True); a.setChecked(name == self.ws)
+            a.triggered.connect(lambda _=False, x=name: self.switch_ws(x))
+        m.addSeparator()
+        m.addAction("Nowa przestrzeń…", self.new_ws)
+        m.addAction("Zmień nazwę bieżącej…", self.rename_ws)
+        d = m.addAction("Usuń bieżącą (zamyka jej karty)", self.delete_ws); d.setEnabled(len(self.workspaces()) > 1)
+
+    def new_ws(self):
+        name, ok = QInputDialog.getText(self, "Nowa przestrzeń", "Nazwa (np. Praca, Zakupy, Hobby):")
+        name = name.strip()
+        if ok and name and name not in self.workspaces():
+            self.workspaces().append(name); self.store.save_soon(); self.switch_ws(name)
+
+    def rename_ws(self):
+        name, ok = QInputDialog.getText(self, "Zmień nazwę", "Nowa nazwa przestrzeni:", text=self.ws)
+        name = name.strip()
+        if ok and name and name not in self.workspaces():
+            ws = self.workspaces(); ws[ws.index(self.ws)] = name
+            for t in self.all_tabs():
+                if t.ws == self.ws:
+                    t.ws = name
+            self.ws = name; self.store.settings["ws_current"] = name; self._apply_tabs()
+
+    def delete_ws(self):
+        if len(self.workspaces()) <= 1:
+            return
+        mine = [t for t in self.all_tabs() if t.ws == self.ws]
+        if QMessageBox.question(self, "Luna", f"Usunąć przestrzeń „{self.ws}” i zamknąć jej karty ({len(mine)})?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        gone = self.ws; ws = self.workspaces(); ws.remove(gone)
+        self.switch_ws(ws[0])
+        for t in mine:
+            i = self.stack.indexOf(t); self.store.session.forget_tab(t)
+            self.bar.removeTab(i); self.stack.removeWidget(t); t.deleteLater()
+        self.stack.setCurrentIndex(self.bar.currentIndex()); self.tabs_changed()
+
+    def move_to_ws(self, t, name):
+        t.ws = name; self.tabs_changed()
+
+    # --- grupy kart ---
+    def groups(self):
+        seen = []
+        for t in self.all_tabs():
+            if t.ws == self.ws and t.group and t.group not in seen:
+                seen.append(t.group)
+        return seen
+
+    def group_dialog(self, t):
+        if t is None:
+            return
+        name, ok = QInputDialog.getItem(self, "Grupa kart", "Nazwa grupy (projektu):", self.groups() or ["Projekt"], 0, True)
+        if ok and name.strip():
+            t.group = name.strip(); self.decorate(t); self.tabs_changed()
+            if not self.store.feature("vertical_tabs"):
+                QToolTip.showText(QCursor.pos(), "Grupy są widoczne w pionowym panelu kart (Funkcje).", self)
+
+    def group_menu(self, name, pos):
+        m = QMenu(self)
+        m.addAction("Nowa karta w grupie", lambda: self.new_tab(group=name))
+        m.addAction("Zmień nazwę…", lambda: self.rename_group(name))
+        m.addAction("Rozgrupuj", lambda: self.set_group(name, ""))
+        m.addSeparator(); m.addAction("Zamknij wszystkie karty grupy", lambda: self.close_group(name))
+        m.exec(pos)
+
+    def set_group(self, old, new):
+        for t in self.all_tabs():
+            if t.ws == self.ws and t.group == old:
+                t.group = new; self.decorate(t)
+        self.tabs_changed()
+
+    def rename_group(self, name):
+        new, ok = QInputDialog.getText(self, "Zmień nazwę grupy", "Nowa nazwa:", text=name)
+        if ok and new.strip():
+            self.set_group(name, new.strip())
+
+    def close_group(self, name):
+        for t in [t for t in self.all_tabs() if t.ws == self.ws and t.group == name]:
+            self.close_tab(t)
+
+    # --- kontenery (osobne ciasteczka i logowania) ---
+    def containers(self):
+        return self.store.settings.setdefault("containers", [])
+
+    def container_ids(self):
+        return {c["id"] for c in self.containers()}
+
+    def container_color(self, cid):
+        return next((c["color"] for c in self.containers() if c["id"] == cid), None) if cid else None
+
+    def container_name(self, cid):
+        return next((c["name"] for c in self.containers() if c["id"] == cid), "") if cid else ""
+
+    def new_container(self, then=None):
+        name, ok = QInputDialog.getText(self, "Nowy kontener", "Nazwa (np. Praca, Konto 2, Zakupy):")
+        name = name.strip()
+        if not (ok and name):
+            return None
+        cid = (re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "k") + "-" + secrets.token_hex(3)
+        c = {"id": cid, "name": name, "color": CONTAINER_COLORS[len(self.containers()) % len(CONTAINER_COLORS)]}
+        self.containers().append(c); self.store.save_soon()
+        if then:
+            then(cid)
+        return cid
+
+    def container_menu(self, pos, tab=None):
+        """Nowa karta w kontenerze albo (dla karty) otwarcie jej strony ponownie w wybranym kontenerze."""
+        m = QMenu(self)
+        act = (lambda cid: self.reopen_in(tab, cid)) if tab is not None else (lambda cid: self.new_tab(container=cid))
+        a = m.addAction("Bez kontenera (zwykły profil)"); a.triggered.connect(lambda _=False: act(""))
+        for c in self.containers():
+            a = m.addAction(tab_icon(None, c["color"]), c["name"]); a.triggered.connect(lambda _=False, x=c["id"]: act(x))
+        m.addSeparator(); m.addAction("Nowy kontener…", lambda: self.new_container(act))
+        m.exec(pos)
+
+    def reopen_in(self, tab, cid):
+        if tab is None or cid == tab.container:
+            return
+        url = tab.pending or (tab.web.url().toString() if tab.web is not None and not tab.on_home() else "")
+        t = self.new_tab(container=cid, ws=tab.ws, group=tab.group)
+        self.bar.moveTab(self.stack.indexOf(t), self.stack.indexOf(tab) + 1)
+        if url:
+            t.go(url)
+        self.close_tab(tab)
+
+    # --- menu karty (pasek poziomy i panel pionowy) ---
+    def tab_menu(self, t, pos):
+        m = QMenu(self)
+        if t.group:
+            m.addAction("Nowa karta w tej grupie", lambda: self.new_tab(group=t.group, container=t.container))
+        gm = m.addMenu("Grupa")
+        for g in self.groups():
+            if g != t.group:
+                gm.addAction(f"Przenieś do „{g}”", lambda _=False, g=g: (setattr(t, "group", g), self.decorate(t), self.tabs_changed()))
+        gm.addAction("Nowa grupa…", lambda: self.group_dialog(t))
+        if t.group:
+            gm.addAction("Usuń z grupy", lambda: (setattr(t, "group", ""), self.decorate(t), self.tabs_changed()))
+        wm = m.addMenu("Przenieś do przestrzeni")
+        for w in self.workspaces():
+            if w != t.ws:
+                wm.addAction(w, lambda _=False, w=w: self.move_to_ws(t, w))
+        wm.addAction("Nowa przestrzeń…", lambda: self._move_new_ws(t))
+        m.addAction("Otwórz w kontenerze…", lambda: self.container_menu(QCursor.pos(), t))
+        sm = m.addMenu("Podziel ekran")
+        if t.web is None or t.pending:
+            sm.setEnabled(False)
+        sm.addAction("Z pustą stroną", lambda: (self.activate(t), t.split_with("")))
+        for o in self.all_tabs():
+            if o is not t and o.ws == t.ws:
+                url = o.pending or (o.web.url().toString() if o.web is not None and not o.on_home() else "")
+                if url:
+                    sm.addAction(tab_icon(o.icon), (o.title_text or url)[:40],
+                                 lambda _=False, o=o, u=url: (self.activate(t), t.split_with(u), self.close_tab(o)))
+        if t.split is not None:
+            sm.addSeparator(); sm.addAction("Zamknij podział", t.unsplit)
+        z = m.addAction("Uśpij teraz", lambda: self.sleep_now(t)); z.setEnabled(t is not self.cur() and t.web is not None and not t.asleep)
+        m.addSeparator(); m.addAction("Zamknij kartę", lambda: self.close_tab(t))
+        m.exec(pos)
+
+    def _move_new_ws(self, t):
+        name, ok = QInputDialog.getText(self, "Nowa przestrzeń", "Nazwa:")
+        name = name.strip()
+        if ok and name:
+            if name not in self.workspaces():
+                self.workspaces().append(name)
+            self.move_to_ws(t, name)
+
+    def _bar_menu(self, pos):
+        i = self.bar.tabAt(pos)
+        if i >= 0:
+            self.tab_menu(self.stack.widget(i), self.bar.mapToGlobal(pos))
+
+    def split_current(self):
+        t = self.cur()
+        if t is not None and t.web is not None and not t.on_home():
+            t.unsplit() if t.split is not None else t.split_with("")
+
+    # --- tarcza (blokada śledzenia) ---
+    def shield_menu(self):
+        m = self.shield_btn.menu(); m.clear(); t = self.cur(); sh = SHIELD[0] if SHIELD else None
+        url = t.web.url().toString() if t and t.web is not None and not t.on_home() else ""
+        if sh is None or not self.store.feature("adblock"):
+            m.addAction("Blokada reklam i śledzenia jest wyłączona").setEnabled(False)
+        else:
+            m.addAction(f"Zablokowano na tej stronie: {sh.count(url)}").setEnabled(False)
+            m.addAction(f"Łącznie od początku: {sh.total}").setEnabled(False)
+            if url:
+                dom = base_domain(QUrl(url).host())
+                a = m.addAction(f"Blokuj na {dom}"); a.setCheckable(True); a.setChecked(dom not in sh.allow)
+                a.toggled.connect(lambda on, d=dom: self.shield_allow(d, not on))
+        m.addSeparator(); m.addAction("Prywatność…", lambda: self.open_settings("privacy"))
+
+    def shield_allow(self, dom, allow):
+        lst = [d for d in self.store.settings.get("shield_allow", []) if d != dom] + ([dom] if allow else [])
+        self.store.settings["shield_allow"] = lst; self.store.save_soon()
+        if SHIELD:
+            SHIELD[0].reload()
+        self.nav("reload")
+
+    def update_shield(self):
+        t = self.cur(); sh = SHIELD[0] if SHIELD else None
+        on = self.store.feature("adblock") and sh is not None
+        url = t.web.url().toString() if t and t.web is not None and not t.on_home() else ""
+        n = sh.count(url) if on and url else 0
+        self.shield_btn.setIcon(glyph("shield", "#3ddc84" if on else "#6f6f6f"))
+        self.shield_btn.setToolTip(f"Blokada reklam i śledzenia: zablokowano {n} na tej stronie" if on else
+                                   "Blokada reklam i śledzenia wyłączona")
+
+    # --- hasła, generator i aliasy e-mail ---
+    def vault(self):
+        return VAULT[0] if VAULT and VAULT[0].available() and self.store.feature("passwords") else None
+
+    def on_pw(self, d):
+        v = self.vault()
+        if v is None:
+            return
+        o = d.get("origin", ""); u = (d.get("u") or "").strip(); p = d.get("p") or ""
+        if not o.startswith("http"):
+            return
+        if not p:                       # pierwszy krok logowania dwuetapowego – zapamiętaj login
+            if u:
+                self._last_user[o] = u
+            return
+        u = u or self._last_user.get(o, "")
+        x = v.find(o, u)
+        if v.never(o) or (x and x["pw"] == p) or self._pw_pending == (o, u, p):
+            return
+        self._pw_pending = (o, u, p); host = QUrl(o).host()
+        text = ("Zaktualizować hasło dla " if x else "Zapisać hasło dla ") + host + (f" ({u})?" if u else "?")
+
+        def save():
+            v.put(o, u, p); self.notice.info("Hasło zapisane – zaszyfrowane na tym komputerze.")
+        self.notice.ask(text, [("Zapisz", save, True), ("Nie teraz", None, False),
+                               ("Nigdy dla tej strony", lambda: v.never(o, True), False)])
+
+    def autofill(self, view):
+        v = self.vault()
+        if v is None or view is None:
+            return
+        logins = v.logins(origin_of(view.url().toString()))
+        if len(logins) == 1:   # jedno konto dla tej strony – wypełniamy od razu (tylko ta sama domena i protokół)
+            self.fill(view, logins[0]["user"], logins[0]["pw"])
+
+    def fill(self, view, user, pw):
+        js = FILL_JS.replace("%U%", json.dumps(user)).replace("%P%", json.dumps(pw))
+        view.page().runJavaScript(js, QWebEngineScript.ScriptWorldId.ApplicationWorld, lambda ok: None)
+
+    def key_menu(self):
+        m = self.key_btn.menu(); m.clear(); t = self.cur()
+        view = t.web if t and t.web is not None and not t.on_home() else None
+        v = self.vault()
+        if v is None:
+            m.addAction("Menedżer haseł jest wyłączony lub niedostępny" if VAULT else "Menedżer haseł niedostępny").setEnabled(False)
+        elif view is not None:
+            o = origin_of(view.url().toString()); logins = v.logins(o)
+            m.addAction(f"Zapisane dla {QUrl(o).host()}: {len(logins)}").setEnabled(False)
+            for x in logins:
+                m.addAction(glyph("key"), f"Wypełnij: {x['user'] or '(bez loginu)'}",
+                            lambda _=False, x=x: self.fill(view, x["user"], x["pw"]))
+        if view is not None:
+            m.addSeparator()
+            m.addAction("Wygeneruj silne hasło i wpisz", lambda: self.fill_generated(view))
+            m.addAction("Wstaw alias e-mail", lambda: self.fill_alias(view))
+        m.addSeparator(); m.addAction("Hasła i aliasy…", lambda: self.open_settings("passwords"))
+
+    def fill_generated(self, view):
+        pw = gen_password(int(self.store.settings.get("pw_len", 20)))
+        view.page().runJavaScript(GEN_FILL_JS.replace("%P%", json.dumps(pw)),   # hasło i jego powtórzenie
+                                  QWebEngineScript.ScriptWorldId.ApplicationWorld, lambda ok: None)
+        copy_secret(pw)
+        self.notice.info("Wpisano silne hasło (też w schowku). Luna zaproponuje zapis po wysłaniu formularza.")
+
+    def make_alias(self, cb):
+        """DuckDuckGo (adres @duck.com), gdy jest zapamiętana sesja; inaczej alias z plusem (adres+strona@…)."""
+        v = VAULT[0] if VAULT and VAULT[0].available() else None
+        tok = v.data.get("ddg") if v else ""
+        if not tok:
+            self._plus_alias(cb); return
+        req = QNetworkRequest(QUrl("https://quack.duckduckgo.com/api/email/addresses"))
+        req.setRawHeader(b"Authorization", b"Bearer " + tok.encode()); req.setTransferTimeout(15000)
+        r = self.store.nam.post(req, b"")
+
+        def done():
+            status = r.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute); raw = bytes(r.readAll()); r.deleteLater()
+            try:
+                addr = json.loads(raw.decode("utf-8")).get("address")
+            except Exception:
+                addr = None
+            if addr:
+                cb(f"{addr}@duck.com", "DuckDuckGo"); return
+            if status in (401, 403):   # sesja DuckDuckGo wygasła
+                v.data["ddg"] = ""; v.save()
+            self._plus_alias(cb)
+        r.finished.connect(done)
+
+    def _plus_alias(self, cb):
+        base = self.store.settings.get("alias_base") or self.store.session.gmail.get("email", "")
+        if not base and self.host.google is not None and self.host.google.logged_in():
+            base = self.host.google.email()
+        if not base:
+            base, ok = QInputDialog.getText(self, "Alias e-mail", "Twój adres e-mail (aliasy: adres+strona@…), podajesz raz:")
+            base = base.strip()
+            if not ok or "@" not in base:
+                return
+            self.store.settings["alias_base"] = base; self.store.save_soon()
+        local, dom = base.split("@", 1); t = self.cur()
+        site = base_domain(QUrl(t.web.url()).host()).split(".")[0] if t and t.web is not None and not t.on_home() else "luna"
+        cb(f"{local.split('+')[0]}+{re.sub('[^a-z0-9]', '', site.lower()) or 'luna'}@{dom}", "alias z plusem")
+
+    def fill_alias(self, view):
+        def got(addr, src):
+            view.page().runJavaScript(EMAIL_FILL_JS.replace("%V%", json.dumps(addr)),
+                                      QWebEngineScript.ScriptWorldId.ApplicationWorld, lambda ok: None)
+            QGuiApplication.clipboard().setText(addr)
+            self.notice.info(f"Wstawiono alias {addr} ({src}) – jest też w schowku.")
+        self.make_alias(got)
 
     # --- nawigacja ---
     def nav(self, what):
@@ -5930,12 +7196,12 @@ class Browser(QMainWindow):
         if t and t.web and not t.on_home():
             getattr(t.web, what)()
         elif what == "forward" and t and t.web is not None:
-            t.setCurrentWidget(t.web)
+            t.show_web()
 
     def go_home(self):
-        self.cur().show_home()
-        i = self.stack.indexOf(self.cur())
-        self.bar.setTabText(i, "Ekran główny"); self.bar.setTabIcon(i, QIcon())
+        t = self.cur(); t.show_home(); t.title_text, t.icon = "", None
+        i = self.stack.indexOf(t)
+        self.bar.setTabText(i, "Ekran główny"); self.decorate(t); self.tabs_changed()
         self.address.clear(); self.update_sidebars_soon()
 
     def submit(self):
@@ -5961,18 +7227,25 @@ class Browser(QMainWindow):
     # --- zdarzenia strony ---
     def on_title(self, tab, title):
         i = self.stack.indexOf(tab)
+        tab.title_text = title
         if i >= 0:
-            self.bar.setTabText(i, title[:26] or "…")
+            self.bar.setTabText(i, title[:26] or "…"); self.decorate(tab)
+        self.tabs_changed()
         if tab.web is not None:
             self.store.session.on_tab_title(tab, tab.web.url().toString(), title)
 
     def on_icon(self, tab, icon):
-        i = self.stack.indexOf(tab)
-        if i >= 0:
-            self.bar.setTabIcon(i, icon)
+        tab.icon = icon; self.decorate(tab); self.tabs_changed()
+
+    def on_load_started(self, tab):
+        if SHIELD and tab.web is not None:
+            SHIELD[0].reset(tab.web.url().toString())
 
     def on_loaded(self, tab, ok):
+        if tab is self.cur():
+            self.update_shield()
         if ok and tab.web:
+            self.autofill(tab.web)
             url = tab.web.url().toString()
             if url.startswith("http"):
                 self.store.add_recent((tab.web.title() or host_of(url))[:40], url)
@@ -5984,6 +7257,8 @@ class Browser(QMainWindow):
 
     def sync_address(self):
         t = self.cur()
+        if hasattr(self, "shield_btn"):
+            self.update_shield()
         self.address.setText("" if not t or t.on_home() or not t.web else t.web.url().toString())
         self.update_star()
 
