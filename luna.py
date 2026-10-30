@@ -34,13 +34,14 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget,
                              QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QDialog, QDialogButtonBox, QFrame,
                              QScrollArea, QPlainTextEdit, QGraphicsOpacityEffect, QButtonGroup, QToolTip, QComboBox,
                              QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy, QMessageBox, QStyledItemDelegate, QStyle,
-                             QGraphicsDropShadowEffect, QSplitter, QTreeWidget, QTreeWidgetItem)
+                             QGraphicsDropShadowEffect, QSplitter, QTreeWidget, QTreeWidgetItem, QWidgetAction)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
 except ImportError:
     QSvgRenderer = None
-from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor, QWebEngineScript
+from PyQt6.QtWebEngineCore import (QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor, QWebEngineScript,
+                                   QWebEngineDownloadRequest)
 try:   # systemowe sterowanie multimediami Windows (SMTC): pip install winrt-Windows.Media.Control winrt-Windows.Storage.Streams
     import asyncio, threading
     from winrt.windows.media.control import (GlobalSystemMediaTransportControlsSessionManager as _SMTC,
@@ -868,6 +869,52 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         p.drawPolyline(P((33, 28), (11, 28))); p.drawPolyline(P((16, 23), (11, 28), (16, 33)))
     elif kind == "layers":
         p.drawPolygon(P((22, 9), (36, 16), (22, 23), (8, 16))); p.drawPolyline(P((8, 22), (22, 29), (36, 22)))
+    elif kind == "menu":
+        p.drawLine(11, 14, 33, 14); p.drawLine(11, 22, 33, 22); p.drawLine(11, 30, 33, 30)
+    elif kind == "window":
+        p.drawRoundedRect(QRectF(8, 10, 28, 24), 4, 4); p.drawLine(8, 17, 36, 17)
+    elif kind == "private":
+        p.drawEllipse(9, 21, 10, 9); p.drawEllipse(25, 21, 10, 9); p.drawLine(19, 25, 25, 25)
+        p.drawPolyline(P((7, 21), (12, 11), (32, 11), (37, 21)))
+    elif kind == "sidebar":
+        p.drawRoundedRect(QRectF(8, 10, 28, 24), 4, 4); p.drawLine(17, 10, 17, 34)
+    elif kind == "bookmark":
+        p.drawPath(_path([(13, 8), (31, 8), (31, 36), (22, 29), (13, 36)], True))
+    elif kind == "download":
+        p.drawLine(22, 8, 22, 28); p.drawPolyline(P((14, 21), (22, 29), (30, 21))); p.drawLine(10, 35, 34, 35)
+    elif kind == "puzzle":
+        p.drawPath(_path([(10, 14), (19, 14), (19, 10), (25, 10), (25, 14), (34, 14), (34, 34), (10, 34)], True))
+    elif kind == "trash":
+        p.drawLine(9, 13, 35, 13); p.drawPolyline(P((17, 13), (18, 8), (26, 8), (27, 13)))
+        p.drawPath(_path([(12, 13), (14, 36), (30, 36), (32, 13)]))
+    elif kind == "zoom":
+        p.drawEllipse(9, 9, 20, 20); p.drawLine(26, 26, 35, 35); p.drawLine(14, 19, 24, 19); p.drawLine(19, 14, 19, 24)
+    elif kind == "fullscreen":
+        for a, b, c in (((9, 17), (9, 9), (17, 9)), ((27, 9), (35, 9), (35, 17)), ((35, 27), (35, 35), (27, 35)), ((17, 35), (9, 35), (9, 27))):
+            p.drawPolyline(P(a, b, c))
+    elif kind == "pin":
+        p.drawPath(_path([(16, 8), (28, 8), (26, 20), (31, 26), (13, 26), (18, 20)], True)); p.drawLine(22, 26, 22, 37)
+    elif kind == "print":
+        p.drawRect(QRectF(14, 8, 16, 9)); p.drawRoundedRect(QRectF(8, 17, 28, 13), 3, 3); p.drawRect(QRectF(14, 25, 16, 11))
+    elif kind == "cut":
+        p.drawEllipse(9, 26, 9, 9); p.drawEllipse(26, 26, 9, 9); p.drawLine(16, 27, 30, 9); p.drawLine(28, 27, 14, 9)
+    elif kind == "paste":
+        p.drawRoundedRect(QRectF(10, 11, 24, 26), 3, 3); p.drawRoundedRect(QRectF(16, 7, 12, 7), 2, 2)
+    elif kind == "select":
+        p.setPen(QPen(QColor(color), 3, Qt.PenStyle.DashLine, Qt.PenCapStyle.RoundCap)); p.drawRoundedRect(QRectF(9, 9, 26, 26), 3, 3)
+    elif kind == "share":
+        p.drawEllipse(9, 18, 8, 8); p.drawEllipse(27, 8, 8, 8); p.drawEllipse(27, 28, 8, 8)
+        p.drawLine(16, 20, 28, 13); p.drawLine(16, 24, 28, 31)
+    elif kind == "save":
+        p.drawPath(_path([(9, 9), (30, 9), (35, 14), (35, 35), (9, 35)], True)); p.drawRect(QRectF(15, 9, 12, 8))
+        p.drawRect(QRectF(14, 24, 16, 11))
+    elif kind == "tools":
+        p.drawLine(11, 33, 24, 20); p.drawEllipse(22, 9, 13, 13)
+    elif kind == "help":
+        p.drawEllipse(8, 8, 28, 28); p.drawArc(QRectF(17, 13, 10, 10), 160 * 16, -250 * 16); p.drawLine(22, 23, 22, 26)
+        p.drawPoint(22, 31)
+    elif kind == "exit":
+        p.drawLine(13, 13, 31, 31); p.drawLine(31, 13, 13, 31)
     elif kind == "play":
         p.setBrush(QColor(color)); p.drawPolygon(P((15, 11), (33, 22), (15, 33)))
     elif kind == "pause":
@@ -957,6 +1004,18 @@ STYLE += """
 QWidget#tabpanel { background:rgba(10,10,10,0.92); border-right:1px solid #1d1d1d; }
 QWidget#tabpanelpop { background:#121212; }
 QFrame#tabpop { background:#121212; border:1px solid #2c2c2c; }
+QToolButton#logo { background:transparent; border-radius:8px; padding:0; }
+QToolButton#logo:hover { background:#1f1f1f; }
+QLabel#privchip { background:#2b1f3d; color:#d9c7ff; border-radius:10px; font-size:11px; font-weight:600; }
+QMenu#burger { padding:6px; min-width:330px; }
+QMenu#burger::item { padding:8px 28px 8px 10px; }
+QMenu::separator { height:1px; background:#2a2a2a; margin:6px 6px; }
+QWidget#menurow { background:transparent; }
+QWidget#menurow QLabel { color:#e6e6e6; }
+QToolButton#menuchip { background:transparent; color:#cfcfcf; border-radius:6px; padding:4px 8px; }
+QToolButton#menuchip:hover { background:#2a2a2a; color:#ffffff; }
+QToolButton#menuchip:checked { background:#3a4a6b; color:#ffffff; }
+QFrame#vsep { background:#2f2f2f; }
 QTreeWidget#vtabs { background:transparent; border:none; color:#c9c9c9; outline:0; font-size:13px; show-decoration-selected:0; }
 QTreeWidget#vtabs::item { height:30px; border-radius:8px; padding-left:2px; }
 QTreeWidget#vtabs::item:hover { background:#1c1c1c; color:#ffffff; }
@@ -987,6 +1046,11 @@ POPUPS, _PROFILE = [], []
 def get_profile(container: str = "") -> QWebEngineProfile:
     """Jeden trwały profil dla całej Luny: logowania na stronach (też w panelu AI) zostają po restarcie.
     container != "" → osobny profil kontenera (własne ciasteczka i logowania, np. drugie konto w tym samym serwisie)."""
+    if container == PRIVATE:   # okno prywatne: profil bez zapisu na dysk (ciasteczka i historia znikają po zamknięciu)
+        if PRIVATE not in _CONTAINER_PROFILES:
+            prof = QWebEngineProfile(QApplication.instance()); _setup_profile(prof, None)
+            _CONTAINER_PROFILES[PRIVATE] = prof
+        return _CONTAINER_PROFILES[PRIVATE]
     if container:
         if container not in _CONTAINER_PROFILES:
             prof = QWebEngineProfile("Luna-" + container, QApplication.instance())
@@ -1001,12 +1065,15 @@ def get_profile(container: str = "") -> QWebEngineProfile:
 
 
 def _setup_profile(prof, base):
-    try:
-        base.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        pass
-    prof.setPersistentStoragePath(str(base / "data")); prof.setCachePath(str(base / "cache"))
-    prof.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+    if base is not None:
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        prof.setPersistentStoragePath(str(base / "data")); prof.setCachePath(str(base / "cache"))
+        prof.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
+    if DOWNLOADS:
+        prof.downloadRequested.connect(DOWNLOADS[0].on_request)
     # zwykły Chromium zamiast „QtWebEngine” w User-Agent – logowanie (np. Google) rzadziej jest blokowane
     prof.setHttpUserAgent(re.sub(r"\s*QtWebEngine/\S+", "", prof.httpUserAgent()))
     if SHIELD:
@@ -1365,7 +1432,7 @@ class Store(QObject):
         self.weather = {}
         GLASS_ALPHA[0] = int(self.settings.get("glass", 168)); BG.store = self
         self.bump_day(emit=False)  # samo uruchomienie przeglądarki liczy się do serii
-        SHIELD.append(Shield(self)); VAULT.append(Vault())   # przed pierwszym profilem WebEngine
+        SHIELD.append(Shield(self)); VAULT.append(Vault()); DOWNLOADS.append(DownloadManager())   # przed pierwszym profilem
         self.session = SessionBridge(self)  # logowania z kart Luny dostępne dla widgetów i kafelków
 
     @staticmethod
@@ -1953,15 +2020,20 @@ class Background:
     def __init__(self):
         self.store = self.frame = self.cover = self.blur = self.key = None
         self._svg = self._noise = None
+        self.cache = {}   # klucz (rozmiar, tryb, DPR) → (tło, rozmyte tło); kilka okien = kilka rozmiarów
 
     def mode(self):
         return self.store.settings.get("bg", "image") if self.store else "image"
 
-    def dpr(self):
-        return self.frame.devicePixelRatioF() if self.frame is not None else 1.0
+    def dpr(self, frame=None):
+        try:
+            f = frame or self.frame
+            return f.devicePixelRatioF() if f is not None else 1.0
+        except RuntimeError:   # okno już zamknięte
+            return 1.0
 
-    def wanted_key(self, size):
-        return (size.width(), size.height(), self.mode(), round(self.dpr(), 2))
+    def wanted_key(self, size, frame=None):
+        return (size.width(), size.height(), self.mode(), round(self.dpr(frame), 2))
 
     def renderer(self):
         if self._svg is None and QSvgRenderer is not None:
@@ -1978,10 +2050,11 @@ class Background:
             self._noise = QPixmap.fromImage(img)
         return self._noise
 
-    def prepare(self, size):
-        key = self.wanted_key(size)
-        if key == self.key:
-            return
+    def prepare(self, size, frame=None):
+        key = self.wanted_key(size, frame)
+        if key in self.cache:
+            self.cover, self.blur = self.cache[key]; self.key = key
+            return key
         w, h = max(1, size.width()), max(1, size.height()); mode, dpr = key[2], key[3]
         if mode == "image" and self.renderer() is not None:
             scale = max(1.0, min(dpr, math.sqrt(self.MAX_PIXELS / (w * h))))
@@ -2004,13 +2077,21 @@ class Background:
         big.setDevicePixelRatio(1.0)
         self.blur = QPixmap.fromImage(big)
         self.cover, self.key = pm, key
+        self.cache[key] = (pm, self.blur)
+        while len(self.cache) > 3:   # najstarsze rozmiary wypadają (pamięć)
+            self.cache.pop(next(iter(self.cache)))
+        return key
 
     def draw_under(self, p, widget):
         """Rysuje rozmyty fragment tła znajdujący się pod widgetem (efekt matowego szkła)."""
-        if self.blur is None or self.frame is None:
+        f = widget.parentWidget()
+        while f is not None and not isinstance(f, BgFrame):   # tło okna, w którym jest widget
+            f = f.parentWidget()
+        entry = self.cache.get(getattr(f, "key", None)) if f is not None else None
+        if entry is None:
             return
-        pos = widget.mapTo(self.frame, QPoint(0, 0))
-        p.drawPixmap(0, 0, self.blur, pos.x(), pos.y(), widget.width(), widget.height())
+        pos = widget.mapTo(f, QPoint(0, 0))
+        p.drawPixmap(0, 0, entry[1], pos.x(), pos.y(), widget.width(), widget.height())
 
 
 BG = Background()
@@ -2021,27 +2102,28 @@ class BgFrame(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setObjectName("bgframe")
+        self.setObjectName("bgframe"); self.key = None
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self._recompute)
 
     def _recompute(self):
-        BG.prepare(self.size()); self.update()
+        self.key = BG.prepare(self.size(), self); self.update()
         for w in self.findChildren(WidgetFrame):
             w.update()
 
     def showEvent(self, ev):
         BG.frame = self
-        if BG.cover is None:
-            BG.prepare(self.size())
+        if self.key is None:
+            self.key = BG.prepare(self.size(), self)
         super().showEvent(ev)
 
     def paintEvent(self, ev):
         p = QPainter(self)
         p.fillRect(self.rect(), QColor("#111111"))
-        if BG.key != BG.wanted_key(self.size()):
+        if self.key != BG.wanted_key(self.size(), self):
             self._t.start(90)          # trwa zmiana rozmiaru – rysujemy stary cache, nowy po 90 ms ciszy
-        if BG.cover is not None:
-            p.drawPixmap(0, 0, BG.cover)
+        entry = BG.cache.get(self.key)
+        if entry is not None:
+            p.drawPixmap(0, 0, entry[0])
 
 
 def paint_glass(w, radius=18):
@@ -4576,7 +4658,7 @@ class GmailWidget(GoogleWidget):
             when = "" if not d else (d.strftime("%H:%M") if d.date() == date.today() else d.strftime("%d.%m"))
             b = QPushButton(f"{_sender(h.get('from', ''))}   {when}\n{(h.get('subject') or '(bez tematu)')[:46]}")
             b.setObjectName("mailitem"); b.setToolTip(h.get("subject", ""))
-            b.clicked.connect(lambda _=False, i=m.get("id"): self.host.browser.open_url_new_tab(
+            b.clicked.connect(lambda _=False, i=m.get("id"): self.host.browser.open_google(
                 f"https://mail.google.com/mail/u/0/#inbox/{i}"))
             self.content.addWidget(b)
 
@@ -4611,7 +4693,7 @@ class CalendarWidget(GoogleWidget):
             if day != last:
                 self.content.addWidget(section(day)); last = day
             b = ElideButton(f"{hh}   {(ev.get('summary') or '(bez tytułu)')[:36]}"); b.setObjectName("mailitem")
-            b.clicked.connect(lambda _=False, u=ev.get("htmlLink"): u and self.host.browser.open_url_new_tab(u))
+            b.clicked.connect(lambda _=False, u=ev.get("htmlLink"): u and self.host.browser.open_google(u))
             self.content.addWidget(b)
 
 
@@ -4675,7 +4757,7 @@ class DriveWidget(GoogleWidget):
             except Exception:
                 when = ""
             b = ElideButton(f"{f.get('name', '(bez nazwy)')[:34]}\n{when}"); b.setObjectName("mailitem")
-            b.clicked.connect(lambda _=False, u=f.get("webViewLink"): u and self.host.browser.open_url_new_tab(u))
+            b.clicked.connect(lambda _=False, u=f.get("webViewLink"): u and self.host.browser.open_google(u))
             self.content.addWidget(b)
 
 
@@ -5264,6 +5346,8 @@ def page_look(dlg):
     def bg_changed(_):
         store.settings["bg"] = combo.currentData(); store.save_settings()
         BG.key = None; dlg.browser.bgframe._recompute(); dlg.host.repaint_all()
+        for w in WINDOWS:
+            w.bgframe._recompute(); w.host.repaint_all()
     combo.currentIndexChanged.connect(bg_changed)
     sl = QSlider(Qt.Orientation.Horizontal); sl.setRange(60, 235); sl.setValue(GLASS_ALPHA[0])
 
@@ -5281,7 +5365,11 @@ def page_keys(dlg):
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
                  ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"),
-                 ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A", "Lista kart i grup"),
+                 ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
+                 ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + F", "Znajdź na stronie"),
+                 ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
+                 ("Ctrl + S", "Zapisz stronę"), ("Ctrl + Shift + Y", "Pobrane pliki"), ("Ctrl + Shift + Del", "Usuń dane przeglądania"),
+                 ("F12 / Ctrl + U", "Narzędzia deweloperskie / źródło strony"),
                  ("Środkowy przycisk na karcie", "Zamyka kartę"), ("Środkowy przycisk na pustym pasku", "Nowa karta")):
         row = QHBoxLayout(); a = lbl(k, "h3"); b = lbl(d, "muted2")
         row.addWidget(a); row.addStretch(); row.addWidget(b); l.addLayout(row)
@@ -5982,6 +6070,223 @@ class HomePage(QWidget):
                 self.store.fetch_icon(url); self.store.save()
 
 
+class DownloadManager(QObject):
+    """Pobieranie plików ze wszystkich profili (także kontenerów i okien prywatnych) do folderu Pobrane."""
+    started = pyqtSignal(str)
+    changed = pyqtSignal()
+
+    def __init__(self):
+        super().__init__(QApplication.instance())   # żyje tak długo jak aplikacja (wszystkie okna)
+        self.items = []
+
+    def folder(self):
+        from PyQt6.QtCore import QStandardPaths
+        return QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation) or str(HOME)
+
+    def on_request(self, req):
+        if req.state() != QWebEngineDownloadRequest.DownloadState.DownloadRequested:
+            return
+        req.setDownloadDirectory(self.folder())
+        req.receivedBytesChanged.connect(self.changed); req.stateChanged.connect(lambda _: self.changed.emit())
+        req.accept(); self.items.insert(0, req); del self.items[50:]
+        self.started.emit(req.downloadFileName()); self.changed.emit()
+
+    def path(self, req):
+        return str(Path(req.downloadDirectory()) / req.downloadFileName())
+
+
+DOWNLOADS = []
+
+
+class DownloadsDialog(QDialog):
+    """Lista pobranych plików: postęp, otwarcie pliku lub folderu, anulowanie."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.dm = DOWNLOADS[0]
+        self.setWindowTitle("Pobrane pliki"); self.resize(560, 420); self.setObjectName("settings")
+        v = QVBoxLayout(self); v.setContentsMargins(18, 16, 18, 16); v.setSpacing(8)
+        v.addWidget(lbl("Pobrane pliki", "h1")); v.addWidget(lbl(f"Folder: {self.dm.folder()}", "muted2", wrap=True))
+        self.list = QListWidget(); self.list.setObjectName("wlist"); self.list.viewport().setAutoFillBackground(False)
+        v.addWidget(self.list, 1)
+        row = QHBoxLayout(); row.setSpacing(6)
+        for text, fn in (("Otwórz plik", self.open_file), ("Pokaż w folderze", self.open_folder),
+                         ("Anuluj pobieranie", self.cancel), ("Otwórz folder Pobrane", lambda: self._open(self.dm.folder()))):
+            b = QPushButton(text); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
+        row.addStretch(); v.addLayout(row)
+        self.dm.changed.connect(self.fill); self.fill()
+
+    def done(self, r):
+        safe_disconnect(self.dm.changed, self.fill); super().done(r)
+
+    def fill(self):
+        cur = self.list.currentRow(); self.list.clear()
+        S = QWebEngineDownloadRequest.DownloadState
+        for req in self.dm.items:
+            st = req.state(); tot = req.totalBytes(); got = req.receivedBytes()
+            if st == S.DownloadInProgress:
+                info = f"{got * 100 // tot}%" if tot > 0 else f"{got // 1024} KB"
+            else:
+                info = {S.DownloadCompleted: "gotowe", S.DownloadCancelled: "anulowane",
+                        S.DownloadInterrupted: "przerwane"}.get(st, "")
+            self.list.addItem(f"{req.downloadFileName()}   ·   {info}")
+        if self.dm.items:
+            self.list.setCurrentRow(max(0, min(cur, len(self.dm.items) - 1)))
+        else:
+            self.list.addItem("Brak pobranych plików w tej sesji.")
+
+    def sel(self):
+        r = self.list.currentRow()
+        return self.dm.items[r] if 0 <= r < len(self.dm.items) else None
+
+    def _open(self, path):
+        QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+
+    def open_file(self):
+        r = self.sel()
+        if r is not None and r.state() == QWebEngineDownloadRequest.DownloadState.DownloadCompleted:
+            self._open(self.dm.path(r))
+
+    def open_folder(self):
+        r = self.sel()
+        self._open(r.downloadDirectory() if r is not None else self.dm.folder())
+
+    def cancel(self):
+        r = self.sel()
+        if r is not None and r.state() == QWebEngineDownloadRequest.DownloadState.DownloadInProgress:
+            r.cancel()
+
+
+class FindBar(QFrame):
+    """Znajdź na stronie (Ctrl+F): liczba trafień, poprzednie / następne, Esc zamyka."""
+
+    def __init__(self, browser):
+        super().__init__(); self.b = browser; self.setObjectName("notice"); self.hide()
+        h = QHBoxLayout(self); h.setContentsMargins(16, 5, 10, 5); h.setSpacing(6)
+        ic = QLabel(); ic.setPixmap(glyph("search", "#ececec").pixmap(18, 18)); h.addWidget(ic)
+        self.edit = QLineEdit(); self.edit.setObjectName("splitaddr"); self.edit.setPlaceholderText("Znajdź na stronie…")
+        self.edit.setMaximumWidth(340); self.edit.textChanged.connect(lambda _: self.find())
+        self.edit.returnPressed.connect(lambda: self.find())
+        self.count = lbl("", "muted2"); h.addWidget(self.edit); h.addWidget(self.count); h.addStretch()
+        for kind, tip, fn in (("forward", "Następne (Enter)", lambda: self.find()),
+                              ("back", "Poprzednie (Shift+Enter)", lambda: self.find(True)), ("close", "Zamknij (Esc)", self.close_bar)):
+            b = QToolButton(); b.setIcon(glyph(kind)); b.setIconSize(QSize(16, 16)); b.setFixedSize(26, 26); b.setToolTip(tip)
+            b.clicked.connect(lambda _=False, f=fn: f()); h.addWidget(b)
+        QShortcut(QKeySequence("Escape"), self.edit, self.close_bar)
+        QShortcut(QKeySequence("Shift+Return"), self.edit, lambda: self.find(True))
+
+    def view(self):
+        t = self.b.cur()
+        return t.web if t is not None and t.web is not None and not t.on_home() else None
+
+    def open(self):
+        self.show(); self.edit.setFocus(); self.edit.selectAll()
+        if self.edit.text():
+            self.find()
+
+    def find(self, back=False):
+        v = self.view()
+        if v is None:
+            self.count.setText("Brak strony"); return
+        flags = QWebEnginePage.FindFlag.FindBackward if back else QWebEnginePage.FindFlag(0)
+
+        def res(r):
+            n = r.numberOfMatches()
+            self.count.setText(f"{r.activeMatch()} z {n}" if n else ("Brak wyników" if self.edit.text() else ""))
+        v.page().findText(self.edit.text(), flags, res)
+
+    def close_bar(self):
+        v = self.view()
+        if v is not None:
+            v.page().findText("")
+        self.hide()
+
+
+class ClearDataDialog(QDialog):
+    """Usuń dane przeglądania (Ctrl+Shift+Del): historia, ciasteczka i dane stron, pamięć podręczna, hasła."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b = browser
+        self.setWindowTitle("Usuń dane przeglądania"); self.setObjectName("settings"); self.resize(460, 330)
+        v = QVBoxLayout(self); v.setContentsMargins(20, 18, 20, 18); v.setSpacing(8)
+        v.addWidget(lbl("Usuń dane przeglądania", "h1"))
+        self.opts = {}
+        for key, text, on in (("history", "Historia przeglądania i sekcja „Ostatnie”", True),
+                              ("cookies", "Ciasteczka i dane stron (wylogowuje ze stron – także w kontenerach)", False),
+                              ("cache", "Obrazy i pliki w pamięci podręcznej", True),
+                              ("passwords", "Zapisane hasła", False)):
+            cb = QCheckBox(text); cb.setChecked(on); v.addWidget(cb); self.opts[key] = cb
+        v.addStretch()
+        row = QHBoxLayout(); row.addStretch()
+        no = QPushButton("Anuluj"); no.clicked.connect(self.reject)
+        yes = QPushButton("Usuń dane"); yes.setObjectName("primary"); yes.clicked.connect(self.run)
+        row.addWidget(no); row.addWidget(yes); v.addLayout(row)
+
+    def run(self):
+        profs = [get_profile()] + list(_CONTAINER_PROFILES.values())
+        if self.opts["history"].isChecked():
+            self.b.store.clear_history()
+            for p in profs:
+                p.clearAllVisitedLinks()
+        if self.opts["cookies"].isChecked():
+            for p in profs:
+                p.cookieStore().deleteAllCookies()
+        if self.opts["cache"].isChecked():
+            for p in profs:
+                p.clearHttpCache()
+        if self.opts["passwords"].isChecked() and VAULT and VAULT[0].available():
+            VAULT[0].data["logins"] = []; VAULT[0].save()
+        self.b.notice.info("Dane przeglądania zostały usunięte."); self.accept()
+
+
+class MenuRow(QWidget):
+    """Wiersz menu z ikoną, etykietą i własnymi kontrolkami po prawej (Powiększ, Pasek boczny)."""
+
+    def __init__(self, kind, text):
+        super().__init__(); self.setObjectName("menurow")
+        self.h = QHBoxLayout(self); self.h.setContentsMargins(4, 3, 12, 3); self.h.setSpacing(6)
+        ic = QLabel(); ic.setPixmap(glyph(kind).pixmap(18, 18)); ic.setFixedSize(20, 20)
+        self.h.addWidget(ic); self.h.addSpacing(2); self.h.addWidget(lbl(text)); self.h.addStretch(1)
+
+    def button(self, text="", kind=None, tip="", fn=None, checked=None):
+        b = QToolButton(); b.setObjectName("menuchip"); b.setCursor(Qt.CursorShape.PointingHandCursor)
+        if kind:
+            b.setIcon(glyph(kind)); b.setIconSize(QSize(16, 16))
+        if text:
+            b.setText(text)
+        if checked is not None:
+            b.setCheckable(True); b.setChecked(checked)
+        b.setToolTip(tip)
+        if fn:
+            b.clicked.connect(lambda _=False: fn())
+        self.h.addWidget(b)
+        return b
+
+
+def menu_row_action(menu, row):
+    a = QWidgetAction(menu); a.setDefaultWidget(row); menu.addAction(a)
+    return a
+
+
+# ikony, które można przypiąć do paska obok wyszukiwarki (reszta trafia do menu burgera)
+TOOL_ITEMS = [("shield", "Blokada reklam i śledzenia"), ("key", "Hasła i aliasy"), ("split", "Podział ekranu"),
+              ("star", "Dodaj do ekranu głównego"), ("ai", "Asystent AI"), ("gear", "Ustawienia"), ("google", "Konto Google")]
+TOOL_DEFAULT = ["shield", "key", "star", "ai", "google"]
+PRIVATE = "__prywatne__"
+ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0]
+WINDOWS = []   # dodatkowe okna (zwykłe i prywatne) – referencje, żeby nie zniknęły
+
+
+def status_icon(icon, dot=None):
+    """Ikona z kolorową kropką stanu w prawym dolnym rogu (np. konto Google: połączono / logowanie)."""
+    S = 44
+    pm = QPixmap(S, S); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.drawPixmap(0, 0, icon.pixmap(S, S))
+    if dot:
+        p.setPen(QPen(QColor("#111111"), 3)); p.setBrush(QColor(dot)); p.drawEllipse(29, 29, 13, 13)
+    p.end()
+    return QIcon(pm)
+
+
 def tab_icon(icon, color=None, asleep=False):
     """Ikona karty: favicon (albo kropka) + kolorowa kropka kontenera; uśpiona karta – przygaszona."""
     S = 32
@@ -6386,17 +6691,19 @@ class Browser(QMainWindow):
     audio_changed = pyqtSignal()   # któraś karta zaczęła/przestała odtwarzać dźwięk
     MIN_CENTER, HARD_CENTER = 480, 300   # minimalna szerokość środka (px) przy automatycznym zwijaniu paneli
 
-    def __init__(self):
+    def __init__(self, store=None, private=False):
         super().__init__()
+        self.primary, self.private = store is None and not private, private   # główne okno zapisuje sesję kart
+        self._was_max, self._zoom_lbl = False, None
         self._laid, self._g_ref, self._pinned, self._suggest = False, None, None, None
         self._prev_tab, self._ws_last, self._last_user, self._pw_pending, self._popup_from = None, {}, {}, None, None
-        self.setWindowTitle("Luna"); self.setWindowIcon(app_icon())
+        self.setWindowTitle("Luna – okno prywatne" if private else "Luna"); self.setWindowIcon(app_icon())
         scr = QGuiApplication.primaryScreen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
         self.resize(min(1300, int(scr.width() * 0.94)), min(860, int(scr.height() * 0.92)))
         self.move(scr.center() - self.rect().center())
         self.setMinimumSize(min(640, scr.width()), min(480, scr.height()))
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)  # bez ramki systemowej
-        self.store = Store()
+        self.store = store or Store()
 
         central = Frame(); v = QVBoxLayout(central); self.frame_layout = v
         v.setContentsMargins(5, 5, 5, 5); v.setSpacing(0)
@@ -6411,8 +6718,15 @@ class Browser(QMainWindow):
         self.bar.middle_close.connect(lambda i: self.store.feature("shortcuts") and self.close_tab(self.stack.widget(i)))
         self.bar.middle_new.connect(lambda: self.mmb_new())
         self.bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.bar.customContextMenuRequested.connect(self._bar_menu)
-        lg = QLabel(); lg.setPixmap(logo_pixmap(22)); lg.setFixedSize(22, 22); lg.setToolTip("Luna")
-        sl.addWidget(lg); sl.addSpacing(4)
+        self.logo_btn = QToolButton(); self.logo_btn.setObjectName("logo"); self.logo_btn.setIcon(QIcon(logo_pixmap(44)))
+        self.logo_btn.setIconSize(QSize(22, 22)); self.logo_btn.setFixedSize(28, 28)
+        self.logo_btn.setCursor(Qt.CursorShape.PointingHandCursor)   # klikalne logo = karty i grupy
+        self.logo_btn.setToolTip("Karty i grupy (Ctrl+Shift+A)"); self.logo_btn.clicked.connect(self.toggle_tab_popup)
+        sl.addWidget(self.logo_btn); sl.addSpacing(2)
+        if private:
+            pv = QLabel("  Prywatne  "); pv.setObjectName("privchip"); pv.setToolTip("Okno prywatne: bez historii, ciasteczka "
+                                                                                  "znikają po zamknięciu")
+            sl.addWidget(pv); sl.addSpacing(4)
         self.ws = self.store.settings.get("ws_current") if self.store.settings.get("ws_current") in self.workspaces() \
             else self.workspaces()[0]
         self.ws_btn = QToolButton(); self.ws_btn.setObjectName("acct"); self.ws_btn.setIcon(glyph("layers"))   # sama ikona, lista po kliknięciu
@@ -6457,8 +6771,6 @@ class Browser(QMainWindow):
         inner.addStretch(); inner.addWidget(self.chip)
         tl.addWidget(self.address, 1)
         tl.addSpacing(6)
-        self.tabs_btn = self.btn("tabs", "Karty i grupy (Ctrl+Shift+A)", self.toggle_tab_popup)
-        tl.addWidget(self.tabs_btn)
         self.shield_btn = self.btn("shield", "Blokada reklam i śledzenia", lambda: None)
         self.key_btn = self.btn("key", "Hasła i aliasy e-mail", lambda: None)
         for b_, fn in ((self.shield_btn, self.shield_menu), (self.key_btn, self.key_menu)):
@@ -6470,14 +6782,22 @@ class Browser(QMainWindow):
         tl.addWidget(self.star_btn)
         self.ai_btn = self.btn("assistant", "Asystent AI (Ctrl+J)", self.toggle_assistant)
         tl.addWidget(self.ai_btn)
-        tl.addWidget(self.btn("gear", "Ustawienia (Ctrl+,)", self.open_settings))
+        self.gear_btn = self.btn("gear", "Ustawienia (Ctrl+,)", self.open_settings)
+        tl.addWidget(self.gear_btn)
         self.acct_btn = QToolButton(); self.acct_btn.setObjectName("acct"); self.acct_btn.setFixedSize(34, 34)
         self.acct_btn.setIconSize(QSize(22, 22)); self.acct_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.acct_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         am = QMenu(self.acct_btn); am.aboutToShow.connect(self.build_account_menu); self.acct_btn.setMenu(am)
         tl.addWidget(self.acct_btn)
+        self.burger = self.btn("menu", "Menu Luny", lambda: None)   # skrajnie po prawej
+        self.burger.setObjectName("acct"); self.burger.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        bmn = QMenu(self.burger); bmn.setObjectName("burger"); bmn.aboutToShow.connect(self.burger_menu); self.burger.setMenu(bmn)
+        tl.addSpacing(2); tl.addWidget(self.burger)
+        self.tool_btns = {"shield": self.shield_btn, "key": self.key_btn, "split": self.split_btn, "star": self.star_btn,
+                          "ai": self.ai_btn, "gear": self.gear_btn, "google": self.acct_btn}
         v.addWidget(tool)
         self.notice = NoticeBar(); v.addWidget(self.notice)
+        self.find_bar = FindBar(self); v.addWidget(self.find_bar)
 
         self.stack = QStackedWidget()
         self.stack.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding); self.stack.setMinimumWidth(0)
@@ -6503,7 +6823,11 @@ class Browser(QMainWindow):
         self.update_engine_ui()
         self.setup_shortcuts()
         self.store.features_changed.connect(self.apply_features)
-        self.restore_session()
+        if self.primary:
+            self.restore_session()
+        else:
+            self.new_tab()
+        DOWNLOADS[0].started.connect(self.on_download)
         self.apply_features(); self.host.sync()
         if SHIELD:
             QTimer.singleShot(8000, SHIELD[0].maybe_update)   # lista domen raz w tygodniu, po starcie
@@ -6539,6 +6863,11 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
+                ("Ctrl+N", self.new_window), ("Ctrl+Shift+N", lambda: self.new_window(True)),
+                ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
+                ("Ctrl+F", self.find_bar.open), ("Ctrl+S", self.save_page), ("F12", self.devtools), ("Ctrl+U", self.view_source),
+                ("F11", self.toggle_fullscreen), ("Ctrl+=", lambda: self.zoom(1)), ("Ctrl++", lambda: self.zoom(1)),
+                ("Ctrl+-", lambda: self.zoom(-1)), ("Ctrl+0", lambda: self.zoom(0)), ("Ctrl+D", self.pin_current),
                 ("Ctrl+L", lambda: (self.address.setFocus(), self.address.selectAll()))]
         self.shortcuts = [QShortcut(QKeySequence(k), self, fn) for k, fn in defs]
 
@@ -6554,7 +6883,7 @@ class Browser(QMainWindow):
         self.update_account_btn()
         self.ws_btn.setVisible(self.store.feature("workspaces"))
         vt = self.store.feature("vertical_tabs")
-        self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.tabs_btn.setVisible(not vt)
+        self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.apply_pins()
         if SHIELD:
             SHIELD[0].reload()
         self.update_shield(); self.tabs_changed()
@@ -6592,29 +6921,55 @@ class Browser(QMainWindow):
             "wystarczy jedno kliknięcie „Połącz”.")
 
     def update_account_btn(self):
+        """Przycisk konta Google: awatar z kropką stanu (zielona – połączono, bursztynowa – logowanie / sesja wygasła)."""
         g = self.host.google
-        self.acct_btn.setVisible(g is not None)
+        if hasattr(self, "tool_btns"):
+            self.apply_pins()
         if g is None:
             return
         if g is not self._g_ref:
             self._g_ref = g; g.state_changed.connect(self.update_account_btn)
         if g.logged_in():
-            self.acct_btn.setIcon(avatar_icon(g.email() or "G")); self.acct_btn.setToolTip(f"Połączono z Google: {g.email() or 'konto'}")
+            ic, dot, tip = avatar_icon(g.email() or "G"), "#3ddc84", f"Konto Google: {g.email() or 'połączono'}"
+        elif g.busy:
+            ic, dot, tip = google_g_icon(), "#f0b232", "Konto Google: dokończ logowanie w przeglądarce"
+        elif g.expired:
+            ic, dot, tip = google_g_icon(), "#f0b232", "Konto Google: sesja wygasła – kliknij, aby połączyć ponownie"
         else:
-            self.acct_btn.setIcon(google_g_icon()); self.acct_btn.setToolTip("Połącz z Google")
+            ic, dot, tip = google_g_icon(), None, "Połącz z Google"
+        self.acct_btn.setIcon(status_icon(ic, dot)); self.acct_btn.setToolTip(tip)
 
-    def build_account_menu(self):
-        m = self.acct_btn.menu(); m.clear(); g = self.host.google
+    def build_account_menu(self, m=None):
+        m = m or self.acct_btn.menu(); m.clear(); g = self.host.google
         if g is None:
             return
+        head = MenuRow("app", ""); head.h.itemAt(0).widget().setPixmap(
+            (avatar_icon(g.email() or "G") if g.logged_in() else google_g_icon()).pixmap(28, 28))
+        head.h.itemAt(0).widget().setFixedSize(30, 30)
+        col = QVBoxLayout(); col.setSpacing(0)
+        col.addWidget(lbl(g.email() if g.logged_in() and g.email() else "Konto Google", "h3"))
+        state = ("<span style='color:#3ddc84'>●</span> Połączono" if g.logged_in() else
+                 "<span style='color:#f0b232'>●</span> Dokończ logowanie w przeglądarce…" if g.busy else
+                 "<span style='color:#f0b232'>●</span> Sesja wygasła" if g.expired else
+                 "<span style='color:#80848e'>●</span> Niepołączono")
+        st = lbl(state, "muted2"); st.setTextFormat(Qt.TextFormat.RichText); col.addWidget(st)
+        head.h.insertLayout(3, col); head.h.setContentsMargins(12, 6, 12, 6); menu_row_action(m, head); m.addSeparator()
         if g.logged_in():
-            m.addAction(f"● Połączono jako {g.email() or 'konto Google'}").setEnabled(False)
-            m.addAction("Synchronizuj teraz", lambda _=False: self.host.refresh_all())
-            m.addAction("Konta i integracje…", lambda _=False: self.open_settings("accounts"))
-            m.addSeparator(); m.addAction("Rozłącz", lambda _=False: g.logout())
+            for kind, name, url in (("app", "Gmail", "https://mail.google.com/mail/u/0/#inbox"),
+                                    ("history", "Kalendarz", "https://calendar.google.com/"),
+                                    ("folder", "Dysk", "https://drive.google.com/"),
+                                    ("select", "Zadania", "https://tasks.google.com/")):
+                self.act(m, kind, name, lambda u=url: self.open_google(u))
+            m.addSeparator()
+            self.act(m, "reload", "Synchronizuj widgety", self.host.refresh_all)
+            self.act(m, "gear", "Konta i integracje…", lambda: self.open_settings("accounts"))
+            m.addSeparator(); self.act(m, "exit", "Rozłącz konto", g.logout)
+        elif g.busy:
+            self.act(m, "close", "Anuluj logowanie", g.cancel)
         else:
-            m.addAction(google_g_icon(), "Połącz z Google", lambda _=False: g.login())
-            m.addAction("Konta i integracje…", lambda _=False: self.open_settings("accounts"))
+            a = m.addAction(google_g_icon(), "Połącz z Google" if not g.expired else "Połącz ponownie")
+            a.triggered.connect(lambda _=False: g.login())
+            self.act(m, "gear", "Konta i integracje…", lambda: self.open_settings("accounts"))
 
     # --- responsywne panele boczne ---
     def update_sidebars(self, prefer=None):
@@ -6705,7 +7060,13 @@ class Browser(QMainWindow):
     def closeEvent(self, ev):
         safe_disconnect(QGuiApplication.instance().applicationStateChanged, self._state_cb)   # sprzątanie nasłuchiwaczy
         self.hide_suggest(); self.host.shutdown_all()
-        self.store.settings["session"] = self.session_data(); self.store.save_settings()
+        try:
+            DOWNLOADS[0].started.disconnect(self.on_download)
+        except (TypeError, RuntimeError):
+            pass
+        if self.primary:
+            self.store.settings["session"] = self.session_data()
+        self.store.save_settings()
         super().closeEvent(ev)
 
     def toggle_max(self):
@@ -6721,9 +7082,278 @@ class Browser(QMainWindow):
     def cur(self):
         return self.stack.currentWidget()
 
+    # --- pasek narzędzi: przypięte ikony i menu burgera ---
+    def pins(self):
+        p = self.store.settings.get("toolbar_pins")
+        return list(TOOL_DEFAULT) if not isinstance(p, list) else p
+
+    def set_pin(self, key, on):
+        p = [k for k in self.pins() if k != key] + ([key] if on else [])
+        self.store.settings["toolbar_pins"] = [k for k, _ in TOOL_ITEMS if k in p]; self.store.save_soon()
+        self.apply_pins()
+
+    def apply_pins(self):
+        """Ikony przypięte widać obok wyszukiwarki; pozostałe są w menu burgera (skrajnie po prawej)."""
+        p = set(self.pins())
+        allowed = {"ai": self.store.feature("assistant"), "google": self.host.google is not None}
+        for key, btn in self.tool_btns.items():
+            btn.setVisible(key in p and allowed.get(key, True))
+
+    def act(self, menu, kind, text, fn=None, shortcut=None, enabled=True):
+        a = menu.addAction(glyph(kind), text)
+        if shortcut:
+            a.setShortcut(QKeySequence(shortcut)); a.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+        if fn:
+            a.triggered.connect(lambda _=False: fn())
+        a.setEnabled(enabled)
+        return a
+
+    def web(self):
+        t = self.cur()
+        return t.web if t is not None and t.web is not None and not t.on_home() else None
+
+    def burger_menu(self):
+        m = self.burger.menu(); m.clear(); web = self.web()
+        hidden = [k for k, _ in TOOL_ITEMS if k not in self.pins() and k != "gear"]
+        if hidden:   # ikony schowane z paska
+            names = dict(TOOL_ITEMS)
+            for k in hidden:
+                if k == "shield":
+                    sm = m.addMenu(glyph("shield"), names[k]); sm.aboutToShow.connect(lambda sm=sm: self.shield_menu(sm))
+                elif k == "key":
+                    pass   # w sekcji „Hasła i autouzupełnianie”
+                elif k == "google" and self.host.google is not None:
+                    sm = m.addMenu(google_g_icon(), names[k]); sm.aboutToShow.connect(lambda sm=sm: self.build_account_menu(sm))
+                elif k == "split":
+                    self.act(m, "split", "Podziel ekran", self.split_current, "Ctrl+\\", web is not None)
+                elif k == "star":
+                    self.act(m, "star", "Dodaj do ekranu głównego", self.pin_current, "Ctrl+D", web is not None)
+                elif k == "ai" and self.store.feature("assistant"):
+                    self.act(m, "assistant", "Asystent AI", self.toggle_assistant, "Ctrl+J")
+            if not m.isEmpty():
+                m.addSeparator()
+        # 1. karty i okna
+        self.act(m, "plus", "Nowa karta", self.new_tab, "Ctrl+T")
+        self.act(m, "window", "Nowe okno", self.new_window, "Ctrl+N")
+        self.act(m, "private", "Nowe okno prywatne", lambda: self.new_window(True), "Ctrl+Shift+N")
+        m.addSeparator()
+        # 2. narzędzia
+        row = MenuRow("sidebar", "Pasek boczny"); cur = self.sidebar_mode(); grp = []
+        for mode, text in (("on", "Włączone"), ("auto", "Automatyczne ukrywanie"), ("off", "Wył.")):
+            b = row.button(text, checked=(mode == cur), fn=lambda mode=mode: (self.set_sidebar_mode(mode), m.close()))
+            grp.append(b)
+        menu_row_action(m, row)
+        pw = m.addMenu(glyph("key"), "Hasła i autouzupełnianie")
+        pw.aboutToShow.connect(lambda: self.key_menu(pw))
+        hm = m.addMenu(glyph("history"), "Historia")
+        for r in self.store.recent[:10]:
+            self.act(hm, "history", (r["name"] or r["url"])[:48], lambda u=r["url"]: self.open_url_new_tab(u))
+        if not self.store.recent:
+            hm.addAction("Brak historii").setEnabled(False)
+        hm.addSeparator(); self.act(hm, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
+        bm = m.addMenu(glyph("bookmark"), "Zakładki i listy")
+        self.act(bm, "star", "Dodaj tę stronę do ekranu głównego", self.pin_current, "Ctrl+D", web is not None)
+        bm.addSeparator()
+        for it in self.store.items[:20]:
+            bm.addAction(mini_icon(it["name"], it["url"]), it["name"]).triggered.connect(
+                lambda _=False, u=it["url"]: self.open_url_new_tab(u))
+        self.act(m, "download", "Pobrane pliki", self.show_downloads, "Ctrl+Shift+Y")
+        em = m.addMenu(glyph("puzzle"), "Rozszerzenia"); em.aboutToShow.connect(lambda: self.extensions_menu(em))
+        self.act(m, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
+        m.addSeparator()
+        # 3. widok
+        zr = MenuRow("zoom", "Powiększ")
+        zr.button(kind="min", tip="Pomniejsz (Ctrl+-)", fn=lambda: self.zoom(-1))
+        self._zoom_lbl = zr.button(f"{round((web.zoomFactor() if web else 1) * 100)}%", tip="Przywróć 100% (Ctrl+0)",
+                                   fn=lambda: self.zoom(0))
+        self._zoom_lbl.setMinimumWidth(52)
+        zr.button(kind="plus", tip="Powiększ (Ctrl++)", fn=lambda: self.zoom(1))
+        sep = QFrame(); sep.setObjectName("vsep"); sep.setFixedSize(1, 22); zr.h.addWidget(sep)
+        zr.button(kind="fullscreen", tip="Pełny ekran (F11)", fn=lambda: (m.close(), self.toggle_fullscreen()))
+        menu_row_action(m, zr)
+        pm = m.addMenu(glyph("pin"), "Ikony na pasku")
+        for key, name in TOOL_ITEMS:
+            a = pm.addAction(name); a.setCheckable(True); a.setChecked(key in self.pins())
+            a.toggled.connect(lambda on, k=key: self.set_pin(k, on))
+        m.addSeparator()
+        # 4. akcje strony
+        self.act(m, "print", "Drukuj…", self.print_page, "Ctrl+P", web is not None)
+        fm = m.addMenu(glyph("search"), "Znajdź i edytuj"); fm.setEnabled(web is not None)
+        self.act(fm, "search", "Znajdź na stronie…", self.find_bar.open, "Ctrl+F")
+        fm.addSeparator()
+        if web is not None:
+            for kind, text, action, sc in (("cut", "Wytnij", QWebEnginePage.WebAction.Cut, "Ctrl+X"),
+                                           ("copy", "Kopiuj", QWebEnginePage.WebAction.Copy, "Ctrl+C"),
+                                           ("paste", "Wklej", QWebEnginePage.WebAction.Paste, "Ctrl+V"),
+                                           ("select", "Zaznacz wszystko", QWebEnginePage.WebAction.SelectAll, "Ctrl+A")):
+                self.act(fm, kind, text, lambda a=action: web.page().triggerAction(a), sc)
+        sm = m.addMenu(glyph("share"), "Zapisz i udostępnij"); sm.setEnabled(web is not None)
+        self.act(sm, "save", "Zapisz stronę jako…", self.save_page, "Ctrl+S")
+        self.act(sm, "print", "Zapisz jako PDF…", self.save_pdf)
+        self.act(sm, "copy", "Kopiuj link", lambda: web and QGuiApplication.clipboard().setText(web.url().toString()))
+        tm = m.addMenu(glyph("tools"), "Więcej narzędzi")
+        self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
+        self.act(tm, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U", web is not None)
+        self.act(tm, "tabs", "Karty i grupy", self.toggle_tab_popup, "Ctrl+Shift+A")
+        self.act(tm, "layers", "Przestrzenie robocze…", lambda: self.open_settings("tabs"))
+        self.act(tm, "shield", "Prywatność…", lambda: self.open_settings("privacy"))
+        m.addSeparator()
+        # 5. systemowe
+        hp = m.addMenu(glyph("help"), "Pomoc")
+        self.act(hp, "app", "Skróty klawiszowe", lambda: self.open_settings("keys"))
+        self.act(hp, "help", "O Lunie", self.about)
+        self.act(m, "gear", "Ustawienia", self.open_settings, "Ctrl+,")
+        self.act(m, "exit", "Zakończ", self.quit_all)
+
+    # --- akcje menu ---
+    def new_window(self, private=False):
+        w = Browser(self.store, private=private); w.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        WINDOWS.append(w); w.destroyed.connect(lambda _=None, w=w: WINDOWS.remove(w) if w in WINDOWS else None)
+        w.show()
+
+    def quit_all(self):
+        for w in list(WINDOWS):
+            w.close()
+        self.close()
+
+    def sidebar_mode(self):
+        f = self.store.feature
+        if not (f("left") or f("right")):
+            return "off"
+        return "on" if f("everywhere") else "auto"
+
+    def set_sidebar_mode(self, mode):
+        """Włączone: panele z widgetami także na stronach; Automatyczne ukrywanie: tylko na ekranie głównym; Wył.: bez paneli."""
+        st = self.store; feats = st.settings.setdefault("features", {})
+        feats["left"] = feats["right"] = mode != "off"
+        feats["everywhere"] = mode == "on"
+        st.save_settings(); st.features_changed.emit(); st.layout_changed.emit()
+
+    def zoom(self, step):
+        web = self.web()
+        if web is None:
+            return
+        z = web.zoomFactor()
+        if step == 0:
+            z = 1.0
+        else:
+            i = min(range(len(ZOOMS)), key=lambda k: abs(ZOOMS[k] - z))
+            z = ZOOMS[max(0, min(len(ZOOMS) - 1, i + step))]
+        web.setZoomFactor(z)
+        if getattr(self, "_zoom_lbl", None) is not None:
+            try:
+                self._zoom_lbl.setText(f"{round(z * 100)}%")
+            except RuntimeError:
+                self._zoom_lbl = None
+        QToolTip.showText(QCursor.pos(), f"Powiększenie: {round(z * 100)}%", self)
+
+    def toggle_fullscreen(self):
+        if self.isFullScreen():
+            self.showMaximized() if self._was_max else self.showNormal()
+        else:
+            self._was_max = self.isMaximized(); self.showFullScreen()
+
+    def show_downloads(self):
+        DownloadsDialog(self).exec()
+
+    def on_download(self, name):
+        if self.isActiveWindow():
+            self.notice.ask(f"Pobieranie: {name}", [("Pokaż pobrane", self.show_downloads, True), ("OK", None, False)])
+
+    def clear_data(self):
+        ClearDataDialog(self).exec()
+
+    def extensions_menu(self, m):
+        m.clear(); mgr = get_profile().extensionManager()
+        exts = list(mgr.extensions()) if mgr is not None else []
+        for e in exts:
+            sm = m.addMenu(glyph("puzzle"), e.name() or e.id())
+            a = sm.addAction("Włączone"); a.setCheckable(True); a.setChecked(e.isEnabled())
+            a.toggled.connect(lambda on, e=e: mgr.setExtensionEnabled(e, on))
+            sm.addAction("Usuń", lambda e=e: mgr.uninstallExtension(e) if e.isInstalled() else mgr.unloadExtension(e))
+        if not exts:
+            m.addAction("Brak rozszerzeń").setEnabled(False)
+        m.addSeparator()
+        self.act(m, "plus", "Zainstaluj z pliku (.zip / .crx)…", lambda: self.install_extension(False), enabled=mgr is not None)
+        self.act(m, "folder", "Wczytaj rozpakowane (folder)…", lambda: self.install_extension(True), enabled=mgr is not None)
+        m.addAction("Sklep Chrome nie działa w silniku Qt – rozszerzenia instaluje się z pliku").setEnabled(False)
+
+    def install_extension(self, folder):
+        mgr = get_profile().extensionManager()
+        if folder:
+            path = QFileDialog.getExistingDirectory(self, "Folder rozszerzenia (z plikiem manifest.json)")
+        else:
+            path, _ = QFileDialog.getOpenFileName(self, "Rozszerzenie", "", "Rozszerzenia (*.zip *.crx)")
+        if path:
+            (mgr.installExtension if not folder else mgr.loadExtension)(path)
+            self.notice.info("Rozszerzenie dodane – działa na nowo wczytanych stronach.")
+
+    def print_page(self):
+        web = self.web()
+        if web is None:
+            return
+        from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
+        self._printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        dlg = QPrintDialog(self._printer, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            web.printFinished.connect(lambda ok: self.notice.info("Wydrukowano." if ok else "Nie udało się wydrukować."))
+            web.print(self._printer)
+
+    def _save_name(self, ext):
+        web = self.web(); name = re.sub(r'[\\/:*?"<>|]+', " ", web.title() or host_of(web.url().toString()) or "strona").strip()
+        return str(Path(DOWNLOADS[0].folder() if DOWNLOADS else HOME) / f"{name[:80]}.{ext}")
+
+    def save_page(self):
+        web = self.web()
+        if web is None:
+            return
+        path, flt = QFileDialog.getSaveFileName(self, "Zapisz stronę", self._save_name("mhtml"),
+                                                "Cała strona w jednym pliku (*.mhtml);;Tylko HTML (*.html)")
+        if path:
+            F = QWebEngineDownloadRequest.SavePageFormat
+            web.page().save(path, F.MimeHtmlSaveFormat if path.lower().endswith(".mhtml") else F.SingleHtmlSaveFormat)
+
+    def save_pdf(self):
+        web = self.web()
+        if web is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Zapisz jako PDF", self._save_name("pdf"), "PDF (*.pdf)")
+        if path:
+            web.page().pdfPrintingFinished.connect(lambda p, ok: self.notice.info(f"Zapisano PDF: {Path(p).name}" if ok else
+                                                                                  "Nie udało się zapisać PDF."))
+            web.page().printToPdf(path)
+
+    def devtools(self):
+        web = self.web()
+        if web is None:
+            return
+        dv = QWebEngineView(); dv.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        dv.setWindowTitle("Narzędzia deweloperskie – " + (web.title() or "")); dv.setWindowIcon(app_icon()); dv.resize(1000, 700)
+        web.page().setDevToolsPage(dv.page()); POPUPS.append(dv)
+        dv.destroyed.connect(lambda _=None, d=dv: POPUPS.remove(d) if d in POPUPS else None); dv.show()
+
+    def view_source(self):
+        web = self.web()
+        if web is not None:
+            self.open_url_new_tab("view-source:" + web.url().toString(), self.cur().container)
+
+    def about(self):
+        from PyQt6.QtWebEngineCore import qWebEngineChromiumVersion
+        QMessageBox.about(self, "O Lunie", "<h3>Luna</h3><p>Lekka przeglądarka z kafelkami, widgetami i asystentem AI.</p>"
+                          f"<p style='color:#9a9a9a'>Silnik: Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)</p>")
+
+    def open_google(self, url):
+        """Strony Google: w karcie Luny, gdy jest tam sesja Google; inaczej w zwykłej przeglądarce (Google blokuje logowanie
+        w osadzonym silniku, więc karta Luny pokazałaby tylko ekran logowania)."""
+        if self.store.session.logged_in("google"):
+            self.open_url_new_tab(url)
+        else:
+            QDesktopServices.openUrl(QUrl(url))
+
     # --- karty ---
     def new_tab(self, container="", ws=None, group="", title="", lazy_url="", activate=True):
-        t = Tab(self.store, self, ws or self.ws, group or "", container if container in self.container_ids() else "")
+        container = PRIVATE if self.private else (container if container in self.container_ids() else "")
+        t = Tab(self.store, self, ws or self.ws, group or "", container)
         self.stack.addWidget(t)
         i = self.bar.addTab((title or "Ekran główny")[:26])
         cb = QToolButton(); cb.setObjectName("tabclose"); cb.setFixedSize(20, 20); cb.setIconSize(QSize(14, 14))
@@ -6965,14 +7595,14 @@ class Browser(QMainWindow):
         tp.style().unpolish(tp); tp.style().polish(tp)
 
     def toggle_tab_popup(self):
-        if self.store.feature("vertical_tabs"):
-            return
+        if self.store.feature("vertical_tabs"):   # panel przypięty: logo zwija / rozwija panel
+            self.tabpanel.setVisible(not self.tabpanel.isVisible()); return
         p = self.tab_popup
         if p.isVisible():
             p.hide(); return
         self._popup_from = self.cur(); self.tabpanel.rebuild()
         h = min(560, max(260, self.height() - 140)); p.resize(322, h)
-        b = self.tabs_btn; pos = b.mapToGlobal(QPoint(b.width() - p.width(), b.height() + 6))
+        b = self.logo_btn; pos = b.mapToGlobal(QPoint(0, b.height() + 6))
         p.move(pos); p.show(); self.tabpanel.tree.setFocus()
 
     def group_menu(self, name, pos):
@@ -7096,8 +7726,8 @@ class Browser(QMainWindow):
             t.unsplit() if t.split is not None else t.split_with("")
 
     # --- tarcza (blokada śledzenia) ---
-    def shield_menu(self):
-        m = self.shield_btn.menu(); m.clear(); t = self.cur(); sh = SHIELD[0] if SHIELD else None
+    def shield_menu(self, m=None):
+        m = m or self.shield_btn.menu(); m.clear(); t = self.cur(); sh = SHIELD[0] if SHIELD else None
         url = t.web.url().toString() if t and t.web is not None and not t.on_home() else ""
         if sh is None or not self.store.feature("adblock"):
             m.addAction("Blokada reklam i śledzenia jest wyłączona").setEnabled(False)
@@ -7132,7 +7762,7 @@ class Browser(QMainWindow):
 
     def on_pw(self, d):
         v = self.vault()
-        if v is None:
+        if v is None or self.private:
             return
         o = d.get("origin", ""); u = (d.get("u") or "").strip(); p = d.get("p") or ""
         if not o.startswith("http"):
@@ -7165,8 +7795,8 @@ class Browser(QMainWindow):
         js = FILL_JS.replace("%U%", json.dumps(user)).replace("%P%", json.dumps(pw))
         view.page().runJavaScript(js, QWebEngineScript.ScriptWorldId.ApplicationWorld, lambda ok: None)
 
-    def key_menu(self):
-        m = self.key_btn.menu(); m.clear(); t = self.cur()
+    def key_menu(self, m=None):
+        m = m or self.key_btn.menu(); m.clear(); t = self.cur()
         view = t.web if t and t.web is not None and not t.on_home() else None
         v = self.vault()
         if v is None:
@@ -7292,6 +7922,8 @@ class Browser(QMainWindow):
         if ok and tab.web:
             self.autofill(tab.web)
             url = tab.web.url().toString()
+            if self.private:
+                return
             if url.startswith("http"):
                 self.store.add_recent((tab.web.title() or host_of(url))[:40], url)
 
