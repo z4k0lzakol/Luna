@@ -2,6 +2,7 @@
 """Luna – lekka przeglądarka z kafelkami-aplikacjami, panelami bocznymi (widgety) i asystentem AI.
 
 Instalacja:   pip install PyQt6 PyQt6-WebEngine   (opcjonalnie: psutil – monitor zasobów, keyring – bezpieczny token Google)
+              Windows, sterowanie Spotify/odtwarzaczami bez logowania: pip install winrt-Windows.Media.Control winrt-Windows.Storage.Streams
 Uruchomienie: python luna.py
 
 Dane w katalogu domowym (odpowiednik localStorage):
@@ -40,6 +41,13 @@ try:
 except ImportError:
     QSvgRenderer = None
 from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
+try:   # systemowe sterowanie multimediami Windows (SMTC): pip install winrt-Windows.Media.Control winrt-Windows.Storage.Streams
+    import asyncio, threading
+    from winrt.windows.media.control import (GlobalSystemMediaTransportControlsSessionManager as _SMTC,
+                                             GlobalSystemMediaTransportControlsSessionPlaybackStatus as _SMTC_STATUS)
+    from winrt.windows.storage.streams import DataReader as _DataReader
+except Exception:
+    _SMTC = _SMTC_STATUS = _DataReader = None
 
 HOME = Path.home()
 DATA = HOME / ".luna.json"
@@ -837,6 +845,15 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
     elif kind == "search":
         p.setPen(QPen(QColor("#9a9a9a"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         p.drawEllipse(9, 9, 18, 18); p.drawLine(24, 24, 34, 34)
+    elif kind == "play":
+        p.setBrush(QColor(color)); p.drawPolygon(P((15, 11), (33, 22), (15, 33)))
+    elif kind == "pause":
+        p.setBrush(QColor(color)); p.drawRoundedRect(QRectF(13, 11, 6, 22), 1.5, 1.5); p.drawRoundedRect(QRectF(25, 11, 6, 22), 1.5, 1.5)
+    elif kind in ("prev", "next"):
+        p.setBrush(QColor(color))
+        if kind == "next":
+            p.translate(S, 0); p.scale(-1, 1)
+        p.drawLine(12, 12, 12, 32); p.drawPolygon(P((32, 12), (17, 22), (32, 32)))
     p.end()
     return QIcon(pm)
 
@@ -1931,7 +1948,7 @@ class WidgetHost(QObject):
         super().__init__()
         self.store, self.browser = store, browser
         self.inst = {}
-        self._google = self._spotify = self._discord = None
+        self._google = self._spotify = self._discord = self._media = None
         self.app_active = True
         self.left, self.right = Sidebar("left", store), Sidebar("right", store)
         self.left.rail_clicked.connect(browser.toggle_sidebar); self.right.rail_clicked.connect(browser.toggle_sidebar)
@@ -1956,6 +1973,12 @@ class WidgetHost(QObject):
         self.store.session.set_active(active)
         for w in list(self.inst.values()):
             w._sync_active()
+
+    @property
+    def media(self):
+        if self._media is None:
+            self._media = MediaSession()
+        return self._media
 
     @property
     def spotify(self):
@@ -2998,10 +3021,234 @@ class LocalPane(QWidget):
             self.player.stop()
 
 
+APP_NAMES = {"msedge": "Edge", "chrome": "Chrome", "firefox": "Firefox", "308046b0af4a39cb": "Firefox", "brave": "Brave",
+             "opera": "Opera", "zunemusic": "Odtwarzacz multimediów", "microsoft.zunemusic": "Odtwarzacz multimediów",
+             "vlc": "VLC", "spotify": "Spotify", "python": "Luna", "pythonw": "Luna", "luna": "Luna"}
+
+
+def app_label(aumid):
+    """„SpotifyAB.SpotifyMusic_…!Spotify” / „Spotify.exe” / „MSEdge” → czytelna nazwa aplikacji."""
+    a = (aumid or "").split("!")[-1]
+    a = re.sub(r"\.exe$", "", a.split("\\")[-1], flags=re.I)
+    return APP_NAMES.get(a.lower()) or ("Spotify" if "spotify" in (aumid or "").lower() else a[:1].upper() + a[1:])
+
+
+class MediaSession(QObject):
+    """Systemowe sterowanie multimediami Windows (SMTC) – to samo, co pokazuje nakładka głośności Windows.
+    Działa z aplikacją Spotify (i innymi odtwarzaczami) bez logowania i bez kluczy. WinRT jest asynchroniczny, więc
+    wszystko dzieje się w osobnym wątku z pętlą asyncio; zdarzenia systemu (zmiana utworu/stanu) przychodzą same –
+    nic nie jest odpytywane w tle. Wyniki trafiają do wątku GUI sygnałami Qt (połączenie kolejkowane)."""
+    updated = pyqtSignal(dict)
+    cover_ready = pyqtSignal(bytes)
+    available = _SMTC is not None
+
+    def __init__(self):
+        super().__init__()
+        self.state, self.loop, self.mgr, self._subs = {}, None, None, 0
+        self._sess = self._sess_tokens = self._mgr_tokens = None
+        self._cover_key, self._pending = None, False
+        self.updated.connect(self._keep)
+
+    def _keep(self, st):
+        self.state = st
+
+    # --- cykl życia (nasłuch zdarzeń tylko, gdy jakiś widget jest widoczny) ---
+    def register(self):
+        self._subs += 1
+        if self._subs == 1 and self.available:
+            if self.loop is None:   # bezczynna pętla nie zużywa CPU; wątek żyje do końca programu
+                self.loop = asyncio.new_event_loop()
+                threading.Thread(target=self.loop.run_forever, name="luna-smtc", daemon=True).start()
+            self._submit(self._attach())
+
+    def unregister(self):
+        self._subs = max(0, self._subs - 1)
+        if self._subs == 0 and self.loop is not None:
+            self._submit(self._detach())
+
+    def _submit(self, coro):
+        asyncio.run_coroutine_threadsafe(self._safe(coro), self.loop)
+
+    async def _safe(self, coro):
+        try:
+            await coro
+        except Exception as e:    # błąd WinRT nie może zabić wątku ani programu
+            print(f"SMTC: {e!r}", file=sys.stderr)
+            self.updated.emit({"error": "Nie udało się odczytać odtwarzacza systemowego."})
+
+    def _kick(self, *_):          # wywoływane z wątków WinRT – zbieramy serię zdarzeń w jeden odczyt
+        if self.loop is not None and not self._pending:
+            self._pending = True
+            self.loop.call_soon_threadsafe(lambda: self.loop.call_later(0.15, lambda: self._submit(self._read())))
+
+    async def _attach(self):
+        if self.mgr is None:
+            self.mgr = await _SMTC.request_async()
+        if self._mgr_tokens is None:
+            self._mgr_tokens = (self.mgr.add_sessions_changed(self._kick), self.mgr.add_current_session_changed(self._kick))
+        await self._read()
+
+    async def _detach(self):
+        if self.mgr is not None and self._mgr_tokens:
+            self.mgr.remove_sessions_changed(self._mgr_tokens[0]); self.mgr.remove_current_session_changed(self._mgr_tokens[1])
+        self._mgr_tokens = None; self._bind(None)
+
+    def _bind(self, s):
+        """Nasłuch zdarzeń tylko na wybranej sesji (utwór, stan odtwarzania, pozycja)."""
+        if s is not None and self._sess is not None and s.source_app_user_model_id == self._sess.source_app_user_model_id:
+            return
+        if self._sess is not None and self._sess_tokens:
+            o, (a, b, c) = self._sess, self._sess_tokens
+            o.remove_media_properties_changed(a); o.remove_playback_info_changed(b); o.remove_timeline_properties_changed(c)
+        self._sess, self._sess_tokens = s, None
+        if s is not None:
+            self._sess_tokens = (s.add_media_properties_changed(self._kick), s.add_playback_info_changed(self._kick),
+                                 s.add_timeline_properties_changed(self._kick))
+
+    def _pick(self):
+        """Najpierw Spotify, potem sesja, którą Windows uznaje za bieżącą, potem cokolwiek, co gra."""
+        sessions = list(self.mgr.get_sessions()) if self.mgr else []
+        for s in sessions:
+            if "spotify" in (s.source_app_user_model_id or "").lower():
+                return s
+        cur = self.mgr.get_current_session() if self.mgr else None
+        if cur is not None:
+            return cur
+        playing = [s for s in sessions if s.get_playback_info().playback_status == _SMTC_STATUS.PLAYING]
+        return (playing or sessions or [None])[0]
+
+    async def _read(self):
+        self._pending = False
+        if self._subs == 0 or self.mgr is None:
+            return
+        s = self._pick(); self._bind(s)
+        if s is None:
+            self.updated.emit({}); return
+        p = await s.try_get_media_properties_async()
+        pb = s.get_playback_info(); tl = s.get_timeline_properties(); ctl = pb.controls
+        dur = (tl.end_time - tl.start_time).total_seconds()
+        st = {"app": app_label(s.source_app_user_model_id), "title": p.title or "", "artist": p.artist or p.album_artist or "",
+              "playing": pb.playback_status == _SMTC_STATUS.PLAYING, "prev": bool(ctl.is_previous_enabled),
+              "next": bool(ctl.is_next_enabled), "toggle": bool(ctl.is_play_pause_toggle_enabled),
+              "pos": tl.position.total_seconds(), "dur": dur if dur > 0 else 0.0,
+              "at": time.time()}
+        try:
+            at = tl.last_updated_time.timestamp()     # kiedy odtwarzacz podał pozycję (do płynnego paska postępu)
+            st["at"] = at if 1e9 < at <= time.time() else st["at"]
+        except (AttributeError, OSError, ValueError):
+            pass
+        self.updated.emit(st)
+        key = (st["app"], st["title"], st["artist"])
+        if key != self._cover_key:
+            self._cover_key = key
+            data = b""
+            if p.thumbnail is not None:
+                stream = await p.thumbnail.open_read_async()
+                reader = _DataReader(stream.get_input_stream_at(0)); n = await reader.load_async(stream.size)
+                data = bytes(reader.read_buffer(n))
+            self.cover_ready.emit(data)
+
+    # --- sterowanie ---
+    def cmd(self, name):
+        """name: toggle_play_pause | skip_next | skip_previous."""
+        if self.loop is not None:
+            self._submit(self._cmd(name))
+
+    async def _cmd(self, name):
+        s = self._pick()
+        if s is not None:
+            await getattr(s, f"try_{name}_async")()
+
+
+class SystemPane(QWidget):
+    """Tryb „System”: aplikacja Spotify (lub inny odtwarzacz) przez systemowe sterowanie Windows – bez logowania."""
+
+    def __init__(self, owner):
+        super().__init__(); self.setObjectName("clear")
+        self.o, self.st = owner, {}
+        l = QVBoxLayout(self); l.setContentsMargins(0, 0, 0, 0); l.setSpacing(6)
+        self.msg = lbl("", "muted2", wrap=True)
+        self.card = QWidget(); self.card.setObjectName("clear")
+        c = QVBoxLayout(self.card); c.setContentsMargins(0, 0, 0, 0); c.setSpacing(6)
+        top = QHBoxLayout(); top.setSpacing(10)
+        self.cover = QLabel(); self.cover.setFixedSize(58, 58); self.cover.setObjectName("cover")
+        info = QVBoxLayout(); info.setSpacing(0)
+        self.song = ElideLabel("Nic nie gra"); self.song.setObjectName("h3")
+        self.artist = ElideLabel(""); self.artist.setObjectName("muted"); self.app = lbl("", "muted")
+        for w in (self.song, self.artist, self.app):
+            info.addWidget(w)
+        top.addWidget(self.cover); top.addLayout(info, 1); c.addLayout(top)
+        self.bar = QProgressBar(); self.bar.setRange(0, 1000); self.bar.setTextVisible(False); self.bar.setFixedHeight(5)
+        c.addWidget(self.bar)
+        row = QHBoxLayout(); row.setSpacing(4); row.addStretch(); self.btns = {}
+        for key, kind, cmd in (("prev", "prev", "skip_previous"), ("toggle", "play", "toggle_play_pause"),
+                               ("next", "next", "skip_next")):
+            b = QToolButton(); b.setFixedSize(36, 36); b.setIconSize(QSize(20, 20)); b.setIcon(glyph(kind))
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _=False, x=cmd: self.media().cmd(x)); row.addWidget(b); self.btns[key] = b
+        row.addStretch(); c.addLayout(row)
+        l.addWidget(self.msg); l.addWidget(self.card)
+        self.tick = QTimer(self); self.tick.timeout.connect(self.progress)   # tylko pasek postępu, bez zapytań
+
+    def media(self):
+        return self.o.host.media
+
+    def start(self):
+        m = self.media()
+        if not m.available:
+            self.card.hide(); self.msg.show()
+            self.msg.setText("Sterowanie systemowe działa w Windows 10/11 – w tej instalacji brakuje pakietu "
+                             "winrt-Windows.Media.Control." if sys.platform == "win32" else
+                             "Sterowanie systemowe jest dostępne tylko w Windows. Użyj trybu Karty lub Spotify.")
+            return
+        m.updated.connect(self.show_state); m.cover_ready.connect(self.set_cover); m.register()
+        self.show_state(m.state)
+
+    def stop(self):
+        m = self.media(); self.tick.stop()
+        if m.available:
+            safe_disconnect(m.updated, self.show_state); safe_disconnect(m.cover_ready, self.set_cover); m.unregister()
+
+    def show_state(self, st):
+        self.st = st
+        if st.get("error") or not st:
+            self.card.hide(); self.msg.show(); self.tick.stop()
+            self.msg.setText(st.get("error") or "Nic nie gra. Włącz muzykę w aplikacji Spotify (albo innym odtwarzaczu) – "
+                                                 "utwór pojawi się tu sam, bez logowania.")
+            return
+        self.msg.hide(); self.card.show()
+        self.song.setText(st["title"] or "Bez tytułu"); self.artist.setText(st["artist"]); self.app.setText(st["app"])
+        self.btns["toggle"].setIcon(glyph("pause" if st["playing"] else "play"))
+        for k in ("prev", "next", "toggle"):
+            self.btns[k].setEnabled(st[k])
+        self.bar.setVisible(st["dur"] > 0); self.progress()
+        if st["playing"] and st["dur"] > 0:
+            self.tick.start(1000)
+        else:
+            self.tick.stop()
+
+    def progress(self):
+        st = self.st
+        if not st.get("dur"):
+            return
+        pos = st["pos"] + (time.time() - st["at"] if st["playing"] else 0)
+        self.bar.setValue(int(1000 * max(0.0, min(pos, st["dur"])) / st["dur"]))
+
+    def set_cover(self, data):
+        pm = QPixmap()
+        if data and pm.loadFromData(data):
+            self.cover.setPixmap(pm.scaled(58, 58, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                                           Qt.TransformationMode.SmoothTransformation))
+        else:
+            self.cover.clear()
+
+
 class AudioWidget(WidgetFrame):
-    """Widget dźwięku: Spotify (Web API), Karty (dźwięk z otwartych kart) albo Pliki (lokalny odtwarzacz).
+    """Widget dźwięku: System (Spotify i inne odtwarzacze przez sterowanie Windows, bez logowania), Spotify (Web API),
+    Karty (dźwięk z otwartych kart) albo Pliki (lokalny odtwarzacz).
     Każdy tryb jest tworzony leniwie, a nieaktywne tryby nie mają timerów ani nasłuchiwaczy."""
-    MODES = (("spotify", "Spotify", SpotifyPane), ("tabs", "Karty", TabsPane), ("local", "Pliki", LocalPane))
+    MODES = (("system", "System", SystemPane), ("spotify", "Spotify", SpotifyPane), ("tabs", "Karty", TabsPane),
+             ("local", "Pliki", LocalPane))
 
     def build(self):
         row = QHBoxLayout(); row.setSpacing(4); group = QButtonGroup(self); self.btns, self.panes, self.mode = {}, {}, None
@@ -3010,7 +3257,7 @@ class AudioWidget(WidgetFrame):
             b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, k=key: self.select(k))
             group.addButton(b); row.addWidget(b); self.btns[key] = b
         row.addStretch(); self.lay.addLayout(row)
-        self.select(self.store.settings.get("audio_mode", "spotify"))
+        self.select(self.store.settings.get("audio_mode", "system" if MediaSession.available else "spotify"))
 
     def select(self, key):
         if key == self.mode:
