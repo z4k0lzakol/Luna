@@ -12,6 +12,8 @@ Dane w katalogu domowym (odpowiednik localStorage):
 Klucze aplikacji OAuth (Google, Spotify, Discord) wpisuje TWÓRCA raz – w luna_oauth.json obok luna.py
 (wzór: luna_oauth.example.json), w ~/.luna_oauth.json, w zmiennych środowiskowych LUNA_<USŁUGA>_CLIENT_ID /
 _CLIENT_SECRET albo w Ustawieniach → Dla twórców. Użytkownik końcowy widzi tylko przyciski „Połącz”.
+Bez kluczy działa „połączenie przez sesję” (SessionBridge): widgety korzystają z logowania z kart Luny
+(wspólny profil), np. Gmail czyta kanał Atom skrzynki, a kafelki pokazują liczniki nieprzeczytanych.
 """
 import sys, json, math, re, html, os, random, base64, time, ast, operator, secrets, hashlib
 import urllib.parse
@@ -24,7 +26,8 @@ from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRect, QRec
 from PyQt6.QtGui import (QGuiApplication, QImage, QCursor, QBrush, QRadialGradient, QLinearGradient, QIcon, QPixmap, QPainter, QColor, QFont,
                          QFontDatabase, QPen, QPolygonF, QKeySequence, QShortcut, QActionGroup, QTextDocument,
                          QPalette, QPainterPath, QDesktopServices)
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply, QTcpServer, QHostAddress
+from PyQt6.QtNetwork import (QNetworkAccessManager, QNetworkRequest, QNetworkReply, QTcpServer, QHostAddress,
+                             QNetworkCookieJar)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget, QTabBar, QToolButton, QLineEdit,
                              QListWidget, QListWidgetItem, QListView, QAbstractItemView, QMenu, QInputDialog,
                              QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QDialog, QDialogButtonBox, QFrame,
@@ -838,8 +841,9 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
     return QIcon(pm)
 
 
-def make_icon(name: str, url: str = "") -> QIcon:
-    """Ciemna karta; w środku favicon strony na jasnej płytce albo – gdy brak – serifowa litera."""
+def make_icon(name: str, url: str = "", count: int = 0) -> QIcon:
+    """Ciemna karta; w środku favicon strony na jasnej płytce albo – gdy brak – serifowa litera.
+    count > 0 → plakietka z licznikiem (np. nieprzeczytane maile) w prawym górnym rogu."""
     S = 128
     pm = QPixmap(S, S); pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
@@ -861,6 +865,13 @@ def make_icon(name: str, url: str = "") -> QIcon:
         f = QFont("Playfair Display"); f.setStyleHint(QFont.StyleHint.Serif); f.setPixelSize(64)
         p.setFont(f); p.setPen(QColor("#ececea"))
         p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, (name.strip() or "?")[0].upper())
+    if count > 0:
+        txt = str(count) if count < 100 else "99+"
+        f = QFont("Inter"); f.setPixelSize(22); f.setWeight(QFont.Weight.Bold); p.setFont(f)
+        w = max(38, p.fontMetrics().horizontalAdvance(txt) + 20); r = QRectF(S - w - 2, 2, w, 38)
+        p.setPen(QPen(QColor("#1b1b1b"), 4)); p.setBrush(QColor("#ececec"))
+        p.drawRoundedRect(r, 19, 19)
+        p.setPen(QColor("#111111")); p.drawText(r, Qt.AlignmentFlag.AlignCenter, txt)
     p.end()
     return QIcon(pm)
 
@@ -989,6 +1000,7 @@ class Store(QObject):
         self.weather = {}
         GLASS_ALPHA[0] = int(self.settings.get("glass", 168)); BG.store = self
         self.bump_day(emit=False)  # samo uruchomienie przeglądarki liczy się do serii
+        self.session = SessionBridge(self)  # logowania z kart Luny dostępne dla widgetów i kafelków
 
     @staticmethod
     def _load(path, default):
@@ -1941,6 +1953,7 @@ class WidgetHost(QObject):
     def set_active(self, active):
         """Okno nieaktywne → wstrzymujemy odpytywanie API i timery widgetów (oszczędność baterii/CPU)."""
         self.app_active = active
+        self.store.session.set_active(active)
         for w in list(self.inst.values()):
             w._sync_active()
 
@@ -3515,19 +3528,189 @@ class SpotifyService(OAuthService):
         self.store.settings.get("spotify", {}).pop("name", None)
 
 
+ATOM = "{http://purl.org/atom/ns#}"
+GMAIL_FEED = "https://mail.google.com/mail/u/0/feed/atom"
+HOST_ALIAS = {"gmail.com": "mail.google.com", "inbox.google.com": "mail.google.com"}
+# licznik w tytule karty: „(3) Discord”, „Odebrane (5) - … - Gmail”; 1–3 cyfry, żeby nie łapać lat w tytułach filmów
+TITLE_COUNT = re.compile(r"^\((\d{1,3})\+?\)\s|\s\((\d{1,3})\+?\)\s+[-–|]")
+
+
+class SessionBridge(QObject):
+    """Połączenie przez sesję – bez kluczy OAuth. Logowanie odbywa się normalnie w karcie Luny (wspólny profil
+    WebEngine), a most kopiuje ciasteczka wybranych usług do własnego QNetworkAccessManagera. Dzięki temu widgety
+    i kafelki dostają dane jako zalogowany użytkownik. Źródła liczników: kanał Atom Gmaila (odpytywany tylko, gdy
+    ktoś go potrzebuje i okno jest aktywne) oraz tytuły otwartych kart („(3) …”) – te bez żadnych zapytań."""
+    changed = pyqtSignal()          # zmiana stanu logowania lub nowe dane Gmaila
+    counts_changed = pyqtSignal()   # liczniki na kafelkach
+    DOMAINS = ("google.com",)       # tylko te ciasteczka trafiają do mostu
+    LOGIN = {"google": ("google.com", ("SID", "__Secure-1PSID", "__Secure-3PSID"))}
+    POLLED = {"mail.google.com"}    # hosty z licznikiem odpytywanym w tle (nie znikają po zamknięciu karty)
+
+    def __init__(self, store):
+        super().__init__()
+        self.store, self.active, self._subs = store, True, 0
+        self.jar = QNetworkCookieJar()
+        self.nam = QNetworkAccessManager(self); self.nam.setCookieJar(self.jar)
+        self.counts, self._tab_host = {}, {}
+        self.gmail = {"count": None, "items": [], "error": "", "ts": 0.0}
+        self._busy = False; self._state = {}
+        self._emit = QTimer(self); self._emit.setSingleShot(True); self._emit.timeout.connect(self._cookies_settled)
+        self._poll = QTimer(self); self._poll.timeout.connect(self.poll)
+        self._eval = QTimer(self); self._eval.setSingleShot(True); self._eval.timeout.connect(self._update_poll)
+        store.changed.connect(lambda: self._eval.start(400))   # nowy/usunięty kafelek Gmaila
+        cs = get_profile().cookieStore()
+        cs.cookieAdded.connect(self._added); cs.cookieRemoved.connect(self._removed)
+        cs.loadAllCookies()
+
+    # --- ciasteczka ---
+    def _ours(self, c):
+        d = c.domain().lstrip(".")
+        return any(d == x or d.endswith("." + x) for x in self.DOMAINS)
+
+    def _added(self, c):
+        if self._ours(c):
+            self.jar.insertCookie(c); self._emit.start(300)   # ciasteczka przychodzą seriami – jedna reakcja
+
+    def _removed(self, c):
+        if self._ours(c):
+            self.jar.deleteCookie(c); self._emit.start(300)
+
+    def _cookies_settled(self):
+        state = {k: self.logged_in(k) for k in self.LOGIN}
+        if state != self._state:
+            self._state = state
+            if not state.get("google"):
+                self.gmail.update(count=None, items=[], error="", ts=0.0); self._set_count("mail.google.com", 0)
+            self.changed.emit(); self._update_poll()
+
+    def logged_in(self, svc):
+        dom, names = self.LOGIN[svc]
+        for c in self.jar.allCookies():
+            d = c.domain().lstrip(".")
+            if (d == dom or d.endswith("." + dom)) and bytes(c.name()).decode() in names:
+                return True
+        return False
+
+    # --- liczniki kafelków ---
+    @staticmethod
+    def _host(url):
+        h = host_of(url)
+        return HOST_ALIAS.get(h, h)
+
+    def count_for(self, url):
+        return self.counts.get(self._host(url), 0)
+
+    def _set_count(self, host, n):
+        if self.counts.get(host, 0) != n:
+            if n:
+                self.counts[host] = n
+            else:
+                self.counts.pop(host, None)
+            self.counts_changed.emit()
+
+    def on_tab_title(self, tab, url, title):
+        host = self._host(url)
+        old = self._tab_host.get(id(tab))
+        if old and old != host:
+            self._drop(old, tab)
+        self._tab_host[id(tab)] = host
+        m = TITLE_COUNT.search(title or "")
+        if m or host in self.counts:
+            self._set_count(host, int(m.group(1) or m.group(2)) if m else 0)
+
+    def forget_tab(self, tab):
+        host = self._tab_host.pop(id(tab), None)
+        if host:
+            self._drop(host, tab)
+
+    def _drop(self, host, tab):
+        others = [t for k, t in self._tab_host.items() if k != id(tab) and t == host]
+        if host not in self.POLLED and not others:
+            self._set_count(host, 0)
+
+    # --- Gmail (kanał Atom skrzynki odbiorczej) ---
+    def register(self):
+        self._subs += 1; self._update_poll()
+
+    def unregister(self):
+        self._subs = max(0, self._subs - 1); self._update_poll()
+
+    def set_active(self, active):
+        self.active = active; self._update_poll()
+
+    def _wanted(self):
+        tile = any(self._host(b["url"]) == "mail.google.com" for b in self.store.items)
+        return self.active and (self._subs > 0 or tile) and self.logged_in("google")
+
+    def _update_poll(self):
+        if self._wanted():
+            if not self._poll.isActive():
+                self._poll.start(180000)
+                if time.time() - self.gmail["ts"] > 60:
+                    self.poll()
+        else:
+            self._poll.stop()
+
+    def poll(self):
+        if self._busy or not self.logged_in("google"):
+            return
+        self._busy = True
+        req = QNetworkRequest(QUrl(GMAIL_FEED))
+        req.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
+                         QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
+        req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, get_profile().httpUserAgent())
+        req.setTransferTimeout(15000)
+        r = self.nam.get(req); r.finished.connect(lambda r=r: self._gmail_reply(r))
+
+    def _gmail_reply(self, r):
+        self._busy = False
+        status = r.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+        neterr = r.error() != QNetworkReply.NetworkError.NoError
+        data = bytes(r.readAll()); r.deleteLater()
+        try:
+            root = ET.fromstring(data)
+            if root.tag != ATOM + "feed":   # np. strona logowania, która akurat jest poprawnym XML-em
+                raise ValueError
+            count = int(root.findtext(ATOM + "fullcount") or 0)
+        except (ET.ParseError, ValueError):
+            root = None
+        if root is None:   # 401 albo strona logowania zamiast kanału
+            self.gmail["error"] = ("need" if status in (401, 403) or (status == 200 and not neterr)
+                                   else "Brak połączenia z Gmailem.")
+            self.changed.emit(); return
+        items = []
+        for e in root.findall(ATOM + "entry")[:6]:
+            link = e.find(ATOM + "link")
+            when = None
+            try:
+                when = datetime.fromisoformat((e.findtext(ATOM + "issued") or e.findtext(ATOM + "modified") or "")
+                                              .replace("Z", "+00:00")).astimezone()
+            except ValueError:
+                pass
+            items.append({"from": e.findtext(ATOM + "author/" + ATOM + "name") or e.findtext(ATOM + "author/" + ATOM + "email") or "",
+                          "subject": e.findtext(ATOM + "title") or "", "summary": e.findtext(ATOM + "summary") or "",
+                          "url": link.get("href") if link is not None else "https://mail.google.com/mail/u/0/#inbox",
+                          "when": when})
+        self.gmail.update(count=count, items=items, error="", ts=time.time())
+        self._set_count("mail.google.com", count); self.changed.emit()
+
+
 class GoogleWidget(WidgetFrame):
     """Wspólna baza widgetów Google. Logowanie jest centralne (jedno dla wszystkich widgetów, przycisk także na pasku
     narzędzi): widget tylko reaguje na stan usługi oraz na wspólny sygnał synchronizacji."""
     NEEDS = None  # fragment nazwy wymaganego zakresu OAuth, np. "gmail.readonly"
+    SESSION_URL = ""  # gdy ustawione: widget działa też przez sesję z karty Luny (SessionBridge), bez kluczy
 
     def build(self):
         self.gen, self.loaded = 0, False
         self.msg = lbl("", "muted2", wrap=True)
         self.gbtn = GoogleButton(); self.gbtn.clicked.connect(lambda: self.host.browser.google_login())
+        self.sbtn = GoogleButton("Zaloguj się w karcie Luny")
+        self.sbtn.clicked.connect(lambda: self.host.browser.open_url_new_tab(self.SESSION_URL))
         self.cfgbtn = QPushButton("Konta i integracje"); self.cfgbtn.clicked.connect(lambda: self.host.browser.open_settings("accounts"))
         self.skel = Skeleton(3); self.err = lbl("", "muted2", wrap=True)
         self.content = QVBoxLayout(); self.content.setSpacing(4)
-        for w in (self.msg, self.gbtn, self.cfgbtn, self.skel, self.err):
+        for w in (self.msg, self.gbtn, self.sbtn, self.cfgbtn, self.skel, self.err):
             self.lay.addWidget(w)
         self.lay.addLayout(self.content)
         self.extra_build()
@@ -3538,24 +3721,41 @@ class GoogleWidget(WidgetFrame):
     def svc(self):
         return self.host.google
 
+    def oauth_ok(self):
+        g = self.svc()
+        return g is not None and g.logged_in() and not (self.NEEDS and not g.has_scope(self.NEEDS))
+
+    def session_mode(self):
+        """Brak działającego OAuth, ale użytkownik jest zalogowany do Google w karcie Luny."""
+        return bool(self.SESSION_URL) and not self.oauth_ok() and self.store.session.logged_in("google")
+
     def start(self):
         g = self.svc()
+        if self.SESSION_URL:
+            self.store.session.register(); self.store.session.changed.connect(self.sync_state)
         if g is not None:
             g.register(); g.state_changed.connect(self.sync_state); g.sync.connect(self.refresh); self.sync_state()
 
     def stop(self):
         g = self.svc()
+        if self.SESSION_URL:
+            self.store.session.unregister(); safe_disconnect(self.store.session.changed, self.sync_state)
         if g is not None:
             g.unregister(); safe_disconnect(g.state_changed, self.sync_state); safe_disconnect(g.sync, self.refresh)
 
     def sync_state(self):
         g = self.svc()
-        for w in (self.msg, self.gbtn, self.cfgbtn, self.skel, self.err):
+        for w in (self.msg, self.gbtn, self.sbtn, self.cfgbtn, self.skel, self.err):
             w.hide()
         if g is None:
             return
+        if self.session_mode():
+            self.refresh(); return
         btn = self.gbtn
-        if g.expired:
+        if self.SESSION_URL and not g.configured() and not g.logged_in():
+            self.msg.setText("Zaloguj się do Google w karcie Luny – widget połączy się sam, bez żadnych kluczy.")
+            btn = self.sbtn; self.set_badge(0)
+        elif g.expired:
             self.msg.setText("Sesja Google wygasła. Zaloguj się ponownie – jedno logowanie obsłuży wszystkie widgety.")
         elif not g.logged_in():
             self.msg.setText("Połącz konto Google jednym kliknięciem – Gmail, Kalendarz, Zadania i Dysk zaczną działać automatycznie.")
@@ -3599,6 +3799,44 @@ def _sender(v):
 
 class GmailWidget(GoogleWidget):
     NEEDS = "gmail.readonly"
+    SESSION_URL = "https://mail.google.com/mail/u/0/#inbox"
+
+    def refresh(self):
+        if not self.session_mode():
+            super().refresh(); return
+        for w in (self.msg, self.gbtn, self.sbtn, self.cfgbtn):
+            w.hide()
+        d = self.store.session.gmail
+        if not d["ts"] and not d["error"]:     # pierwsze pobranie jeszcze trwa
+            if not self.loaded:
+                self.skel.show()
+            self.store.session.poll(); return
+        self.show_session(d)
+
+    def refresh_now(self):
+        if self.session_mode():
+            self.store.session.poll()
+        else:
+            super().refresh()
+
+    def show_session(self, d):
+        if d["error"] == "need":   # zalogowany w Google, ale Gmail nie wydał jeszcze ciasteczek skrzynki
+            self.clear(); self.skel.hide(); self.err.hide(); self.loaded = False; self.set_badge(0)
+            self.msg.setText("Otwórz raz Gmaila w karcie Luny – potem widget będzie czytał skrzynkę sam.")
+            self.sbtn.setText("Otwórz Gmaila"); self.msg.show(); self.sbtn.show(); return
+        if d["error"]:
+            self.finish(d["error"]); return
+        self.set_badge(d["count"] or 0)
+        self.clear(); self.finish()
+        if not d["items"]:
+            self.content.addWidget(lbl("Brak nieprzeczytanych wiadomości", "muted2")); return
+        for m in d["items"][:5]:
+            w = m["when"]
+            when = "" if not w else (w.strftime("%H:%M") if w.date() == date.today() else w.strftime("%d.%m"))
+            b = QPushButton(f"{m['from'][:28]}   {when}\n{(m['subject'] or '(bez tematu)')[:46]}")
+            b.setObjectName("mailitem"); b.setToolTip(m["summary"] or m["subject"])
+            b.clicked.connect(lambda _=False, u=m["url"]: self.host.browser.open_url_new_tab(u))
+            self.content.addWidget(b)
 
     def fetch(self):
         g = self.svc()
@@ -3632,7 +3870,7 @@ class GmailWidget(GoogleWidget):
     def show_msgs(self, ms):
         self.clear(); self.finish()
         if not ms:
-            self.content.addWidget(lbl("Brak nieprzeczytanych wiadomości 🎉", "muted2")); return
+            self.content.addWidget(lbl("Brak nieprzeczytanych wiadomości", "muted2")); return
         for m in ms:
             h = {x["name"].lower(): x["value"] for x in (m.get("payload") or {}).get("headers", [])}
             ts = int(m.get("internalDate", 0) or 0) / 1000
@@ -4132,9 +4370,10 @@ def page_widgets(dlg):
 class AccountRow(QFrame):
     """Wiersz konta: ikona, stan połączenia (zielona kropka / „Połączono jako …”) i jeden przycisk Połącz / Rozłącz."""
 
-    def __init__(self, dlg, title, icon, getter, label, style):
+    def __init__(self, dlg, title, icon, getter, label, style, session=None, login_url=""):
         super().__init__()
         self.setObjectName("acc"); self.getter, self.label, self.style_name, self.dlg = getter, label, style, dlg
+        self.session, self.login_url = session, login_url   # połączenie przez sesję z karty Luny (bez kluczy)
         h = QHBoxLayout(self); h.setContentsMargins(16, 14, 16, 14); h.setSpacing(12)
         ic = QLabel(); ic.setFixedSize(32, 32); ic.setPixmap(icon.pixmap(28, 28))
         col = QVBoxLayout(); col.setSpacing(1); col.addWidget(lbl(title, "h3"))
@@ -4144,6 +4383,9 @@ class AccountRow(QFrame):
         s = getter()
         if s is not None:
             s.state_changed.connect(self.refresh); dlg.finished.connect(lambda _=0, s=s: safe_disconnect(s.state_changed, self.refresh))
+        if session is not None:
+            bridge = dlg.host.store.session
+            bridge.changed.connect(self.refresh); dlg.finished.connect(lambda _=0: safe_disconnect(bridge.changed, self.refresh))
         self.refresh()
 
     def _style(self, name):
@@ -4159,6 +4401,11 @@ class AccountRow(QFrame):
             self.status.setText(dot("#3ddc84") + f"Połączono jako <b>{who}</b>"); self.btn.setText("Rozłącz"); self._style("")
         elif s.busy:
             self.status.setText(dot("#f0b232") + "Łączenie… dokończ logowanie w oknie"); self.btn.setText("Anuluj"); self._style("")
+        elif self.session is not None and self.session():
+            self.status.setText(dot("#3ddc84") + "Połączono przez sesję w karcie Luny (bez kluczy)"); self.btn.hide()
+        elif self.login_url and not s.configured():
+            self.status.setText(dot("#80848e") + "Niepołączono · zaloguj się w karcie Luny")
+            self.btn.setText("Zaloguj w karcie"); self._style(self.style_name)
         else:
             txt = "Sesja wygasła" if s.expired else "Niepołączono"
             if not s.configured():
@@ -4174,6 +4421,8 @@ class AccountRow(QFrame):
             s.logout()
         elif s.busy:
             s.cancel()
+        elif self.login_url and not s.configured():
+            self.dlg.host.browser.open_url_new_tab(self.login_url); self.dlg.close()
         else:
             s.login()
 
@@ -4183,8 +4432,10 @@ def page_accounts(dlg):
     w, l = page_box("Konta i integracje", "Połącz konto jednym kliknięciem: Luna otworzy bezpieczne okno logowania, "
                                           "a sesja zapisze się automatycznie i będzie odnawiana w tle.")
     h = dlg.host
+    l.addWidget(AccountRow(dlg, "Google", google_g_icon(), lambda: h.google, "Połącz z Google", "gbtn",
+                           session=lambda: h.store.session.logged_in("google"),
+                           login_url="https://mail.google.com/mail/u/0/#inbox"))
     for title, icon, getter, label, style in (
-            ("Google", google_g_icon(), lambda: h.google, "Połącz z Google", "gbtn"),
             ("Spotify", mini_icon("Spotify", "https://open.spotify.com"), lambda: h.spotify, "Połącz ze Spotify", "spotbtn"),
             ("Discord", mini_icon("Discord", "https://discord.com"), lambda: h.discord, "Połącz z Discordem", "discbtn")):
         l.addWidget(AccountRow(dlg, title, icon, getter, label, style))
@@ -4681,6 +4932,7 @@ class HomePage(QWidget):
         self._dirty = False
         self._rt = QTimer(self); self._rt.setSingleShot(True); self._rt.timeout.connect(self.refresh)
         self.store.changed.connect(self._soon)
+        self.store.session.counts_changed.connect(self._soon)
         self.refresh()
 
     def _soon(self):
@@ -4706,7 +4958,7 @@ class HomePage(QWidget):
         self.count.setText(f"{n} {plural(n)}")
         self.grid.blockSignals(True); self.grid.clear()
         for b in self.store.items:
-            it = QListWidgetItem(make_icon(b["name"], b["url"]), b["name"])
+            it = QListWidgetItem(make_icon(b["name"], b["url"], self.store.session.count_for(b["url"])), b["name"])
             it.setData(Qt.ItemDataRole.UserRole, b["url"])
             it.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
             it.setToolTip(b["url"])
@@ -5286,6 +5538,7 @@ class Browser(QMainWindow):
         if self.bar.count() <= 1:
             self.close(); return
         i = self.stack.indexOf(tab)
+        self.store.session.forget_tab(tab)
         self.bar.removeTab(i); self.stack.removeWidget(tab); tab.deleteLater()
         self.stack.setCurrentIndex(self.bar.currentIndex())
         self.sync_address()
@@ -5340,6 +5593,8 @@ class Browser(QMainWindow):
         i = self.stack.indexOf(tab)
         if i >= 0:
             self.bar.setTabText(i, title[:26] or "…")
+        if tab.web is not None:
+            self.store.session.on_tab_title(tab, tab.web.url().toString(), title)
 
     def on_icon(self, tab, icon):
         i = self.stack.indexOf(tab)
