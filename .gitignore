@@ -1,0 +1,4 @@
+# klucze aplikacji OAuth – nie wysyłać na GitHub
+luna_oauth.json
+client_secret*.json
+__pycache__/

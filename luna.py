@@ -545,7 +545,8 @@ BUILTIN_OAUTH = {"google": {"client_id": "", "client_secret": ""}, "spotify": {"
 
 def builtin_oauth(name):
     c = dict(BUILTIN_OAUTH.get(name, {}))
-    for path in (Path(__file__).with_name("luna_oauth.json"), HOME / ".luna_oauth.json"):
+    bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "luna_oauth.json"   # klucze wbudowane w .exe (build.ps1)
+    for path in (bundled, Path(__file__).with_name("luna_oauth.json"), HOME / ".luna_oauth.json"):
         try:
             c.update({k: v for k, v in json.loads(path.read_text(encoding="utf-8")).get(name, {}).items() if v})
         except Exception:
@@ -954,6 +955,8 @@ def chevron_path() -> str:
 
 STYLE += """
 QWidget#tabpanel { background:rgba(10,10,10,0.92); border-right:1px solid #1d1d1d; }
+QWidget#tabpanelpop { background:#121212; }
+QFrame#tabpop { background:#121212; border:1px solid #2c2c2c; }
 QTreeWidget#vtabs { background:transparent; border:none; color:#c9c9c9; outline:0; font-size:13px; show-decoration-selected:0; }
 QTreeWidget#vtabs::item { height:30px; border-radius:8px; padding-left:2px; }
 QTreeWidget#vtabs::item:hover { background:#1c1c1c; color:#ffffff; }
@@ -1884,8 +1887,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "suggest": ("Podpowiedzi wyszukiwania", "Lista pod paskiem adresu: historia, kafelki i otwarte karty (lokalnie, bez sieci).", True),
     "suggest_net": ("Podpowiedzi z sieci", "Wysyła wpisywany tekst do wybranej wyszukiwarki po propozycje. Wyłącz dla pełnej prywatności.", True),
     "discord": ("Integracja z Discordem", "Widget Discord i połączenie konta. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
-    "vertical_tabs": ("Pionowe karty i grupy", "Karty w panelu po lewej: pełne tytuły i zwijane grupy (foldery projektów). "
-                      "Wyłączone: klasyczny pasek kart u góry.", True),
+    "vertical_tabs": ("Panel kart przypięty po lewej", "Lista kart z grupami na stałe po lewej stronie zamiast paska kart u góry. "
+                      "Wyłączone: lista kart i grup otwiera się przyciskiem na pasku narzędzi.", False),
     "restore_tabs": ("Przywracanie kart", "Po uruchomieniu wracają karty, grupy, przestrzenie i kontenery (strony wczytują się "
                      "dopiero po wejściu na kartę).", True),
     "sleep_tabs": ("Usypianie nieaktywnych kart", "Karty nieużywane przez dłuższy czas zwalniają pamięć RAM i nie zużywają baterii "
@@ -3872,8 +3875,11 @@ class OAuthService(QObject):
                 return cid.strip()
         return ""
 
-    def client_secret(self):
-        return self.cfg().get("client_secret") or builtin_oauth(self.SECTION).get("client_secret", "")
+    def client_secret(self):     # sekret z tego samego źródła co identyfikator (stare, niepełne pola w ustawieniach są pomijane)
+        own = self.cfg().get("client_id")
+        if own and re.fullmatch(self.ID_RE, own.strip()):
+            return self.cfg().get("client_secret", "")
+        return builtin_oauth(self.SECTION).get("client_secret", "")
 
     def configured(self):
         return bool(self.client_id()) and (not self.NEEDS_SECRET or bool(self.client_secret()))
@@ -5273,7 +5279,7 @@ def page_keys(dlg):
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
                  ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"),
-                 ("Ctrl + Shift + G", "Dodaj kartę do grupy"),
+                 ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A", "Lista kart i grup"),
                  ("Środkowy przycisk na karcie", "Zamyka kartę"), ("Środkowy przycisk na pustym pasku", "Nowa karta")):
         row = QHBoxLayout(); a = lbl(k, "h3"); b = lbl(d, "muted2")
         row.addWidget(a); row.addStretch(); row.addWidget(b); l.addLayout(row)
@@ -6381,7 +6387,7 @@ class Browser(QMainWindow):
     def __init__(self):
         super().__init__()
         self._laid, self._g_ref, self._pinned, self._suggest = False, None, None, None
-        self._prev_tab, self._ws_last, self._last_user, self._pw_pending = None, {}, {}, None
+        self._prev_tab, self._ws_last, self._last_user, self._pw_pending, self._popup_from = None, {}, {}, None, None
         self.setWindowTitle("Luna"); self.setWindowIcon(app_icon())
         scr = QGuiApplication.primaryScreen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
         self.resize(min(1300, int(scr.width() * 0.94)), min(860, int(scr.height() * 0.92)))
@@ -6449,6 +6455,8 @@ class Browser(QMainWindow):
         inner.addStretch(); inner.addWidget(self.chip)
         tl.addWidget(self.address, 1)
         tl.addSpacing(6)
+        self.tabs_btn = self.btn("tabs", "Karty i grupy (Ctrl+Shift+A)", self.toggle_tab_popup)
+        tl.addWidget(self.tabs_btn)
         self.shield_btn = self.btn("shield", "Blokada reklam i śledzenia", lambda: None)
         self.key_btn = self.btn("key", "Hasła i aliasy e-mail", lambda: None)
         for b_, fn in ((self.shield_btn, self.shield_menu), (self.key_btn, self.key_menu)):
@@ -6477,7 +6485,9 @@ class Browser(QMainWindow):
         self._state_cb = lambda st: self.host.set_active(st == Qt.ApplicationState.ApplicationActive)
         QGuiApplication.instance().applicationStateChanged.connect(self._state_cb)
         self.assistant = Assistant(self.store, self); self.assistant.hide()
-        self.tabpanel = TabPanel(self)
+        self.tabpanel = TabPanel(self); self.body = body
+        self.tab_popup = QFrame(self, Qt.WindowType.Popup); self.tab_popup.setObjectName("tabpop")   # lista kart z przycisku na pasku
+        QVBoxLayout(self.tab_popup).setContentsMargins(1, 1, 1, 1)
         body.addWidget(self.tabpanel); body.addWidget(self.host.left); body.addWidget(self.stack, 1); body.addWidget(self.host.right)
         body.addWidget(self.assistant)
         v.addWidget(self.bgframe, 1)
@@ -6526,7 +6536,7 @@ class Browser(QMainWindow):
                 ("Ctrl+Backtab", lambda: self.cycle_tab(-1)), ("Ctrl+PgDown", lambda: self.cycle_tab(1)),
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
-                ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())),
+                ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
                 ("Ctrl+L", lambda: (self.address.setFocus(), self.address.selectAll()))]
         self.shortcuts = [QShortcut(QKeySequence(k), self, fn) for k, fn in defs]
 
@@ -6541,7 +6551,7 @@ class Browser(QMainWindow):
             self.assistant.hide(); self.assistant.release()
         self.update_account_btn()
         vt = self.store.feature("vertical_tabs")
-        self.tabpanel.setVisible(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt)
+        self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.tabs_btn.setVisible(not vt)
         if SHIELD:
             SHIELD[0].reload()
         self.update_shield(); self.tabs_changed()
@@ -6801,6 +6811,8 @@ class Browser(QMainWindow):
             self._ws_last[c.ws] = c
         if self.tabpanel.isVisible():
             self.tabpanel.rebuild()
+            if self.tab_popup.isVisible() and self.cur() is not self._popup_from:   # wybrano kartę z listy – zamknij
+                self.tab_popup.hide()
         self.ws_btn.setText(self.ws)
         self.store.settings["session"] = self.session_data(); self.store.save_soon()
 
@@ -6928,7 +6940,32 @@ class Browser(QMainWindow):
         if ok and name.strip():
             t.group = name.strip(); self.decorate(t); self.tabs_changed()
             if not self.store.feature("vertical_tabs"):
-                QToolTip.showText(QCursor.pos(), "Grupy są widoczne w pionowym panelu kart (Funkcje).", self)
+                QToolTip.showText(QCursor.pos(), "Grupy widać pod przyciskiem „Karty i grupy” na pasku narzędzi.", self)
+
+    def dock_tabpanel(self, docked):
+        """Panel kart: przypięty po lewej (Funkcje) albo w okienku pod przyciskiem „Karty i grupy” na pasku narzędzi."""
+        tp = self.tabpanel
+        if docked:
+            self.tab_popup.hide()
+            if self.body.indexOf(tp) < 0:
+                self.body.insertWidget(0, tp)
+            tp.setFixedWidth(TabPanel.W); tp.setObjectName("tabpanel"); tp.show()
+        else:
+            if self.tab_popup.layout().indexOf(tp) < 0:
+                self.tab_popup.layout().addWidget(tp)
+            tp.setFixedWidth(320); tp.setObjectName("tabpanelpop")
+        tp.style().unpolish(tp); tp.style().polish(tp)
+
+    def toggle_tab_popup(self):
+        if self.store.feature("vertical_tabs"):
+            return
+        p = self.tab_popup
+        if p.isVisible():
+            p.hide(); return
+        self._popup_from = self.cur(); self.tabpanel.rebuild()
+        h = min(560, max(260, self.height() - 140)); p.resize(322, h)
+        b = self.tabs_btn; pos = b.mapToGlobal(QPoint(b.width() - p.width(), b.height() + 6))
+        p.move(pos); p.show(); self.tabpanel.tree.setFocus()
 
     def group_menu(self, name, pos):
         m = QMenu(self)
