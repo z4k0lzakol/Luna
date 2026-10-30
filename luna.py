@@ -2087,11 +2087,23 @@ class Background:
         f = widget.parentWidget()
         while f is not None and not isinstance(f, BgFrame):   # tło okna, w którym jest widget
             f = f.parentWidget()
+        if f is not None and f.page_color is not None:     # na stronie WWW: pod szkłem kolor strony
+            p.fillRect(widget.rect(), f.page_color); return
         entry = self.cache.get(getattr(f, "key", None)) if f is not None else None
         if entry is None:
             return
         pos = widget.mapTo(f, QPoint(0, 0))
         p.drawPixmap(0, 0, entry[1], pos.x(), pos.y(), widget.width(), widget.height())
+
+
+    @staticmethod
+    def page_light(widget):
+        """Czy widget leży na jasnej stronie WWW (wtedy szkło jest mniej przezroczyste, żeby tekst był czytelny)."""
+        f = widget.parentWidget()
+        while f is not None and not isinstance(f, BgFrame):
+            f = f.parentWidget()
+        c = getattr(f, "page_color", None)
+        return c is not None and c.lightnessF() > 0.55
 
 
 BG = Background()
@@ -2103,6 +2115,7 @@ class BgFrame(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("bgframe"); self.key = None
+        self.page_color = None   # kolor tła otwartej strony WWW (None = tło Luny, np. na ekranie głównym)
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self._recompute)
 
     def _recompute(self):
@@ -2116,8 +2129,16 @@ class BgFrame(QWidget):
             self.key = BG.prepare(self.size(), self)
         super().showEvent(ev)
 
+    def set_page_color(self, color):
+        if color != self.page_color:
+            self.page_color = color; self.update()
+            for w in self.findChildren(WidgetFrame):
+                w.update()
+
     def paintEvent(self, ev):
         p = QPainter(self)
+        if self.page_color is not None:   # panele boczne na stronie: to samo tło co strona, nic nie odstaje
+            p.fillRect(self.rect(), self.page_color); return
         p.fillRect(self.rect(), QColor("#111111"))
         if self.key != BG.wanted_key(self.size(), self):
             self._t.start(90)          # trwa zmiana rozmiaru – rysujemy stary cache, nowy po 90 ms ciszy
@@ -2131,7 +2152,7 @@ def paint_glass(w, radius=18):
     path = QPainterPath(); path.addRoundedRect(QRectF(w.rect()).adjusted(.5, .5, -.5, -.5), radius, radius)
     p.setClipPath(path)
     BG.draw_under(p, w)
-    p.fillPath(path, QColor(14, 14, 16, GLASS_ALPHA[0]))
+    p.fillPath(path, QColor(14, 14, 16, max(GLASS_ALPHA[0], 228) if BG.page_light(w) else GLASS_ALPHA[0]))
     g = QLinearGradient(0, 0, 0, min(70, max(1, w.height())))
     g.setColorAt(0, QColor(255, 255, 255, 18)); g.setColorAt(1, QColor(255, 255, 255, 0))
     p.fillPath(path, QBrush(g))
@@ -6276,6 +6297,24 @@ ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 
 WINDOWS = []   # dodatkowe okna (zwykłe i prywatne) – referencje, żeby nie zniknęły
 
 
+PAGE_BG_JS = r"""(function(){
+ function bg(e){ if (!e) return ''; var v = getComputedStyle(e).backgroundColor;
+   return (v && v !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(v)) ? v : ''; }
+ return bg(document.body) || bg(document.documentElement) || '';
+})()"""
+
+
+def css_color(v):
+    """„rgb(…)” / „rgba(…)” z CSS → QColor; brak tła = kolor podkładu kart Luny (#111111), półprzezroczyste – zmieszane z nim."""
+    base = QColor("#111111")
+    nums = [float(x) for x in re.findall(r"[\d.]+", v or "")]
+    if len(nums) < 3:
+        return base
+    a = nums[3] if len(nums) > 3 else 1.0
+    mix = lambda c, b: int(round(c * a + b * (1 - a)))
+    return QColor(mix(nums[0], base.red()), mix(nums[1], base.green()), mix(nums[2], base.blue()))
+
+
 def status_icon(icon, dot=None):
     """Ikona z kolorową kropką stanu w prawym dolnym rogu (np. konto Google: połączono / logowanie)."""
     S = 44
@@ -6995,7 +7034,23 @@ class Browser(QMainWindow):
         for sb in sbs:
             sb.set_state(sb not in keep, animate=self._laid)
         self._laid = True
+        self.update_page_bg()
         return keep
+
+    def update_page_bg(self):
+        """Na stronie WWW tło pod panelami bocznymi przyjmuje kolor strony; na ekranie głównym zostaje tło Luny."""
+        t = self.cur()
+        web = t.web if t is not None and t.web is not None and not t.on_home() else None
+        if web is None:
+            self.bgframe.set_page_color(None); return
+
+        def got(v):
+            try:
+                if t is self.cur() and not t.on_home():
+                    self.bgframe.set_page_color(css_color(v))
+            except RuntimeError:   # okno zamknięte, zanim strona odpowiedziała
+                pass
+        web.page().runJavaScript(PAGE_BG_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld, got)
 
     def toggle_sidebar(self, side):
         sb = self.host.left if side == "left" else self.host.right
@@ -7918,7 +7973,7 @@ class Browser(QMainWindow):
 
     def on_loaded(self, tab, ok):
         if tab is self.cur():
-            self.update_shield()
+            self.update_shield(); self.update_page_bg()
         if ok and tab.web:
             self.autofill(tab.web)
             url = tab.web.url().toString()
