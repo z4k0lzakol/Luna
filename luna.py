@@ -16,7 +16,7 @@ _CLIENT_SECRET albo w Ustawieniach → Dla twórców. Użytkownik końcowy widzi
 Bez kluczy działa „połączenie przez sesję” (SessionBridge): widgety korzystają z logowania z kart Luny
 (wspólny profil), np. Gmail czyta kanał Atom skrzynki, a kafelki pokazują liczniki nieprzeczytanych.
 """
-import sys, json, math, re, html, os, random, base64, time, ast, operator, secrets, hashlib
+import sys, json, math, re, html, os, random, base64, time, ast, operator, secrets, hashlib, weakref
 import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
@@ -876,6 +876,14 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         p.drawPolyline(P((33, 28), (11, 28))); p.drawPolyline(P((16, 23), (11, 28), (16, 33)))
     elif kind == "layers":
         p.drawPolygon(P((22, 9), (36, 16), (22, 23), (8, 16))); p.drawPolyline(P((8, 22), (22, 29), (36, 22)))
+    elif kind == "moon":
+        path = QPainterPath(); path.addEllipse(QRectF(9, 9, 26, 26))
+        cut = QPainterPath(); cut.addEllipse(QRectF(17, 4, 26, 26)); p.drawPath(path.subtracted(cut))
+    elif kind == "sun":
+        p.drawEllipse(QPointF(22, 22), 6.5, 6.5)
+        for i in range(8):
+            a = i * math.pi / 4
+            p.drawLine(QPointF(22 + 11 * math.cos(a), 22 + 11 * math.sin(a)), QPointF(22 + 15 * math.cos(a), 22 + 15 * math.sin(a)))
     elif kind == "dots":
         p.setBrush(QColor(color))
         for dx in (12, 22, 32):
@@ -1299,9 +1307,31 @@ EMAIL_FILL_JS = r"""(function(v){
 })(%V%)"""
 
 
+DARK = {"on": False, "except": set()}   # ciemny tryb stron (Funkcje / burger) i strony-wyjątki (domeny główne)
+LUNA_PAGES = weakref.WeakSet()
+
+
+def dark_for(url):
+    return DARK["on"] and base_domain(QUrl(url).host()) not in DARK["except"]
+
+
 class LunaPage(QWebEnginePage):
-    """Strona z kanałem zwrotnym z naszych skryptów (hasła, token DuckDuckGo) przez komunikaty konsoli z kluczem sesji."""
+    """Strona z kanałem zwrotnym z naszych skryptów (hasła, token DuckDuckGo) przez komunikaty konsoli z kluczem sesji.
+    Pilnuje też ciemnego trybu: włączony w silniku przed wczytaniem strony (wyjątki dla wybranych domen)."""
     pw_captured = pyqtSignal(dict)
+
+    def __init__(self, profile, parent=None):
+        super().__init__(profile, parent); LUNA_PAGES.add(self)
+
+    def apply_dark(self, url=None):
+        A = QWebEngineSettings.WebAttribute
+        if hasattr(A, "ForceDarkMode"):   # działa od razu, bez przeładowania
+            self.settings().setAttribute(A.ForceDarkMode, dark_for(url if url is not None else self.url().toString()))
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        if is_main_frame:
+            self.apply_dark(url.toString())
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
     def javaScriptConsoleMessage(self, level, msg, line, src):
         if not msg.startswith(PW_KEY):
@@ -2023,6 +2053,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "everywhere": ("Panele także na stronach WWW", "Domyślnie panele są widoczne tylko na ekranie głównym.", False),
     "suggest": ("Podpowiedzi wyszukiwania", "Lista pod paskiem adresu: historia, kafelki i otwarte karty (lokalnie, bez sieci).", True),
     "suggest_net": ("Podpowiedzi z sieci", "Wysyła wpisywany tekst do wybranej wyszukiwarki po propozycje. Wyłącz dla pełnej prywatności.", True),
+    "dark_pages": ("Ciemny tryb stron", "Jasne strony wyświetlają się w ciemnych kolorach, jak reszta Luny (strony z własnym "
+                   "ciemnym motywem zostają bez zmian). Wyjątki ustawisz dla pojedynczych stron w menu lub w Wyglądzie.", False),
     "panel_page_bg": ("Panele w kolorze strony", "Na stronach WWW tło pod panelami bocznymi przyjmuje kolor otwartej strony, "
                       "żeby panele nie odstawały. Wyłączone: zawsze tło Luny, jak wcześniej.", True),
     "discord": ("Integracja z Discordem", "Widget Discord i połączenie konta. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
@@ -6266,7 +6298,15 @@ def page_look(dlg):
         GLASS_ALPHA[0] = v; store.settings["glass"] = v; store.save_soon(); dlg.host.repaint_all()
     sl.valueChanged.connect(glass)
     l.addWidget(lbl("Tło", "h3")); l.addWidget(combo); l.addSpacing(10)
-    l.addWidget(lbl("Nieprzezroczystość paneli (szkło)", "h3")); l.addWidget(sl); l.addStretch(1)
+    l.addWidget(lbl("Nieprzezroczystość paneli (szkło)", "h3")); l.addWidget(sl); l.addSpacing(14)
+    name, desc, _ = FEATURES["dark_pages"]
+    l.addWidget(switch_row(name, desc + " Skrót: Ctrl+Shift+D.", store.feature("dark_pages"), lambda v: store.set_feature("dark_pages", v)))
+    l.addWidget(lbl("Strony bez ciemnego trybu", "h3"))
+    ex = QListWidget(); ex.setObjectName("wlist"); ex.setMaximumHeight(120); ex.viewport().setAutoFillBackground(False)
+    ex.addItems(store.settings.get("dark_except", [])); l.addWidget(ex)
+    rm = QPushButton("Usuń zaznaczoną (ciemny tryb wróci)")
+    rm.clicked.connect(lambda: ex.currentItem() and (dlg.browser.set_dark_except(ex.currentItem().text(), False), ex.takeItem(ex.currentRow())))
+    l.addWidget(rm, 0, Qt.AlignmentFlag.AlignLeft); l.addStretch(1)
     return scroll_page(w)
 
 
@@ -6277,7 +6317,7 @@ def page_keys(dlg):
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
                  ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
-                 ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + F", "Znajdź na stronie"),
+                 ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
                  ("Ctrl + S", "Zapisz stronę"), ("Ctrl + Shift + Y", "Pobrane pliki"), ("Ctrl + Shift + Del", "Usuń dane przeglądania"),
                  ("F12 / Ctrl + U", "Narzędzia deweloperskie / źródło strony"),
@@ -7916,7 +7956,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
-                ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+N", lambda: self.new_window(True)),
+                ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+D", self.toggle_dark), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
                 ("Ctrl+F", self.find_bar.open), ("Ctrl+S", self.save_page), ("F12", self.devtools), ("Ctrl+U", self.view_source),
                 ("F11", self.toggle_fullscreen), ("Ctrl+=", lambda: self.zoom(1)), ("Ctrl++", lambda: self.zoom(1)),
@@ -7935,6 +7975,7 @@ class Browser(QMainWindow):
             self.assistant.hide(); self.assistant.release()
         self.update_account_btn()
         self.ws_btn.setVisible(self.store.feature("workspaces"))
+        self.apply_dark()
         vt = self.store.feature("vertical_tabs")
         self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.apply_pins()
         if SHIELD:
@@ -8061,7 +8102,10 @@ class Browser(QMainWindow):
         def got(v):
             try:
                 if t is self.cur() and not t.on_home():
-                    self.bgframe.set_page_color(css_color(v))
+                    c = css_color(v)
+                    if dark_for(web.url().toString()) and c.lightnessF() > 0.5:
+                        c = QColor("#121212")   # tak silnik maluje jasne tło w ciemnym trybie
+                    self.bgframe.set_page_color(c)
             except RuntimeError:   # okno zamknięte, zanim strona odpowiedziała
                 pass
         web.page().runJavaScript(PAGE_BG_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld, got)
@@ -8237,6 +8281,12 @@ class Browser(QMainWindow):
         sep = QFrame(); sep.setObjectName("vsep"); sep.setFixedSize(1, 22); zr.h.addWidget(sep)
         zr.button(kind="fullscreen", tip="Pełny ekran (F11)", fn=lambda: (m.close(), self.toggle_fullscreen()))
         menu_row_action(m, zr)
+        dk = self.act(m, "moon", "Ciemny tryb stron", self.toggle_dark, "Ctrl+Shift+D")
+        dk.setCheckable(True); dk.setChecked(self.store.feature("dark_pages"))
+        if web is not None and self.store.feature("dark_pages"):
+            dom = base_domain(web.url().host())
+            ex = self.act(m, "sun", f"Bez ciemnego trybu na {dom}", lambda d=dom: self.set_dark_except(d, d not in DARK["except"]))
+            ex.setCheckable(True); ex.setChecked(dom in DARK["except"])
         pm = m.addMenu(glyph("pin"), "Ikony na pasku")
         for key, name in TOOL_ITEMS:
             a = pm.addAction(name); a.setCheckable(True); a.setChecked(key in self.pins())
@@ -8276,6 +8326,26 @@ class Browser(QMainWindow):
         w = Browser(self.store, private=private); w.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         WINDOWS.append(w); w.destroyed.connect(lambda _=None, w=w: WINDOWS.remove(w) if w in WINDOWS else None)
         w.show()
+
+    def apply_dark(self):
+        """Ciemny tryb z ustawień → wszystkie otwarte strony (w każdym oknie) od razu, bez przeładowania."""
+        DARK["on"] = self.store.feature("dark_pages")
+        DARK["except"] = set(self.store.settings.get("dark_except", []))
+        for pg in list(LUNA_PAGES):
+            try:
+                pg.apply_dark()
+            except RuntimeError:
+                pass
+        QTimer.singleShot(300, self.update_page_bg)
+
+    def set_dark_except(self, dom, on):
+        lst = [d for d in self.store.settings.get("dark_except", []) if d != dom] + ([dom] if on else [])
+        self.store.settings["dark_except"] = lst; self.store.save_soon()
+        for w in [self] + WINDOWS:
+            w.apply_dark()
+
+    def toggle_dark(self):
+        self.store.set_feature("dark_pages", not self.store.feature("dark_pages"))
 
     def open_market(self, tab="cat"):
         dlg = WidgetMarket(self); dlg.show_tab(tab); dlg.exec()
