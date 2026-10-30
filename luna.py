@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote, urlencode
 from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRect, QRectF, QEvent, QTimer, QLocale, QDateTime,
+                          QEasingCurve,
                           QPropertyAnimation, pyqtSignal)
 from PyQt6.QtGui import (QGuiApplication, QImage, QCursor, QBrush, QRadialGradient, QLinearGradient, QIcon, QPixmap, QPainter, QColor, QFont,
                          QFontDatabase, QPen, QPolygonF, QKeySequence, QShortcut, QActionGroup, QTextDocument,
@@ -41,7 +42,7 @@ try:
 except ImportError:
     QSvgRenderer = None
 from PyQt6.QtWebEngineCore import (QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor, QWebEngineScript,
-                                   QWebEngineDownloadRequest)
+                                   QWebEngineDownloadRequest, QWebEngineSettings)
 try:   # systemowe sterowanie multimediami Windows (SMTC): pip install winrt-Windows.Media.Control winrt-Windows.Storage.Streams
     import asyncio, threading
     from winrt.windows.media.control import (GlobalSystemMediaTransportControlsSessionManager as _SMTC,
@@ -1074,6 +1075,14 @@ def _setup_profile(prof, base):
         prof.setPersistentCookiesPolicy(QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies)
     if DOWNLOADS:
         prof.downloadRequested.connect(DOWNLOADS[0].on_request)
+    # płynność i szybkość: płynne przewijanie (jak w Chrome), wcześniejsze DNS, akcelerowany canvas,
+    # natychmiastowe Wstecz / Dalej z pamięci (back-forward cache), większa pamięć podręczna stron
+    A = QWebEngineSettings.WebAttribute
+    for name in ("ScrollAnimatorEnabled", "DnsPrefetchEnabled", "Accelerated2dCanvasEnabled", "BackForwardCacheEnabled"):
+        if hasattr(A, name):
+            prof.settings().setAttribute(getattr(A, name), True)
+    if base is not None:
+        prof.setHttpCacheMaximumSize(300 * 1024 * 1024)
     # zwykły Chromium zamiast „QtWebEngine” w User-Agent – logowanie (np. Google) rzadziej jest blokowane
     prof.setHttpUserAgent(re.sub(r"\s*QtWebEngine/\S+", "", prof.httpUserAgent()))
     if SHIELD:
@@ -2321,6 +2330,19 @@ class SidebarScroll(QScrollArea):
 
     def minimumSizeHint(self):
         return QSize(0, 0)
+
+    def wheelEvent(self, ev):
+        """Kółko myszy przewija płynnie (krótka animacja) zamiast skokami; gładzik zostaje bez zmian."""
+        sb = self.verticalScrollBar(); d = ev.angleDelta().y()
+        if not d or not ev.pixelDelta().isNull():
+            return super().wheelEvent(ev)
+        anim = getattr(self, "_anim", None)
+        if anim is None:
+            anim = self._anim = QPropertyAnimation(sb, b"value", self); anim.setDuration(180)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic); self._goal = sb.value()
+        base = self._goal if anim.state() == QPropertyAnimation.State.Running else sb.value()
+        self._goal = max(sb.minimum(), min(sb.maximum(), base - d))
+        anim.stop(); anim.setStartValue(sb.value()); anim.setEndValue(self._goal); anim.start(); ev.accept()
 
 
 class Sidebar(QWidget):
@@ -8002,6 +8024,8 @@ def load_local_fonts():
 
 
 if __name__ == "__main__":
+    # rasteryzacja stron na GPU i przesyłanie bez kopiowania – płynniejsze przewijanie i animacje (można nadpisać zmienną)
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-gpu-rasterization --enable-zero-copy")
     if sys.platform == "win32":  # własna ikona na pasku zadań (a nie ikona Pythona)
         try:
             import ctypes
