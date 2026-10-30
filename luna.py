@@ -1962,6 +1962,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "everywhere": ("Panele także na stronach WWW", "Domyślnie panele są widoczne tylko na ekranie głównym.", False),
     "suggest": ("Podpowiedzi wyszukiwania", "Lista pod paskiem adresu: historia, kafelki i otwarte karty (lokalnie, bez sieci).", True),
     "suggest_net": ("Podpowiedzi z sieci", "Wysyła wpisywany tekst do wybranej wyszukiwarki po propozycje. Wyłącz dla pełnej prywatności.", True),
+    "panel_page_bg": ("Panele w kolorze strony", "Na stronach WWW tło pod panelami bocznymi przyjmuje kolor otwartej strony, "
+                      "żeby panele nie odstawały. Wyłączone: zawsze tło Luny, jak wcześniej.", True),
     "discord": ("Integracja z Discordem", "Widget Discord i połączenie konta. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
     "vertical_tabs": ("Panel kart przypięty po lewej", "Lista kart z grupami na stałe po lewej stronie zamiast paska kart u góry. "
                       "Wyłączone: lista kart i grup otwiera się przyciskiem na pasku narzędzi.", False),
@@ -2366,8 +2368,11 @@ class Sidebar(QWidget):
         # marginesy lustrzane: większy po stronie krawędzi okna, mniejszy po stronie szyny
         self.col.setContentsMargins(*((8, 12, 0, 12) if side == "left" else (0, 12, 8, 12))); self.col.setSpacing(12)
         self.scroll.setWidget(self.inner)
-        self.scroll.setAlignment((Qt.AlignmentFlag.AlignLeft if side == "left" else Qt.AlignmentFlag.AlignRight)
-                                 | Qt.AlignmentFlag.AlignTop)
+        if side == "left":   # lewy panel: pasek przewijania przy krawędzi okna (po lewej), zawartość bez odwracania
+            self.scroll.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+            self.inner.setLayoutDirection(Qt.LayoutDirection.LeftToRight)
+        self.scroll.setAlignment((Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignAbsolute if side == "left"
+                                  else Qt.AlignmentFlag.AlignRight) | Qt.AlignmentFlag.AlignTop)
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Expanding)
         # półprzezroczyste tło: wymuś pełne odmalowanie przy przewijaniu (bez artefaktów po kopiowaniu pikseli)
         self.scroll.verticalScrollBar().valueChanged.connect(lambda _: self.scroll.viewport().update())
@@ -7063,7 +7068,7 @@ class Browser(QMainWindow):
         """Na stronie WWW tło pod panelami bocznymi przyjmuje kolor strony; na ekranie głównym zostaje tło Luny."""
         t = self.cur()
         web = t.web if t is not None and t.web is not None and not t.on_home() else None
-        if web is None:
+        if web is None or not self.store.feature("panel_page_bg"):
             self.bgframe.set_page_color(None); return
 
         def got(v):
