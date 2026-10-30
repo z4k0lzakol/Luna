@@ -1062,6 +1062,10 @@ QFrame#mcard { background:#181818; border:1px solid #262626; border-radius:14px;
 QFrame#mcard:hover { border:1px solid #3a3a3a; }
 QLabel#micon { background:#232323; border-radius:10px; }
 QFrame#mrow { background:#1d1d1d; border-radius:10px; }
+QListWidget#histlist { background:transparent; border:none; outline:0; }
+QListWidget#histlist::item { border-radius:8px; padding:2px 6px; color:#dcdcdc; }
+QListWidget#histlist::item:hover { background:#1f1f1f; }
+QListWidget#histlist::item:selected { background:#2b2b2b; color:#ffffff; }
 QTreeWidget#vtabs { background:transparent; border:none; color:#c9c9c9; outline:0; font-size:13px; show-decoration-selected:0; }
 QTreeWidget#vtabs::item { height:30px; border-radius:8px; padding-left:2px; }
 QTreeWidget#vtabs::item:hover { background:#1c1c1c; color:#ffffff; }
@@ -1519,6 +1523,11 @@ class Store(QObject):
             pass
 
     # --- ustawienia (odpowiednik localStorage: plik JSON w katalogu domowym) ---
+    def remove_history(self, pred):
+        """Usuwa wpisy historii spełniające warunek (także z sekcji „Ostatnie”)."""
+        self.history = [h for h in self.history if not pred(h)]; self.recent = [r for r in self.recent if not pred(r)]
+        self._hist_dirty = True; self._write(RECENT, self.recent); self.save_soon(); self.changed.emit()
+
     def clear_history(self):
         self.history, self.recent = [], []; self._hist_dirty = True
         self._write(RECENT, []); self.save_settings(); self.changed.emit()
@@ -1692,8 +1701,8 @@ class Store(QObject):
         self.recent.insert(0, {"name": name, "url": url})
         self.recent = self.recent[:8]
         self._write(RECENT, self.recent)
-        self.history = [h for h in self.history if h["url"] != url]    # pełna historia dla podpowiedzi (max 400 wpisów)
-        self.history.insert(0, {"name": name, "url": url}); del self.history[400:]
+        self.history = [h for h in self.history if h["url"] != url]    # pełna historia (podpowiedzi, Ctrl+H; max 1000)
+        self.history.insert(0, {"name": name, "url": url, "t": int(time.time())}); del self.history[1000:]
         self._hist_dirty = True; self.save_soon()
         self.fetch_icon(url)
         self.changed.emit()
@@ -6268,7 +6277,7 @@ def page_keys(dlg):
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
                  ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
-                 ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + F", "Znajdź na stronie"),
+                 ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
                  ("Ctrl + S", "Zapisz stronę"), ("Ctrl + Shift + Y", "Pobrane pliki"), ("Ctrl + Shift + Del", "Usuń dane przeglądania"),
                  ("F12 / Ctrl + U", "Narzędzia deweloperskie / źródło strony"),
@@ -7110,6 +7119,123 @@ class FindBar(QFrame):
         self.hide()
 
 
+class HistoryDialog(QDialog):
+    """Pełna historia (Ctrl+H): wyszukiwanie po tytule i adresie, grupy według dni, otwieranie, kopiowanie i usuwanie wpisów."""
+    MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września",
+              "października", "listopada", "grudnia"]
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b, self.store = browser, browser.store; self._icons = {}
+        self.setObjectName("settings"); self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.setModal(True); self.resize(820, 640); self.setMinimumSize(560, 420)
+        root = QVBoxLayout(self); root.setContentsMargins(1, 1, 1, 1); root.setSpacing(0)
+        bar = DragBar(); bl = QHBoxLayout(bar); bl.setContentsMargins(18, 8, 8, 8)
+        ic = QLabel(); ic.setPixmap(glyph("history", "#ececec").pixmap(20, 20)); bl.addWidget(ic); bl.addSpacing(6)
+        bl.addWidget(lbl("Historia", "h1")); bl.addSpacing(16)
+        self.search = QLineEdit(); self.search.setObjectName("glassin"); self.search.setPlaceholderText("Szukaj w historii (tytuł lub adres)…")
+        self.search.textChanged.connect(lambda _: self._t.start(150)); bl.addWidget(self.search, 1)
+        x = QToolButton(); x.setIcon(glyph("close")); x.setIconSize(QSize(22, 22)); x.setFixedSize(32, 32); x.clicked.connect(self.accept)
+        bl.addWidget(x); root.addWidget(bar)
+        body = QVBoxLayout(); body.setContentsMargins(18, 10, 18, 14); body.setSpacing(8)
+        self.count = lbl("", "muted2"); body.addWidget(self.count)
+        self.list = QListWidget(); self.list.setObjectName("histlist"); self.list.viewport().setAutoFillBackground(False)
+        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection); self.list.setIconSize(QSize(18, 18))
+        self.list.setUniformItemSizes(False); self.list.itemActivated.connect(lambda it: self.open(it))
+        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.menu)
+        body.addWidget(self.list, 1)
+        row = QHBoxLayout(); row.setSpacing(6)
+        for text, fn in (("Otwórz", lambda: [self.open(i) for i in self.selected()]), ("Usuń zaznaczone", self.remove_selected)):
+            bt = QPushButton(text); bt.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(bt)
+        row.addStretch()
+        clr = QPushButton("Wyczyść całą historię…"); clr.clicked.connect(self.clear_all); row.addWidget(clr)
+        body.addLayout(row); root.addLayout(body, 1)
+        QShortcut(QKeySequence("Delete"), self.list, self.remove_selected)
+        QShortcut(QKeySequence("Ctrl+F"), self, lambda: (self.search.setFocus(), self.search.selectAll()))
+        self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.fill)
+        self.fill(); self.search.setFocus()
+
+    def day_label(self, t):
+        if not t:
+            return "Wcześniej"
+        d = datetime.fromtimestamp(t).date(); today = date.today()
+        if d == today:
+            return "Dziś"
+        if d == today - timedelta(days=1):
+            return "Wczoraj"
+        name = f"{d.day} {self.MONTHS[d.month - 1]}"
+        return name + (f" {d.year}" if d.year != today.year else "")
+
+    def icon(self, url):
+        h = host_of(url)
+        if h not in self._icons:
+            path = icon_path(url)
+            self._icons[h] = QIcon(str(path)) if path.exists() else glyph("app", "#8c8c8c")
+        return self._icons[h]
+
+    def fill(self):
+        q = self.search.text().strip().lower(); words = q.split()
+        self.list.clear(); shown = 0; last = None
+        for h in self.store.history:
+            hay = (h.get("name", "") + " " + h["url"]).lower()
+            if words and not all(w in hay for w in words):
+                continue
+            day = self.day_label(h.get("t"))
+            if day != last:
+                head = QListWidgetItem(day.upper()); head.setFlags(Qt.ItemFlag.NoItemFlags)
+                f = head.font(); f.setBold(True); f.setPointSizeF(max(7.5, f.pointSizeF() - 1)); head.setFont(f)
+                head.setForeground(QColor("#8c8c8c")); head.setSizeHint(QSize(0, 34)); self.list.addItem(head); last = day
+            when = datetime.fromtimestamp(h["t"]).strftime("%H:%M") if h.get("t") else ""
+            it = QListWidgetItem(self.icon(h["url"]), f"{h.get('name') or host_of(h['url'])}\n{when + '   ' if when else ''}{host_of(h['url'])}")
+            it.setData(Qt.ItemDataRole.UserRole, h["url"]); it.setToolTip(h["url"]); it.setSizeHint(QSize(0, 48))
+            self.list.addItem(it); shown += 1
+        total = len(self.store.history)
+        self.count.setText(f"Znaleziono {shown} z {total}" if q else f"{total} {'strona' if total == 1 else 'stron'} w historii")
+        if not shown:
+            it = QListWidgetItem("Brak wyników." if q else "Historia jest pusta."); it.setFlags(Qt.ItemFlag.NoItemFlags)
+            it.setForeground(QColor("#6f6f6f")); self.list.addItem(it)
+
+    def selected(self):
+        return [i for i in self.list.selectedItems() if i.data(Qt.ItemDataRole.UserRole)]
+
+    def open(self, it, same_tab=False):
+        url = it.data(Qt.ItemDataRole.UserRole) if it is not None else None
+        if not url:
+            return
+        if same_tab:
+            self.b.cur().go(url)
+        else:
+            self.b.open_url_new_tab(url)
+        self.accept()
+
+    def menu(self, pos):
+        it = self.list.itemAt(pos)
+        if it is None or not it.data(Qt.ItemDataRole.UserRole):
+            return
+        if not it.isSelected():
+            self.list.clearSelection(); it.setSelected(True)
+        url = it.data(Qt.ItemDataRole.UserRole); host = host_of(url); m = QMenu(self)
+        m.addAction(glyph("plus"), "Otwórz w nowej karcie", lambda: self.open(it))
+        m.addAction(glyph("external"), "Otwórz w bieżącej karcie", lambda: self.open(it, True))
+        m.addAction(glyph("copy"), "Kopiuj link", lambda: QGuiApplication.clipboard().setText(url))
+        m.addSeparator()
+        m.addAction(glyph("trash"), "Usuń z historii", self.remove_selected)
+        m.addAction(glyph("trash"), f"Usuń wszystko z {host}", lambda: self.remove(lambda h: host_of(h["url"]) == host))
+        m.exec(self.list.viewport().mapToGlobal(pos))
+
+    def remove(self, pred):
+        self.store.remove_history(pred); self.fill()
+
+    def remove_selected(self):
+        urls = {i.data(Qt.ItemDataRole.UserRole) for i in self.selected()}
+        if urls:
+            self.remove(lambda h: h["url"] in urls)
+
+    def clear_all(self):
+        if QMessageBox.question(self, "Luna", "Wyczyścić całą historię przeglądania i sekcję „Ostatnie”?") \
+                == QMessageBox.StandardButton.Yes:
+            self.store.clear_history(); self.fill()
+
+
 class ClearDataDialog(QDialog):
     """Usuń dane przeglądania (Ctrl+Shift+Del): historia, ciasteczka i dane stron, pamięć podręczna, hasła."""
 
@@ -7790,7 +7916,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
-                ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+Shift+N", lambda: self.new_window(True)),
+                ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
                 ("Ctrl+F", self.find_bar.open), ("Ctrl+S", self.save_page), ("F12", self.devtools), ("Ctrl+U", self.view_source),
                 ("F11", self.toggle_fullscreen), ("Ctrl+=", lambda: self.zoom(1)), ("Ctrl++", lambda: self.zoom(1)),
@@ -8085,6 +8211,7 @@ class Browser(QMainWindow):
         pw = m.addMenu(glyph("key"), "Hasła i autouzupełnianie")
         pw.aboutToShow.connect(lambda: self.key_menu(pw))
         hm = m.addMenu(glyph("history"), "Historia")
+        self.act(hm, "history", "Pełna historia…", self.show_history, "Ctrl+H"); hm.addSeparator()
         for r in self.store.recent[:10]:
             self.act(hm, "history", (r["name"] or r["url"])[:48], lambda u=r["url"]: self.open_url_new_tab(u))
         if not self.store.recent:
@@ -8204,6 +8331,9 @@ class Browser(QMainWindow):
 
     def clear_data(self):
         ClearDataDialog(self).exec()
+
+    def show_history(self):
+        HistoryDialog(self).exec()
 
     def extensions_menu(self, m):
         m.clear(); mgr = get_profile().extensionManager()
