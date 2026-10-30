@@ -778,6 +778,12 @@ def plural(n: int) -> str:
     return "aplikacji"
 
 
+def gicon(btn, kind, size=18):
+    """Ikona wektorowa na przycisku zamiast znaku tekstowego (część symboli nie istnieje w czcionce Inter)."""
+    btn.setText(""); btn.setIcon(glyph(kind)); btn.setIconSize(QSize(size, size))
+    return btn
+
+
 def _path(pts, close=False):
     path = QPainterPath(QPointF(*pts[0]))
     for x, y in pts[1:]:
@@ -870,6 +876,16 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         p.drawPolyline(P((33, 28), (11, 28))); p.drawPolyline(P((16, 23), (11, 28), (16, 33)))
     elif kind == "layers":
         p.drawPolygon(P((22, 9), (36, 16), (22, 23), (8, 16))); p.drawPolyline(P((8, 22), (22, 29), (36, 22)))
+    elif kind == "dots":
+        p.setBrush(QColor(color))
+        for dx in (12, 22, 32):
+            p.drawEllipse(QPointF(dx, 22), 1.6, 1.6)
+    elif kind in ("volume", "mute"):
+        p.drawPolygon(P((9, 18), (15, 18), (22, 12), (22, 32), (15, 26), (9, 26)))
+        if kind == "volume":
+            p.drawArc(QRectF(20, 15, 10, 14), -60 * 16, 120 * 16); p.drawArc(QRectF(20, 10, 16, 24), -60 * 16, 120 * 16)
+        else:
+            p.drawLine(27, 18, 35, 26); p.drawLine(35, 18, 27, 26)
     elif kind == "up":
         p.drawPolyline(P((13, 26), (22, 17), (31, 26)))
     elif kind == "grid":
@@ -1812,7 +1828,7 @@ def weather_pixmap(kind: str) -> QPixmap:
                        QPointF(cx + (r + 4 + ray) * math.cos(a), cy + (r + 4 + ray) * math.sin(a)))
 
     def cloud(ox=0, oy=0):
-        path = QPainterPath()
+        path = QPainterPath(); path.setFillRule(Qt.FillRule.WindingFill)   # suma kształtów = jeden obrys chmury
         path.addEllipse(QRectF(10 + ox, 30 + oy, 20, 20)); path.addEllipse(QRectF(22 + ox, 20 + oy, 26, 26))
         path.addEllipse(QRectF(40 + ox, 30 + oy, 18, 18)); path.addRect(QRectF(20 + ox, 36 + oy, 30, 14))
         p.setBrush(QColor("#161616")); p.drawPath(path.simplified()); p.setBrush(nob)
@@ -2278,7 +2294,7 @@ class WidgetFrame(QFrame):
         self.badge = QLabel(); self.badge.setObjectName("badge"); self.badge.hide()
         h.addWidget(self.title); h.addSpacing(6); h.addWidget(self.badge); h.addStretch()
         self.menu = QMenu(self)
-        self.menu_btn = QToolButton(); self.menu_btn.setObjectName("more"); self.menu_btn.setText("⋯")
+        self.menu_btn = gicon(QToolButton(), "dots", 18); self.menu_btn.setObjectName("more")
         self.menu_btn.setFixedSize(26, 26); self.menu_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.menu_btn.setMenu(self.menu)
         self.fold_btn = QToolButton(); self.fold_btn.setFixedSize(26, 26); self.fold_btn.setIconSize(QSize(16, 16))
@@ -2813,7 +2829,7 @@ class MarketRow(QWidget):
         if chg is None:
             self.chg.setText(""); return
         up = chg >= 0
-        self.chg.setText(f"{'▲' if up else '▼'} {abs(chg):.2f}%")
+        self.chg.setText(f"{'+' if up else '−'}{abs(chg):.2f}%")
         self.chg.setStyleSheet(f"color:{'#3ddc84' if up else '#ff5c5c'}; font-size:12px; background:transparent;")
         self.spark.set_data(spark or [], up)
 
@@ -2919,7 +2935,7 @@ class CurrencyWidget(WidgetFrame):
             self.a.addItem(c); self.b.addItem(c)
         self.a.setCurrentText("PLN"); self.b.setCurrentText("USD")
         self.a.currentTextChanged.connect(self.calc); self.b.currentTextChanged.connect(self.calc)
-        sw = QToolButton(); sw.setText("⇄"); sw.setFixedSize(28, 28); sw.setToolTip("Zamień waluty")
+        sw = gicon(QToolButton(), "swap", 16); sw.setFixedSize(28, 28); sw.setToolTip("Zamień waluty")
         sw.clicked.connect(self.swap)
         row.addWidget(self.a, 1); row.addWidget(sw); row.addWidget(self.b, 1)
         self.res = lbl("–", "temp"); self.res.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -3199,7 +3215,7 @@ class TranslateWidget(WidgetFrame):
         for c, n in self.LANGS:
             self.a.addItem(n, c); self.b.addItem(n, c)
         self.a.setCurrentIndex(0); self.b.setCurrentIndex(1)
-        sw = QToolButton(); sw.setText("⇄"); sw.setFixedSize(28, 28); sw.clicked.connect(self.swap)
+        sw = gicon(QToolButton(), "swap", 16); sw.setFixedSize(28, 28); sw.clicked.connect(self.swap)
         row.addWidget(self.a, 1); row.addWidget(sw); row.addWidget(self.b, 1)
         self.out = lbl("", "muted2", wrap=True); self.out.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         cp = QPushButton("Kopiuj wynik"); cp.clicked.connect(lambda: QApplication.clipboard().setText(self.out.text()))
@@ -3260,6 +3276,20 @@ def read_system(prev=[None]):
             class MS(ctypes.Structure):
                 _fields_ = [("l", ctypes.c_ulong), ("load", ctypes.c_ulong)] + [(n, ctypes.c_ulonglong) for n in ("a", "b", "c", "d", "e", "f", "g")]
             m = MS(); m.l = ctypes.sizeof(MS); ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)); ram = float(m.load)
+            # procesor: GetSystemTimes (bezczynność / jądro / użytkownik) – różnica między kolejnymi odczytami
+            ft = [ctypes.c_ulonglong() for _ in range(3)]
+            if ctypes.windll.kernel32.GetSystemTimes(*[ctypes.byref(x) for x in ft]):
+                idle, tot = ft[0].value, ft[1].value + ft[2].value    # czas jądra zawiera już czas bezczynności
+                if prev[0]:
+                    d_t, d_i = tot - prev[0][0], idle - prev[0][1]
+                    cpu = max(0.0, min(100.0, 100.0 * (1 - d_i / d_t))) if d_t else 0.0
+                prev[0] = (tot, idle)
+            class PS(ctypes.Structure):   # bateria: GetSystemPowerStatus
+                _fields_ = [("ac", ctypes.c_ubyte), ("flag", ctypes.c_ubyte), ("pct", ctypes.c_ubyte), ("saver", ctypes.c_ubyte),
+                            ("life", ctypes.c_ulong), ("full", ctypes.c_ulong)]
+            ps = PS()
+            if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(ps)) and ps.pct != 255 and not ps.flag & 128:
+                bat, plug = float(ps.pct), ps.ac == 1
     except Exception:
         pass
     return cpu, ram, bat, plug
@@ -3285,7 +3315,7 @@ class SystemWidget(WidgetFrame):
         cpu, ram, bat, plug = read_system()
         for k, val in (("cpu", cpu), ("ram", ram), ("bat", bat)):
             v, pb = self.bars[k]
-            v.setText("–" if val is None else f"{val:.0f}%" + (" ⚡" if k == "bat" and plug else ""))
+            v.setText("–" if val is None else f"{val:.0f}%" + (" · ładuje" if k == "bat" and plug else ""))
             pb.setValue(int(val or 0))
 
 
@@ -3312,9 +3342,9 @@ class SpotifyPane(QWidget):
         c.addWidget(self.bar)
         row = QHBoxLayout(); row.setSpacing(4); row.addStretch()
         self.play_b = QToolButton()
-        for b, txt, fn in ((QToolButton(), "⏮", lambda: self.cmd("POST", "previous")), (self.play_b, "▶", self.toggle),
-                           (QToolButton(), "⏭", lambda: self.cmd("POST", "next"))):
-            b.setText(txt); b.setFixedSize(36, 36); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
+        for b, kind, fn in ((QToolButton(), "prev", lambda: self.cmd("POST", "previous")), (self.play_b, "play", self.toggle),
+                            (QToolButton(), "next", lambda: self.cmd("POST", "next"))):
+            gicon(b, kind, 20); b.setFixedSize(36, 36); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
         row.addStretch(); c.addLayout(row)
         self.note = lbl("", "muted", wrap=True); c.addWidget(self.note)
         l.addWidget(self.msg); l.addWidget(self.btn); l.addWidget(self.card)
@@ -3370,10 +3400,10 @@ class SpotifyPane(QWidget):
         it = (j or {}).get("item")
         if not it:
             self.song.setText("Nic nie gra"); self.artist.setText("Włącz muzykę w aplikacji Spotify"); self.dev.setText("")
-            self.bar.setValue(0); self.cover.clear(); self.cover_url = None; self.playing = False; self.play_b.setText("▶"); return
+            self.bar.setValue(0); self.cover.clear(); self.cover_url = None; self.playing = False; gicon(self.play_b, "play", 20); return
         self.song.setText(it.get("name", "")); self.artist.setText(", ".join(a.get("name", "") for a in it.get("artists", [])))
         self.dev.setText((j.get("device") or {}).get("name", ""))
-        self.playing = bool(j.get("is_playing")); self.play_b.setText("⏸" if self.playing else "▶")
+        self.playing = bool(j.get("is_playing")); gicon(self.play_b, "pause" if self.playing else "play", 20)
         self.bar.setValue(int(1000 * (j.get("progress_ms") or 0) / (it.get("duration_ms") or 1)))
         imgs = (it.get("album") or {}).get("images") or []
         url = (imgs[-2] if len(imgs) > 1 else imgs[0])["url"] if imgs else None
@@ -3414,9 +3444,9 @@ class TabAudioRow(QWidget):
         self.title = lbl("", "h3"); self.sub = lbl("", "muted"); col.addWidget(self.title); col.addWidget(self.sub)
         h.addLayout(col, 1)
         self.b_play, self.b_mute, self.b_go = QToolButton(), QToolButton(), QToolButton()
-        for b, txt, tip, fn in ((self.b_play, "⏯", "Odtwarzaj / pauza", self.toggle), (self.b_mute, "🔊", "Wycisz kartę", self.mute),
-                                (self.b_go, "↗", "Przejdź do karty", self.go)):
-            b.setText(txt); b.setToolTip(tip); b.setFixedSize(30, 30); b.clicked.connect(lambda _=False, f=fn: f()); h.addWidget(b)
+        for b, kind, tip, fn in ((self.b_play, "play", "Odtwarzaj / pauza", self.toggle), (self.b_mute, "volume", "Wycisz kartę", self.mute),
+                                 (self.b_go, "external", "Przejdź do karty", self.go)):
+            gicon(b, kind, 16); b.setToolTip(tip); b.setFixedSize(30, 30); b.clicked.connect(lambda _=False, f=fn: f()); h.addWidget(b)
 
     def page(self):
         return self.tab.web.page()
@@ -3432,8 +3462,9 @@ class TabAudioRow(QWidget):
 
     def update_from(self, web):
         page = web.page(); self.title.setText((web.title() or host_of(web.url().toString()) or "Karta")[:34])
-        self.b_mute.setText("🔇" if page.isAudioMuted() else "🔊")
-        self.sub.setText("♪ gra" if page.recentlyAudible() else "wstrzymano")
+        gicon(self.b_mute, "mute" if page.isAudioMuted() else "volume", 16)
+        gicon(self.b_play, "pause" if page.recentlyAudible() else "play", 16)
+        self.sub.setText("gra" if page.recentlyAudible() else "wstrzymano")
         page.runJavaScript(TAB_JS_INFO, 0, self.got)
 
     def got(self, res):
@@ -3441,7 +3472,8 @@ class TabAudioRow(QWidget):
             d = json.loads(res); t = " – ".join(x for x in (d.get("a"), d.get("t")) if x)
             if t:
                 self.title.setText(t[:34])
-            self.sub.setText("♪ gra" if d.get("playing") else "wstrzymano")
+            self.sub.setText("gra" if d.get("playing") else "wstrzymano")
+            gicon(self.b_play, "pause" if d.get("playing") else "play", 16)
         except Exception:
             pass
 
@@ -3502,22 +3534,24 @@ class LocalPane(QWidget):
         top = QHBoxLayout(); top.setSpacing(10)
         self.cover = QLabel(); self.cover.setFixedSize(58, 58); self.cover.setObjectName("cover")
         info = QVBoxLayout(); info.setSpacing(0)
-        self.song = lbl("Brak utworu", "h3", wrap=True); self.artist = lbl("Dodaj pliki audio ＋", "muted")
+        self.song = lbl("Brak utworu", "h3", wrap=True); self.artist = lbl("Dodaj pliki audio przyciskiem +", "muted")
         info.addWidget(self.song); info.addWidget(self.artist)
         top.addWidget(self.cover); top.addLayout(info, 1); l.addLayout(top)
         self.pos = QSlider(Qt.Orientation.Horizontal); self.pos.setRange(0, 0)
         self.pos.sliderMoved.connect(self.player.setPosition); l.addWidget(self.pos)
         row = QHBoxLayout(); row.setSpacing(4)
         self.play_b = QToolButton()
-        for b, txt, fn in ((QToolButton(), "⏮", lambda: self.step(-1)), (self.play_b, "▶", self.toggle), (QToolButton(), "⏭", lambda: self.step(1))):
-            b.setText(txt); b.setFixedSize(34, 34); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
-        add = QToolButton(); add.setText("＋"); add.setFixedSize(34, 34); add.setToolTip("Dodaj pliki audio"); add.clicked.connect(self.add)
+        for b, kind, fn in ((QToolButton(), "prev", lambda: self.step(-1)), (self.play_b, "play", self.toggle),
+                            (QToolButton(), "next", lambda: self.step(1))):
+            gicon(b, kind, 20); b.setFixedSize(34, 34); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
+        add = gicon(QToolButton(), "plus", 18); add.setFixedSize(34, 34); add.setToolTip("Dodaj pliki audio"); add.clicked.connect(self.add)
         row.addStretch(); row.addWidget(add); l.addLayout(row)
         self.player.positionChanged.connect(lambda p: self.pos.setValue(p) if not self.pos.isSliderDown() else None)
         self.player.durationChanged.connect(lambda d: self.pos.setRange(0, d))
         self.player.metaDataChanged.connect(self.meta)
         self.player.mediaStatusChanged.connect(lambda s: self.step(1) if s == self.MP.MediaStatus.EndOfMedia else None)
-        self.player.playbackStateChanged.connect(lambda s: self.play_b.setText("⏸" if s == self.MP.PlaybackState.PlayingState else "▶"))
+        self.player.playbackStateChanged.connect(lambda s: gicon(self.play_b, "pause" if s == self.MP.PlaybackState.PlayingState
+                                                                 else "play", 20))
 
     def start(self): pass
     def stop(self): pass     # muzyka gra dalej po zwinięciu panelu
@@ -4918,7 +4952,7 @@ class DiscordWidget(WidgetFrame):
         self.name = lbl("", "h3"); self.status = lbl("", "muted2", wrap=True); self.status.setTextFormat(Qt.TextFormat.RichText)
         col.addWidget(self.name); col.addWidget(self.status); top.addWidget(self.avatar); top.addLayout(col, 1); c.addLayout(top)
         sep = QFrame(); sep.setObjectName("sep"); c.addSpacing(4); c.addWidget(sep); c.addSpacing(2)
-        self.srv_title = lbl("Serwer: nie wybrano", "h3"); self.srv_info = lbl("Wybierz serwer w menu ⋯.", "muted2", wrap=True)
+        self.srv_title = lbl("Serwer: nie wybrano", "h3"); self.srv_info = lbl("Wybierz serwer w menu widgetu (trzy kropki).", "muted2", wrap=True)
         self.members = QVBoxLayout(); self.members.setSpacing(2)
         c.addWidget(self.srv_title); c.addWidget(self.srv_info); c.addLayout(self.members)
         pl.addWidget(self.msg); pl.addWidget(self.dbtn); pl.addWidget(self.card); self.lay.addWidget(self.pro)
@@ -5017,7 +5051,7 @@ class DiscordWidget(WidgetFrame):
         if gid:
             self.store.http(f"https://discord.com/api/guilds/{gid}/widget.json", self.guard(self.got_widget))
         else:
-            self.srv_title.setText("Serwer: nie wybrano"); self.srv_info.setText("Wybierz serwer w menu ⋯ (potrzebny włączony widget serwera).")
+            self.srv_title.setText("Serwer: nie wybrano"); self.srv_info.setText("Wybierz serwer w menu widgetu – trzy kropki (potrzebny włączony widget serwera).")
 
     refresh_now = refresh
 
@@ -5516,35 +5550,65 @@ class PwQrWidget(WidgetFrame):
 
 
 class ScreenPicker(QWidget):
-    """Pełnoekranowa nakładka ze zrzutem ekranu: lupa pod kursorem, klik = wybór koloru, Esc = anuluj."""
+    """Nakładka ze zrzutem jednego ekranu (razem z oknem Luny): lupa pod kursorem, klik = wybór koloru, Esc = anuluj.
+    Na każdym monitorze jest osobna nakładka – kolor można pobrać z przeglądarki i z dowolnego innego miejsca."""
     picked = pyqtSignal(QColor)
+    cancelled = pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, scr):
         super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        scr = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
-        self.shot = scr.grabWindow(0); self.img = self.shot.toImage(); self.dpr = self.shot.devicePixelRatio()
+        self.shot = scr.grabWindow(0); self.img = self.shot.toImage(); self.dpr = self.shot.devicePixelRatio() or 1.0
         self.setGeometry(scr.geometry()); self.setCursor(Qt.CursorShape.CrossCursor); self.setMouseTracking(True)
-        self.pos_ = self.mapFromGlobal(QCursor.pos())
+        self.pos_ = self.mapFromGlobal(QCursor.pos()); self.inside = self.rect().contains(self.pos_)
+
+    @staticmethod
+    def pick_all(on_color):
+        """Nakładki na wszystkich ekranach; wybór na jednym zamyka wszystkie."""
+        ovs = [ScreenPicker(scr) for scr in QGuiApplication.screens()]
+        def finish(c=None):
+            for o in ovs:
+                try:
+                    o.close()
+                except RuntimeError:
+                    pass
+            if c is not None:
+                on_color(c)
+        for o in ovs:
+            o.picked.connect(finish); o.cancelled.connect(finish); o.show()
+        ovs[0].activateWindow(); ovs[0].setFocus()
+        return ovs
+
+    def enterEvent(self, ev):
+        self.inside = True; self.setFocus(); self.update()
+
+    def leaveEvent(self, ev):
+        self.inside = False; self.update()
 
     def color_at(self, pos):
         x = min(max(0, int(pos.x() * self.dpr)), self.img.width() - 1); y = min(max(0, int(pos.y() * self.dpr)), self.img.height() - 1)
         return self.img.pixelColor(x, y)
 
     def mouseMoveEvent(self, ev):
-        self.pos_ = ev.position().toPoint(); self.update()
+        self.pos_ = ev.position().toPoint(); self.inside = True; self.update()
 
     def mousePressEvent(self, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
             self.picked.emit(self.color_at(ev.position().toPoint()))
-        self.close()
+        else:
+            self.cancelled.emit()
 
     def keyPressEvent(self, ev):
         if ev.key() == Qt.Key.Key_Escape:
-            self.close()
+            self.cancelled.emit()
 
     def paintEvent(self, ev):
         p = QPainter(self); p.drawPixmap(self.rect(), self.shot)
+        p.fillRect(QRect(0, 0, self.width(), 30), QColor(17, 17, 17, 200)); p.setPen(QColor("#ececec"))
+        p.drawText(QRect(0, 0, self.width(), 30), Qt.AlignmentFlag.AlignCenter,
+                   "Kliknij, aby pobrać kolor (także z okna Luny) · Esc lub prawy przycisk – anuluj")
+        if not self.inside:
+            return
         c = self.color_at(self.pos_); x, y = self.pos_.x(), self.pos_.y()
         Z, N = 10, 11; box = QRect(x + 18, y + 18, Z * N, Z * N + 26)
         if box.right() > self.width():
@@ -5578,11 +5642,11 @@ class ColorPickerWidget(WidgetFrame):
         self.show_color(QColor(hist[0]), remember=False)
 
     def pick(self):
-        w = self.window(); w.showMinimized()   # nie zasłaniamy ekranu własnym oknem
-        def go():
-            sp = ScreenPicker(); sp.picked.connect(lambda c: self.show_color(c)); sp.destroyed.connect(lambda: w.showNormal())
-            sp.show(); sp.activateWindow(); self._sp = sp
-        QTimer.singleShot(250, go)
+        """Zrzut ekranów razem z Luną (bez minimalizowania) – kolor z przeglądarki albo spoza niej."""
+        menu = self.menu_btn.menu() if self.menu_btn.menu() else None
+        if menu is not None:
+            menu.hide()
+        QTimer.singleShot(120, lambda: setattr(self, "_ovs", ScreenPicker.pick_all(self.guard(self.show_color))))
 
     def show_color(self, c, remember=True):
         self.sw.setStyleSheet(f"background:{c.name()}; border-radius:12px; border:1px solid #3a3a3a;")
@@ -6792,14 +6856,14 @@ class HomePage(QWidget):
         self.search = QLineEdit(); self.search.setObjectName("search")
         self.search.addAction(glyph("search"), QLineEdit.ActionPosition.LeadingPosition)
         self.search.returnPressed.connect(self.do_search)
-        self.search.setMaximumWidth(680)
+        self.search.setMaximumWidth(680); self.search.setMinimumWidth(320)   # szerokość dopasowana w resizeEvent
         lay.addWidget(self.search, 0, Qt.AlignmentFlag.AlignHCenter)
 
         center = lay
         top = QHBoxLayout()
         title = QLabel("Aplikacje"); title.setObjectName("h1")
         self.count = QLabel(); self.count.setObjectName("muted")
-        add = QPushButton("＋"); add.setObjectName("round"); add.setFixedSize(34, 34)
+        add = gicon(QPushButton(), "plus", 18); add.setObjectName("round"); add.setFixedSize(34, 34); add.setToolTip("Dodaj aplikację")
         add.clicked.connect(self.add_dialog)
         top.addWidget(title); top.addStretch(); top.addWidget(self.count); top.addSpacing(8); top.addWidget(add)
         center.addLayout(top)
@@ -6820,7 +6884,7 @@ class HomePage(QWidget):
         h2 = QLabel("Ostatnie"); h2.setObjectName("h1"); center.addWidget(h2)
         self.recent = QListWidget(); self.recent.setObjectName("recent")
         self.recent.setIconSize(QSize(38, 38)); self.recent.setSpacing(6)
-        self.recent.itemClicked.connect(lambda it: self.opened.emit(it.data(Qt.ItemDataRole.UserRole)))
+        self.recent.itemClicked.connect(lambda it: it.data(Qt.ItemDataRole.UserRole) and self.opened.emit(it.data(Qt.ItemDataRole.UserRole)))
         center.addWidget(self.recent, 2)
 
         self.grid.viewport().setAutoFillBackground(False); self.recent.viewport().setAutoFillBackground(False)
@@ -6865,6 +6929,13 @@ class HomePage(QWidget):
             it.setData(Qt.ItemDataRole.UserRole, r["url"])
             it.setSizeHint(QSize(0, 60)); it.setToolTip(r["url"])
             self.recent.addItem(it)
+        if not self.store.recent:
+            it = QListWidgetItem("Tu pojawią się ostatnio odwiedzane strony."); it.setFlags(Qt.ItemFlag.NoItemFlags)
+            it.setForeground(QColor("#6f6f6f")); self.recent.addItem(it)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)   # pole wyszukiwania: szerokie, ale z marginesem po bokach
+        self.search.setFixedWidth(max(320, min(680, self.width() - 140)))
 
     def do_search(self):
         text = self.search.text().strip()
@@ -7703,7 +7774,7 @@ class Browser(QMainWindow):
         self.address.setPlaceholderText(f"Szukaj w {cur} lub wpisz adres…")
         menu = self.chip.menu(); menu.clear()
         for name in ENGINES:
-            a = menu.addAction(mini_icon(name, ENGINES[name]), name + ("\t✓" if name == cur else ""))
+            a = menu.addAction(mini_icon(name, ENGINES[name]), name); a.setCheckable(True); a.setChecked(name == cur)
             a.triggered.connect(lambda _=False, n=name: QTimer.singleShot(0, lambda: self.store.set_engine(n)))
         self.chip.adjustSize()
         self.address.setTextMargins(0, 0, self.chip.sizeHint().width() + 12, 0)
@@ -8011,11 +8082,6 @@ class Browser(QMainWindow):
         m.addSeparator()
         # 2. narzędzia
         self.act(m, "grid", "Rynek Widgetów", self.open_market, "Ctrl+Shift+E")
-        row = MenuRow("sidebar", "Pasek boczny"); cur = self.sidebar_mode(); grp = []
-        for mode, text in (("on", "Włączone"), ("auto", "Automatyczne ukrywanie"), ("off", "Wył.")):
-            b = row.button(text, checked=(mode == cur), fn=lambda mode=mode: (self.set_sidebar_mode(mode), m.close()))
-            grp.append(b)
-        menu_row_action(m, row)
         pw = m.addMenu(glyph("key"), "Hasła i autouzupełnianie")
         pw.aboutToShow.connect(lambda: self.key_menu(pw))
         hm = m.addMenu(glyph("history"), "Historia")
