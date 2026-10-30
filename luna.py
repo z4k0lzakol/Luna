@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote, urlencode
 from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRect, QRectF, QEvent, QTimer, QLocale, QDateTime,
-                          QEasingCurve,
+                          QEasingCurve, QElapsedTimer,
                           QPropertyAnimation, pyqtSignal)
 from PyQt6.QtGui import (QGuiApplication, QImage, QCursor, QBrush, QRadialGradient, QLinearGradient, QIcon, QPixmap, QPainter, QColor, QFont,
                          QFontDatabase, QPen, QPolygonF, QKeySequence, QShortcut, QActionGroup, QTextDocument,
@@ -870,6 +870,31 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         p.drawPolyline(P((33, 28), (11, 28))); p.drawPolyline(P((16, 23), (11, 28), (16, 33)))
     elif kind == "layers":
         p.drawPolygon(P((22, 9), (36, 16), (22, 23), (8, 16))); p.drawPolyline(P((8, 22), (22, 29), (36, 22)))
+    elif kind == "up":
+        p.drawPolyline(P((13, 26), (22, 17), (31, 26)))
+    elif kind == "grid":
+        for gx, gy in ((9, 9), (24, 9), (9, 24), (24, 24)):
+            p.drawRoundedRect(QRectF(gx, gy, 11, 11), 2.5, 2.5)
+    elif kind == "timer":
+        p.drawEllipse(10, 12, 24, 24); p.drawLine(22, 24, 22, 17); p.drawLine(22, 24, 27, 27); p.drawLine(18, 7, 26, 7)
+    elif kind == "ruler":
+        p.drawRoundedRect(QRectF(7, 15, 30, 14), 2, 2)
+        for rx in (13, 19, 25, 31):
+            p.drawLine(rx, 15, rx, 21 if rx % 2 else 23)
+    elif kind == "text":
+        p.drawLine(11, 11, 33, 11); p.drawLine(22, 11, 22, 34); p.drawLine(17, 34, 27, 34)
+    elif kind == "qr":
+        for qx, qy in ((8, 8), (24, 8), (8, 24)):
+            p.drawRect(QRectF(qx, qy, 12, 12))
+        p.drawRect(QRectF(26, 26, 3, 3)); p.drawRect(QRectF(32, 32, 3, 3)); p.drawRect(QRectF(32, 25, 3, 3))
+    elif kind == "droplet":
+        p.drawPath(_path([(22, 7), (32, 22), (32, 27), (28, 34), (22, 36), (16, 34), (12, 27), (12, 22)], True))
+    elif kind == "package":
+        p.drawPolygon(P((22, 7), (36, 14), (36, 30), (22, 37), (8, 30), (8, 14))); p.drawPolyline(P((8, 14), (22, 21), (36, 14)))
+        p.drawLine(22, 21, 22, 37)
+    elif kind == "signal":
+        for i, sx in enumerate((10, 18, 26, 34)):
+            p.drawLine(sx, 34, sx, 28 - i * 6)
     elif kind == "menu":
         p.drawLine(11, 14, 33, 14); p.drawLine(11, 22, 33, 22); p.drawLine(11, 30, 33, 30)
     elif kind == "window":
@@ -1017,6 +1042,10 @@ QToolButton#menuchip { background:transparent; color:#cfcfcf; border-radius:6px;
 QToolButton#menuchip:hover { background:#2a2a2a; color:#ffffff; }
 QToolButton#menuchip:checked { background:#3a4a6b; color:#ffffff; }
 QFrame#vsep { background:#2f2f2f; }
+QFrame#mcard { background:#181818; border:1px solid #262626; border-radius:14px; }
+QFrame#mcard:hover { border:1px solid #3a3a3a; }
+QLabel#micon { background:#232323; border-radius:10px; }
+QFrame#mrow { background:#1d1d1d; border-radius:10px; }
 QTreeWidget#vtabs { background:transparent; border:none; color:#c9c9c9; outline:0; font-size:13px; show-decoration-selected:0; }
 QTreeWidget#vtabs::item { height:30px; border-radius:8px; padding-left:2px; }
 QTreeWidget#vtabs::item:hover { background:#1c1c1c; color:#ffffff; }
@@ -1953,6 +1982,13 @@ WIDGETS = {  # id: (tytuł, domyślna strona, kolejność, domyślnie włączony
     "discord": ("Discord", "right", 11, False, "discord"),
     "system": ("Monitor zasobów", "right", 8, False, None),
     "rss": ("Wiadomości (RSS)", "right", 9, False, None),
+    "parcels": ("Paczki", "right", 12, False, None),
+    "countdown": ("Odliczanie", "left", 7, False, None),
+    "ping": ("Ping", "right", 13, False, None),
+    "pwqr": ("Hasła i kody QR", "left", 8, False, None),
+    "picker": ("Próbnik kolorów", "left", 9, False, None),
+    "convert": ("Konwerter jednostek i czasu", "left", 10, False, None),
+    "textstat": ("Licznik znaków i słów", "left", 11, False, None),
 }
 FEATURES = {  # id: (nazwa, opis, domyślnie)
     "google": ("Integracja z Google", "Gmail, Kalendarz, Zadania i Dysk – jedno logowanie. Wyłączona: brak logowania, zapytań i zasobów w tle.", True),
@@ -2263,7 +2299,8 @@ class WidgetFrame(QFrame):
         self.menu.addAction("Przesuń w górę", lambda: host.move(wid, -1))
         self.menu.addAction("Przesuń w dół", lambda: host.move(wid, 1))
         self.menu.addAction("Przenieś na drugą stronę", lambda: host.flip(wid))
-        self.menu.addAction("Ukryj widget", lambda: store.set_wcfg(wid, on=False))
+        self.menu.addAction("Odinstaluj widget", lambda: store.set_wcfg(wid, on=False))
+        self.menu.addAction("Rynek Widgetów…", lambda: host.browser.open_market())
         self.body.setVisible(not self.collapsed); self._fold_icon()
 
     # --- do nadpisania ---
@@ -2501,9 +2538,11 @@ class WidgetHost(QObject):
 
     def move(self, wid, delta):
         side = self.store.wcfg(wid)["side"]
-        ids = self.store.side_order(side)
-        i = ids.index(wid); j = max(0, min(len(ids) - 1, i + delta))
-        ids.insert(j, ids.pop(i))
+        ids = self.store.side_order(side); on = [w for w in ids if self.store.wcfg(w)["on"]]
+        i = on.index(wid) if wid in on else -1; j = i + delta
+        if i < 0 or not 0 <= j < len(on):
+            return
+        a, b = ids.index(on[i]), ids.index(on[j]); ids[a], ids[b] = ids[b], ids[a]   # pomijamy niezainstalowane
         self.store.apply_layout(**{side: ids, ("right" if side == "left" else "left"):
                                    self.store.side_order("right" if side == "left" else "left")})
 
@@ -5030,11 +5069,861 @@ class DiscordWidget(WidgetFrame):
             r.setTextFormat(Qt.TextFormat.RichText); self.members.addWidget(r)
 
 
+# --- kod QR (czysty Python: tryb bajtowy, poziom korekcji M, wersje 1–40) ---
+_QR_ECC = [-1, 10, 16, 26, 18, 24, 16, 18, 22, 22, 26, 30, 22, 22, 24, 24, 28, 28, 26, 26, 26, 26, 28, 28, 28, 28, 28,
+           28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28, 28]
+_QR_BLOCKS = [-1, 1, 1, 1, 2, 2, 4, 4, 4, 5, 5, 5, 8, 9, 9, 10, 10, 11, 13, 14, 16, 17, 17, 18, 20, 21, 23, 25, 26, 28,
+              29, 31, 33, 35, 37, 38, 40, 43, 45, 47, 49]
+
+
+def _qr_raw_modules(ver):
+    r = (16 * ver + 128) * ver + 64
+    if ver >= 2:
+        n = ver // 7 + 2; r -= (25 * n - 10) * n - 55
+        if ver >= 7:
+            r -= 36
+    return r
+
+
+def _qr_data_codewords(ver):
+    return _qr_raw_modules(ver) // 8 - _QR_ECC[ver] * _QR_BLOCKS[ver]
+
+
+def _gf_mul(x, y):
+    z = 0
+    for i in range(7, -1, -1):
+        z = (z << 1) ^ ((z >> 7) * 0x11D); z ^= ((y >> i) & 1) * x
+    return z
+
+
+def _rs_divisor(degree):
+    res = [0] * (degree - 1) + [1]; root = 1
+    for _ in range(degree):
+        for j in range(degree):
+            res[j] = _gf_mul(res[j], root)
+            if j + 1 < degree:
+                res[j] ^= res[j + 1]
+        root = _gf_mul(root, 0x02)
+    return res
+
+
+def _rs_remainder(data, div):
+    res = [0] * len(div)
+    for b in data:
+        f = b ^ res.pop(0); res.append(0)
+        for i, c in enumerate(div):
+            res[i] ^= _gf_mul(c, f)
+    return res
+
+
+def qr_matrix(text, mask=None):
+    """Macierz kodu QR (lista wierszy True = ciemny moduł) dla tekstu, np. adresu strony."""
+    data = text.encode("utf-8")
+    for ver in range(1, 41):
+        cap = _qr_data_codewords(ver) * 8
+        if 4 + (8 if ver < 10 else 16) + len(data) * 8 <= cap:
+            break
+    else:
+        raise ValueError("Za długi tekst na kod QR")
+    bits = []
+    put = lambda v, n: bits.extend((v >> i) & 1 for i in range(n - 1, -1, -1))
+    put(4, 4); put(len(data), 8 if ver < 10 else 16)
+    for b in data:
+        put(b, 8)
+    put(0, min(4, cap - len(bits))); put(0, (-len(bits)) % 8)
+    pad = 0xEC
+    while len(bits) < cap:
+        put(pad, 8); pad ^= 0xEC ^ 0x11
+    words = [int("".join(map(str, bits[i:i + 8])), 2) for i in range(0, len(bits), 8)]
+    nb, ecl = _QR_BLOCKS[ver], _QR_ECC[ver]; raw = _qr_raw_modules(ver) // 8
+    nshort, slen = nb - raw % nb, raw // nb; div = _rs_divisor(ecl); blocks = []; k = 0
+    for i in range(nb):
+        dat = words[k:k + slen - ecl + (0 if i < nshort else 1)]; k += len(dat)
+        ecc = _rs_remainder(dat, div)
+        blocks.append(dat + ([0] if i < nshort else []) + ecc)
+    seq = [b[i] for i in range(len(blocks[0])) for j, b in enumerate(blocks) if i != slen - ecl or j >= nshort]
+    size = ver * 4 + 17
+    mod = [[False] * size for _ in range(size)]; fn = [[False] * size for _ in range(size)]
+
+    def setf(x, y, dark):
+        mod[y][x] = dark; fn[y][x] = True
+    for i in range(size):
+        setf(6, i, i % 2 == 0); setf(i, 6, i % 2 == 0)
+    for cx, cy in ((3, 3), (size - 4, 3), (3, size - 4)):
+        for dy in range(-4, 5):
+            for dx in range(-4, 5):
+                x, y = cx + dx, cy + dy
+                if 0 <= x < size and 0 <= y < size:
+                    setf(x, y, max(abs(dx), abs(dy)) not in (2, 4))
+    if ver > 1:
+        n = ver // 7 + 2; step = (ver * 8 + n * 3 + 5) // (n * 4 - 4) * 2
+        pos = [6] + sorted(size - 7 - i * step for i in range(n - 1))
+        for i, a in enumerate(pos):
+            for j, b in enumerate(pos):
+                if (i, j) not in ((0, 0), (0, n - 1), (n - 1, 0)):
+                    for dy in range(-2, 3):
+                        for dx in range(-2, 3):
+                            setf(a + dx, b + dy, max(abs(dx), abs(dy)) != 1)
+
+    def format_bits(mask):
+        d = mask; r = d   # poziom M = 00
+        for _ in range(10):
+            r = (r << 1) ^ ((r >> 9) * 0x537)
+        v = (d << 10 | r) ^ 0x5412
+        bit = lambda i: (v >> i) & 1 != 0
+        for i in range(6):
+            setf(8, i, bit(i))
+        setf(8, 7, bit(6)); setf(8, 8, bit(7)); setf(7, 8, bit(8))
+        for i in range(9, 15):
+            setf(14 - i, 8, bit(i))
+        for i in range(8):
+            setf(size - 1 - i, 8, bit(i))
+        for i in range(8, 15):
+            setf(8, size - 15 + i, bit(i))
+        setf(8, size - 8, True)
+    format_bits(0)
+    if ver >= 7:
+        r = ver
+        for _ in range(12):
+            r = (r << 1) ^ ((r >> 11) * 0x1F25)
+        v = ver << 12 | r
+        for i in range(18):
+            b = (v >> i) & 1 != 0; a, c = size - 11 + i % 3, i // 3
+            setf(a, c, b); setf(c, a, b)
+    i = 0; right = size - 1; total = len(seq) * 8
+    while right >= 1:
+        if right == 6:
+            right = 5
+        for vert in range(size):
+            for j in range(2):
+                x = right - j; y = size - 1 - vert if ((right + 1) & 2) == 0 else vert
+                if not fn[y][x] and i < total:
+                    mod[y][x] = (seq[i >> 3] >> (7 - (i & 7))) & 1 != 0; i += 1
+        right -= 2
+    masks = [lambda x, y: (x + y) % 2 == 0, lambda x, y: y % 2 == 0, lambda x, y: x % 3 == 0,
+             lambda x, y: (x + y) % 3 == 0, lambda x, y: (x // 3 + y // 2) % 2 == 0,
+             lambda x, y: x * y % 2 + x * y % 3 == 0, lambda x, y: (x * y % 2 + x * y % 3) % 2 == 0,
+             lambda x, y: ((x + y) % 2 + x * y % 3) % 2 == 0]
+
+    def apply(m):
+        for y in range(size):
+            for x in range(size):
+                if not fn[y][x] and masks[m](x, y):
+                    mod[y][x] = not mod[y][x]
+
+    def penalty():   # ocena maski wg normy: serie, bloki 2×2, wzory podobne do znaczników narożników, równowaga
+        s = 0
+        for line in mod + [list(c) for c in zip(*mod)]:
+            txt = "".join("1" if v else "0" for v in line)
+            s += 40 * (txt.count("10111010000") + txt.count("00001011101"))
+            run = 1
+            for a, b in zip(line, line[1:]):
+                if a == b:
+                    run += 1
+                else:
+                    s += run - 2 if run >= 5 else 0; run = 1
+            s += run - 2 if run >= 5 else 0
+        for y in range(size - 1):
+            for x in range(size - 1):
+                if mod[y][x] == mod[y][x + 1] == mod[y + 1][x] == mod[y + 1][x + 1]:
+                    s += 3
+        dark = sum(map(sum, mod)); s += abs(dark * 20 - size * size * 10) // (size * size) * 10
+        return s
+    best = None
+    for m in (range(8) if mask is None else [mask]):
+        apply(m); format_bits(m); p = penalty()
+        if best is None or p < best[0]:
+            best = (p, m)
+        apply(m)
+    apply(best[1]); format_bits(best[1])
+    return mod
+
+
+def qr_pixmap(text, px=4, border=4, dark="#111111", light="#ffffff"):
+    m = qr_matrix(text); n = len(m); S = (n + 2 * border) * px
+    pm = QPixmap(S, S); pm.fill(QColor(light)); p = QPainter(pm)
+    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(dark))
+    for y, row in enumerate(m):
+        for x, v in enumerate(row):
+            if v:
+                p.drawRect((x + border) * px, (y + border) * px, px, px)
+    p.end()
+    return pm
+
+
+class ParcelsWidget(WidgetFrame):
+    """Śledzenie przesyłek: InPost wprost w widgecie (publiczne API ShipX, bez logowania), pozostali przewoźnicy –
+    jedno kliknięcie otwiera ich stronę śledzenia z numerem. Odświeża co 15 min, tylko gdy widget jest widoczny."""
+    API = "https://api-shipx-pl.easypack24.net/v1/tracking/"
+    STATUS_API = "https://api-shipx-pl.easypack24.net/v1/statuses?lang=pl_PL"
+    LINKS = {"InPost": "https://inpost.pl/sledzenie-przesylek?number={}",
+             "DPD": "https://tracktrace.dpd.com.pl/parcelDetails?typ=1&p1={}",
+             "DHL": "https://www.dhl.com/pl-pl/home/sledzenie-przesylek.html?tracking-id={}",
+             "Poczta Polska": "https://emonitoring.poczta-polska.pl/?numer={}",
+             "GLS": "https://gls-group.com/PL/pl/sledzenie-paczek?match={}",
+             "UPS": "https://www.ups.com/track?loc=pl_PL&tracknum={}",
+             "Orlen Paczka": "https://www.orlenpaczka.pl/sledz-paczke/?numer={}"}
+    READY = {"ready_to_pickup", "out_for_delivery", "ready_to_pickup_from_branch", "avizo"}
+    STATUSES = {}
+
+    def build(self):
+        row = QHBoxLayout(); row.setSpacing(6)
+        self.inp = QLineEdit(); self.inp.setObjectName("glassin"); self.inp.setPlaceholderText("Numer przesyłki")
+        self.inp.returnPressed.connect(self.add)
+        self.carrier = QComboBox(); self.carrier.addItems(["Auto"] + list(self.LINKS)); self.carrier.setFixedWidth(84)
+        row.addWidget(self.inp, 1); row.addWidget(self.carrier); self.lay.addLayout(row)
+        self.list = QVBoxLayout(); self.list.setSpacing(4); self.lay.addLayout(self.list)
+        self.menu.addAction("Odśwież statusy", self.refresh_now)
+        self.timer = QTimer(self); self.timer.timeout.connect(self.refresh_now)
+        self.render()
+
+    def items(self):
+        return self.store.settings.setdefault("parcels", [])
+
+    @staticmethod
+    def detect(n):
+        if re.fullmatch(r"\d{24}", n):
+            return "InPost"
+        if re.fullmatch(r"[A-Z]{2}\d{9}PL|\d{20}", n):
+            return "Poczta Polska"
+        if n.upper().startswith("1Z"):
+            return "UPS"
+        if re.fullmatch(r"\d{13}[A-Z]?|\d{14}", n):
+            return "DPD"
+        return "InPost"
+
+    def add(self):
+        n = re.sub(r"\s+", "", self.inp.text()).upper()
+        if not n or any(p["n"] == n for p in self.items()):
+            return
+        c = self.carrier.currentText(); c = self.detect(n) if c == "Auto" else c
+        self.items().insert(0, {"n": n, "c": c, "st": "", "code": "", "when": ""}); del self.items()[12:]
+        self.store.save_soon(); self.inp.clear(); self.render(); self.refresh_now()
+
+    def remove(self, n):
+        self.store.settings["parcels"] = [p for p in self.items() if p["n"] != n]; self.store.save_soon(); self.render()
+
+    def start(self):
+        self.refresh_now(); self.timer.start(15 * 60 * 1000)
+
+    def stop(self):
+        self.timer.stop()
+
+    def refresh_now(self):
+        if not any(p["c"] == "InPost" for p in self.items()):
+            return
+        if not ParcelsWidget.STATUSES:
+            self.store.http(self.STATUS_API, self.guard(self._statuses)); return
+        for p in self.items():
+            if p["c"] == "InPost":
+                self.store.http(self.API + quote(p["n"]), self.guard(lambda j, e, s, n=p["n"]: self._got(n, j, s)))
+
+    def _statuses(self, j, err, status):
+        for it in (j or {}).get("items", []) if isinstance(j, dict) else []:
+            ParcelsWidget.STATUSES[it.get("name")] = (it.get("title") or "").rstrip(".")
+        if ParcelsWidget.STATUSES:
+            self.refresh_now()
+
+    def _got(self, n, j, status):
+        p = next((x for x in self.items() if x["n"] == n), None)
+        if p is None:
+            return
+        if isinstance(j, dict) and j.get("status"):
+            p["code"] = j["status"]; p["st"] = self.STATUSES.get(j["status"], j["status"].replace("_", " "))
+            det = (j.get("tracking_details") or [{}])[0]
+            when = det.get("datetime") or j.get("updated_at") or ""
+            p["when"] = when[8:10] + "." + when[5:7] + " " + when[11:16] if len(when) >= 16 else ""
+        elif status == 404:
+            p["st"], p["code"] = "Nie znaleziono – sprawdź numer", ""
+        self.store.save_soon(); self.render()
+
+    def render(self):
+        while self.list.count():
+            w = self.list.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        ready = 0
+        for p in self.items():
+            box = QFrame(); box.setObjectName("mailitem"); v = QVBoxLayout(box); v.setContentsMargins(10, 6, 6, 6); v.setSpacing(1)
+            top = QHBoxLayout(); top.setSpacing(4)
+            top.addWidget(lbl(f"{p['c']} · {p['n']}", "h3"), 1)
+            for kind, tip, fn in (("external", "Otwórz stronę śledzenia", lambda _=False, p=p: self.host.browser.open_url_new_tab(
+                    self.LINKS.get(p["c"], self.LINKS["InPost"]).format(quote(p["n"])))),
+                                  ("close", "Usuń z listy", lambda _=False, n=p["n"]: self.remove(n))):
+                b = QToolButton(); b.setIcon(glyph(kind)); b.setIconSize(QSize(14, 14)); b.setFixedSize(22, 22); b.setToolTip(tip)
+                b.clicked.connect(fn); top.addWidget(b)
+            v.addLayout(top)
+            if p["c"] == "InPost":
+                txt = p["st"] or "Sprawdzanie…"
+            else:
+                txt = "Status na stronie przewoźnika (ikona obok)"
+            st = lbl(txt + (f"  ·  {p['when']}" if p.get("when") else ""), "muted2", wrap=True)
+            if p.get("code") in self.READY:
+                st.setStyleSheet("color:#3ddc84"); ready += 1
+            elif p.get("code") == "delivered":
+                st.setStyleSheet("color:#8c8c8c")
+            v.addWidget(st); self.list.addWidget(box)
+        if not self.items():
+            self.list.addWidget(lbl("Dodaj numer przesyłki – InPost pokaże status od razu.", "muted2", wrap=True))
+        self.set_badge(ready)
+
+
+class CountdownWidget(WidgetFrame):
+    """Odliczanie dni, godzin i minut do wybranej daty (np. urlop, egzamin, premiera)."""
+
+    def build(self):
+        self.title = lbl("", "h3"); self.lay.addWidget(self.title)
+        row = QHBoxLayout(); row.setSpacing(8); self.cells = []
+        for name in ("dni", "godz.", "min"):
+            col = QVBoxLayout(); col.setSpacing(0)
+            n = lbl("–", "clock", align=Qt.AlignmentFlag.AlignCenter); t = lbl(name, "muted", align=Qt.AlignmentFlag.AlignCenter)
+            col.addWidget(n); col.addWidget(t); row.addLayout(col, 1); self.cells.append(n)
+        self.lay.addLayout(row)
+        self.when = lbl("", "muted2", align=Qt.AlignmentFlag.AlignCenter); self.lay.addWidget(self.when)
+        self.edit_box = QWidget(); self.edit_box.setObjectName("clear"); e = QVBoxLayout(self.edit_box); e.setContentsMargins(0, 4, 0, 0)
+        self.name_in = QLineEdit(); self.name_in.setObjectName("glassin"); self.name_in.setPlaceholderText("Nazwa celu, np. Urlop")
+        from PyQt6.QtWidgets import QDateTimeEdit
+        self.dt = QDateTimeEdit(QDateTime.currentDateTime().addDays(7)); self.dt.setCalendarPopup(True)
+        self.dt.setDisplayFormat("dd.MM.yyyy HH:mm")
+        ok = QPushButton("Zapisz"); ok.clicked.connect(self.save)
+        e.addWidget(self.name_in); e.addWidget(self.dt); e.addWidget(ok); self.lay.addWidget(self.edit_box)
+        self.menu.addAction("Zmień cel…", lambda: self.edit_box.setVisible(True))
+        self.timer = QTimer(self); self.timer.timeout.connect(self.tick)
+        cfg = self.store.settings.get("countdown")
+        self.edit_box.setVisible(not cfg); self.tick()
+
+    def save(self):
+        self.store.settings["countdown"] = {"name": self.name_in.text().strip() or "Cel",
+                                            "at": self.dt.dateTime().toString(Qt.DateFormat.ISODate)}
+        self.store.save_soon(); self.edit_box.hide(); self.tick()
+
+    def start(self):
+        self.tick(); self.timer.start(15000)
+
+    def stop(self):
+        self.timer.stop()
+
+    def tick(self):
+        c = self.store.settings.get("countdown")
+        if not c:
+            self.title.setText("Ustaw datę, do której liczyć"); return
+        at = QDateTime.fromString(c["at"], Qt.DateFormat.ISODate)
+        self.title.setText(c["name"]); self.when.setText(QLocale(QLocale.Language.Polish).toString(at, "dddd, d MMMM yyyy, HH:mm"))
+        secs = QDateTime.currentDateTime().secsTo(at)
+        if secs <= 0:
+            for cell in self.cells:
+                cell.setText("0")
+            self.when.setText("Cel osiągnięty – " + at.toString("d.MM.yyyy HH:mm")); return
+        mins = secs // 60
+        for cell, v in zip(self.cells, (mins // 1440, mins // 60 % 24, mins % 60)):
+            cell.setText(str(v))
+
+
+class PingWidget(WidgetFrame):
+    """Opóźnienie sieci: czas połączenia z 8.8.8.8 (Google DNS, port 53) co 3 s – bez uruchamiania programu ping."""
+    HOST, PORT = "8.8.8.8", 53
+
+    def build(self):
+        top = QHBoxLayout(); self.val = lbl("– ms", "temp"); self.q = lbl("", "muted2")
+        top.addWidget(self.val); top.addStretch(); top.addWidget(self.q); self.lay.addLayout(top)
+        self.spark = Sparkline(252, 40); self.lay.addWidget(self.spark)
+        self.stats = lbl("", "muted2", wrap=True); self.lay.addWidget(self.stats)
+        self.hist, self.lost, self.sent = [], 0, 0
+        self.timer = QTimer(self); self.timer.timeout.connect(self.probe)
+        self.sock = None
+
+    def start(self):
+        self.probe(); self.timer.start(3000)
+
+    def stop(self):
+        self.timer.stop()
+        if self.sock is not None:
+            self.sock.abort()
+
+    def probe(self):
+        from PyQt6.QtNetwork import QTcpSocket
+        if self.sock is not None:   # poprzednia próba bez odpowiedzi = utracony pakiet
+            self.sock.abort(); self.sock.deleteLater(); self.lost += 1; self.record(None)
+        s = self.sock = QTcpSocket(self); t = QElapsedTimer(); t.start(); self.sent += 1
+
+        def done():
+            ms = t.nsecsElapsed() / 1e6; s.abort(); s.deleteLater()
+            if self.sock is s:
+                self.sock = None; self.record(ms)
+        s.connected.connect(done); s.connectToHost(self.HOST, self.PORT)
+
+    def record(self, ms):
+        self.hist = (self.hist + [ms])[-40:]; ok = [v for v in self.hist if v is not None]
+        if ms is not None:
+            col = "#3ddc84" if ms < 50 else "#f0b232" if ms < 120 else "#ff5c5c"
+            self.val.setText(f"{ms:.0f} ms"); self.q.setText(("Świetne" if ms < 50 else "Dobre" if ms < 120 else "Słabe") + " połączenie")
+            self.q.setStyleSheet(f"color:{col}")
+        else:
+            self.val.setText("brak odp."); self.q.setText("Brak połączenia"); self.q.setStyleSheet("color:#ff5c5c")
+        if ok:
+            jit = sum(abs(a - b) for a, b in zip(ok, ok[1:])) / max(1, len(ok) - 1)
+            self.stats.setText(f"średnio {sum(ok) / len(ok):.0f} ms · min {min(ok):.0f} · max {max(ok):.0f} · "
+                               f"wahania {jit:.0f} ms · utracone {self.lost * 100 // max(1, self.sent)}%")
+        self.spark.set_data([v if v is not None else (max(ok) if ok else 0) for v in self.hist],
+                            not ok or ok[-1] <= sum(ok) / len(ok) * 1.2)
+
+
+class PwQrWidget(WidgetFrame):
+    """Generator silnych haseł i kod QR z adresu aktywnej karty (do szybkiego otwarcia strony na telefonie)."""
+
+    def build(self):
+        row = QHBoxLayout(); row.setSpacing(4)
+        self.pw = QLineEdit(); self.pw.setObjectName("glassin"); self.pw.setReadOnly(True)
+        self.len = QComboBox(); [self.len.addItem(str(n), n) for n in (12, 16, 20, 24, 32)]; self.len.setCurrentIndex(2)
+        self.len.setFixedWidth(58); self.len.currentIndexChanged.connect(lambda _: self.new_pw())
+        row.addWidget(self.pw, 1); row.addWidget(self.len); self.lay.addLayout(row)
+        r2 = QHBoxLayout(); r2.setSpacing(6)
+        for text, fn in (("Nowe hasło", self.new_pw), ("Kopiuj", lambda: copy_secret(self.pw.text()))):
+            b = QPushButton(text); b.clicked.connect(lambda _=False, f=fn: f()); r2.addWidget(b)
+        self.lay.addLayout(r2)
+        sep = QFrame(); sep.setObjectName("sep"); self.lay.addWidget(sep)
+        self.qr = QLabel(); self.qr.setAlignment(Qt.AlignmentFlag.AlignCenter); self.qr.setMinimumHeight(60)
+        self.qr_txt = lbl("", "muted", wrap=True, align=Qt.AlignmentFlag.AlignCenter)
+        self.lay.addWidget(self.qr); self.lay.addWidget(self.qr_txt)
+        r3 = QHBoxLayout(); r3.setSpacing(6)
+        for text, fn in (("Z bieżącej karty", self.from_tab), ("Zapisz PNG", self.save_png)):
+            b = QPushButton(text); b.clicked.connect(lambda _=False, f=fn: f()); r3.addWidget(b)
+        self.lay.addLayout(r3)
+        self.text = ""; self.new_pw()
+
+    def start(self):
+        self.from_tab()
+
+    def new_pw(self):
+        self.pw.setText(gen_password(self.len.currentData() or 20))
+
+    def from_tab(self):
+        web = self.host.browser.web()
+        t = web.url().toString() if web is not None else ""
+        if t and t != self.text:
+            self.text = t; self.qr.setPixmap(qr_pixmap(t, px=3 if len(t) < 120 else 2))
+            self.qr_txt.setText(t)
+        elif not t:
+            self.qr.clear(); self.qr_txt.setText("Otwórz stronę w karcie, aby utworzyć jej kod QR")
+
+    def save_png(self):
+        if not self.text:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Zapisz kod QR", str(Path(DOWNLOADS[0].folder() if DOWNLOADS else HOME) /
+                                                                          "kod-qr.png"), "PNG (*.png)")
+        if path:
+            qr_pixmap(self.text, px=10).save(path, "PNG")
+
+
+class ScreenPicker(QWidget):
+    """Pełnoekranowa nakładka ze zrzutem ekranu: lupa pod kursorem, klik = wybór koloru, Esc = anuluj."""
+    picked = pyqtSignal(QColor)
+
+    def __init__(self):
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        scr = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+        self.shot = scr.grabWindow(0); self.img = self.shot.toImage(); self.dpr = self.shot.devicePixelRatio()
+        self.setGeometry(scr.geometry()); self.setCursor(Qt.CursorShape.CrossCursor); self.setMouseTracking(True)
+        self.pos_ = self.mapFromGlobal(QCursor.pos())
+
+    def color_at(self, pos):
+        x = min(max(0, int(pos.x() * self.dpr)), self.img.width() - 1); y = min(max(0, int(pos.y() * self.dpr)), self.img.height() - 1)
+        return self.img.pixelColor(x, y)
+
+    def mouseMoveEvent(self, ev):
+        self.pos_ = ev.position().toPoint(); self.update()
+
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self.picked.emit(self.color_at(ev.position().toPoint()))
+        self.close()
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key.Key_Escape:
+            self.close()
+
+    def paintEvent(self, ev):
+        p = QPainter(self); p.drawPixmap(self.rect(), self.shot)
+        c = self.color_at(self.pos_); x, y = self.pos_.x(), self.pos_.y()
+        Z, N = 10, 11; box = QRect(x + 18, y + 18, Z * N, Z * N + 26)
+        if box.right() > self.width():
+            box.moveRight(x - 18)
+        if box.bottom() > self.height():
+            box.moveBottom(y - 18)
+        src = self.img.copy(int(x * self.dpr) - N // 2, int(y * self.dpr) - N // 2, N, N)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        p.fillRect(box, QColor("#111111")); p.drawImage(QRect(box.x(), box.y(), Z * N, Z * N), src)
+        p.setPen(QPen(QColor("#ffffff"), 1)); p.drawRect(box.x() + Z * (N // 2), box.y() + Z * (N // 2), Z, Z)
+        p.drawRect(box.adjusted(0, 0, -1, -1))
+        p.fillRect(QRect(box.x() + 6, box.bottom() - 19, 14, 14), c)
+        p.drawText(QRect(box.x() + 26, box.bottom() - 22, box.width() - 30, 20), Qt.AlignmentFlag.AlignVCenter, c.name().upper())
+
+
+class ColorPickerWidget(WidgetFrame):
+    """Próbnik kolorów: kolor dowolnego piksela z ekranu, kody HEX / RGB / HSL do skopiowania i historia ostatnich kolorów."""
+
+    def build(self):
+        row = QHBoxLayout(); row.setSpacing(10)
+        self.sw = QLabel(); self.sw.setFixedSize(54, 54); row.addWidget(self.sw)
+        col = QVBoxLayout(); col.setSpacing(2); self.codes = {}
+        for k in ("HEX", "RGB", "HSL"):
+            b = QPushButton(""); b.setObjectName("mailitem"); b.setToolTip("Kliknij, aby skopiować")
+            b.clicked.connect(lambda _=False, k=k: QGuiApplication.clipboard().setText(self.codes[k].text().split("  ", 1)[-1]))
+            col.addWidget(b); self.codes[k] = b
+        row.addLayout(col, 1); self.lay.addLayout(row)
+        pick = QPushButton("Pobierz kolor z ekranu"); pick.clicked.connect(self.pick); self.lay.addWidget(pick)
+        self.histrow = QHBoxLayout(); self.histrow.setSpacing(4); self.lay.addLayout(self.histrow)
+        hist = self.store.settings.get("colors") or ["#ececec"]
+        self.show_color(QColor(hist[0]), remember=False)
+
+    def pick(self):
+        w = self.window(); w.showMinimized()   # nie zasłaniamy ekranu własnym oknem
+        def go():
+            sp = ScreenPicker(); sp.picked.connect(lambda c: self.show_color(c)); sp.destroyed.connect(lambda: w.showNormal())
+            sp.show(); sp.activateWindow(); self._sp = sp
+        QTimer.singleShot(250, go)
+
+    def show_color(self, c, remember=True):
+        self.sw.setStyleSheet(f"background:{c.name()}; border-radius:12px; border:1px solid #3a3a3a;")
+        h, s, l, _ = c.getHslF()
+        self.codes["HEX"].setText(f"HEX  {c.name().upper()}")
+        self.codes["RGB"].setText(f"RGB  rgb({c.red()}, {c.green()}, {c.blue()})")
+        self.codes["HSL"].setText(f"HSL  hsl({round(max(h, 0) * 360)}, {round(s * 100)}%, {round(l * 100)}%)")
+        hist = self.store.settings.get("colors") or []
+        if remember:
+            hist = [c.name()] + [x for x in hist if x != c.name()][:7]
+            self.store.settings["colors"] = hist; self.store.save_soon()
+        while self.histrow.count():
+            it = self.histrow.takeAt(0).widget()
+            if it:
+                it.deleteLater()
+        for hx in hist[:8]:
+            b = QToolButton(); b.setFixedSize(24, 24); b.setToolTip(hx.upper())
+            b.setStyleSheet(f"background:{hx}; border-radius:6px; border:1px solid #3a3a3a;")
+            b.clicked.connect(lambda _=False, hx=hx: self.show_color(QColor(hx), remember=False)); self.histrow.addWidget(b)
+        self.histrow.addStretch()
+
+
+UNITS = {   # kategoria → {jednostka: współczynnik do jednostki bazowej}
+    "Długość": {"mm": 0.001, "cm": 0.01, "m": 1, "km": 1000, "cal": 0.0254, "stopa": 0.3048, "jard": 0.9144, "mila": 1609.344},
+    "Masa": {"g": 0.001, "dag": 0.01, "kg": 1, "t": 1000, "uncja": 0.028349523, "funt": 0.45359237},
+    "Objętość": {"ml": 0.001, "l": 1, "m³": 1000, "łyżeczka": 0.005, "szklanka": 0.25, "galon (US)": 3.785411784},
+    "Prędkość": {"km/h": 1 / 3.6, "m/s": 1, "mph": 0.44704, "węzeł": 0.514444},
+    "Dane": {"B": 1, "KB": 1e3, "MB": 1e6, "GB": 1e9, "TB": 1e12, "KiB": 1024, "MiB": 1024 ** 2, "GiB": 1024 ** 3},
+    "Temperatura": {"°C": None, "°F": None, "K": None},
+}
+ZONES = [("Warszawa", "Europe/Warsaw"), ("Londyn", "Europe/London"), ("Nowy Jork", "America/New_York"),
+         ("Los Angeles", "America/Los_Angeles"), ("Tokio", "Asia/Tokyo"), ("Pekin", "Asia/Shanghai"), ("Dubaj", "Asia/Dubai"),
+         ("Sydney", "Australia/Sydney"), ("Moskwa", "Europe/Moscow"), ("Kijów", "Europe/Kyiv"), ("UTC", "UTC")]
+
+
+class ConverterWidget(WidgetFrame):
+    """Konwerter jednostek (długość, masa, objętość, prędkość, dane, temperatura) i stref czasowych – bez internetu."""
+
+    def build(self):
+        self.cat = QComboBox(); self.cat.addItems(list(UNITS) + ["Strefy czasowe"]); self.lay.addWidget(self.cat)
+        self.units = QWidget(); self.units.setObjectName("clear"); u = QVBoxLayout(self.units); u.setContentsMargins(0, 0, 0, 0)
+        self.val = QLineEdit("1"); self.val.setObjectName("glassin")
+        row = QHBoxLayout(); row.setSpacing(4); self.a = QComboBox(); self.b = QComboBox()
+        sw = QToolButton(); sw.setIcon(glyph("swap")); sw.setIconSize(QSize(16, 16)); sw.setFixedSize(28, 28)
+        sw.clicked.connect(lambda: (lambda i, j: (self.a.setCurrentIndex(j), self.b.setCurrentIndex(i)))(self.a.currentIndex(),
+                                                                                                         self.b.currentIndex()))
+        row.addWidget(self.a, 1); row.addWidget(sw); row.addWidget(self.b, 1)
+        self.res = lbl("", "temp"); self.res.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        u.addWidget(self.val); u.addLayout(row); u.addWidget(self.res); self.lay.addWidget(self.units)
+        self.zones = QWidget(); self.zones.setObjectName("clear"); z = QVBoxLayout(self.zones); z.setContentsMargins(0, 0, 0, 0)
+        from PyQt6.QtWidgets import QDateTimeEdit
+        self.when = QDateTimeEdit(QDateTime.currentDateTime()); self.when.setDisplayFormat("dd.MM.yyyy HH:mm")
+        zr = QHBoxLayout(); zr.setSpacing(4); self.za = QComboBox(); self.zb = QComboBox()
+        for name, _ in ZONES:
+            self.za.addItem(name); self.zb.addItem(name)
+        self.zb.setCurrentIndex(2); zr.addWidget(self.za, 1); zr.addWidget(lbl("→", "muted2")); zr.addWidget(self.zb, 1)
+        self.zres = lbl("", "temp"); self.zall = lbl("", "muted2", wrap=True)
+        z.addWidget(self.when); z.addLayout(zr); z.addWidget(self.zres); z.addWidget(self.zall); self.lay.addWidget(self.zones)
+        for w in (self.val,):
+            w.textChanged.connect(lambda _: self.calc())
+        for w in (self.a, self.b):
+            w.currentIndexChanged.connect(lambda _: self.calc())
+        for w in (self.za, self.zb):
+            w.currentIndexChanged.connect(lambda _: self.calc())
+        self.when.dateTimeChanged.connect(lambda _: self.calc())
+        self.cat.currentIndexChanged.connect(lambda _: self.set_cat())
+        self.set_cat()
+
+    def set_cat(self):
+        c = self.cat.currentText(); tz = c == "Strefy czasowe"
+        self.units.setVisible(not tz); self.zones.setVisible(tz)
+        if not tz:
+            for w in (self.a, self.b):
+                w.blockSignals(True); w.clear(); w.addItems(list(UNITS[c])); w.blockSignals(False)
+            self.b.setCurrentIndex(min(1, self.b.count() - 1))
+        self.calc()
+
+    def calc(self):
+        c = self.cat.currentText()
+        if c == "Strefy czasowe":
+            from PyQt6.QtCore import QTimeZone
+            src = QDateTime(self.when.dateTime().date(), self.when.dateTime().time(), QTimeZone(ZONES[self.za.currentIndex()][1].encode()))
+            out = src.toTimeZone(QTimeZone(ZONES[self.zb.currentIndex()][1].encode()))
+            self.zres.setText(out.toString("HH:mm") + (f"  ({out.toString('d.MM')})" if out.date() != src.date() else ""))
+            self.zall.setText("  ·  ".join(f"{n} {src.toTimeZone(QTimeZone(z.encode())).toString('HH:mm')}"
+                                           for n, z in ZONES[:6] if n != ZONES[self.za.currentIndex()][0]))
+            return
+        try:
+            v = float(self.val.text().replace(",", ".").replace(" ", ""))
+        except ValueError:
+            self.res.setText(""); return
+        a, b = self.a.currentText(), self.b.currentText()
+        if c == "Temperatura":
+            k = {"°C": v + 273.15, "°F": (v - 32) * 5 / 9 + 273.15, "K": v}[a]
+            r = {"°C": k - 273.15, "°F": (k - 273.15) * 9 / 5 + 32, "K": k}[b]
+        else:
+            r = v * UNITS[c][a] / UNITS[c][b]
+        self.res.setText(f"= {r:.6g} {b}".replace(".", ","))
+
+
+class TextStatsWidget(WidgetFrame):
+    """Licznik znaków i słów: znaki (ze spacjami i bez), słowa, zdania, akapity, szacowany czas czytania i mówienia."""
+
+    def build(self):
+        self.edit = QPlainTextEdit(); self.edit.setObjectName("note"); self.edit.setPlaceholderText("Wklej lub wpisz tekst…")
+        self.edit.setFixedHeight(110); self.lay.addWidget(self.edit)
+        from PyQt6.QtWidgets import QGridLayout
+        g = QGridLayout(); g.setHorizontalSpacing(10); g.setVerticalSpacing(2); self.vals = {}
+        for i, (k, t) in enumerate((("chars", "Znaki"), ("nospace", "Bez spacji"), ("words", "Słowa"), ("sent", "Zdania"),
+                                    ("para", "Akapity"), ("read", "Czytanie"), ("speak", "Mówienie"), ("avg", "Śr. długość słowa"))):
+            g.addWidget(lbl(t, "muted2"), i // 2, (i % 2) * 2); v = lbl("0", "h3"); g.addWidget(v, i // 2, (i % 2) * 2 + 1)
+            self.vals[k] = v
+        self.lay.addLayout(g)
+        self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.count)
+        self.edit.textChanged.connect(lambda: self._t.start(150))
+        clr = QPushButton("Wyczyść"); clr.clicked.connect(self.edit.clear); self.lay.addWidget(clr)
+
+    @staticmethod
+    def mmss(minutes):
+        s = round(minutes * 60)
+        return f"{s // 60} min {s % 60:02d} s" if s >= 60 else f"{s} s"
+
+    def count(self):
+        t = self.edit.toPlainText(); words = re.findall(r"[\w'’-]+", t)
+        v = {"chars": len(t), "nospace": len(re.sub(r"\s", "", t)), "words": len(words),
+             "sent": len([s for s in re.split(r"[.!?…]+", t) if s.strip()]),
+             "para": len([p for p in re.split(r"\n\s*\n", t) if p.strip()]),
+             "read": self.mmss(len(words) / 200), "speak": self.mmss(len(words) / 130),
+             "avg": f"{sum(map(len, words)) / len(words):.1f}" if words else "0"}
+        for k, x in v.items():
+            self.vals[k].setText(str(x))
+
+
+WIDGET_INFO = {   # id: (ikona, kategoria, opis w katalogu)
+    "streak": ("history", "Produktywność", "Seria dni z rzędu i kalendarz aktywności jak na GitHubie."),
+    "todo": ("select", "Produktywność", "Prosta lista zadań do odhaczania."),
+    "notes": ("app", "Produktywność", "Szybkie notatki zapisywane automatycznie."),
+    "pomodoro": ("timer", "Produktywność", "Minutnik pracy w blokach 25 / 5 minut."),
+    "countdown": ("timer", "Produktywność", "Odliczanie dni, godzin i minut do wybranej daty."),
+    "calc": ("app", "Narzędzia", "Kalkulator – działania wpisywane jak tekst."),
+    "translate": ("swap", "Narzędzia", "Tłumacz tekstu (MyMemory)."),
+    "clipboard": ("copy", "Narzędzia", "Historia skopiowanych tekstów (tylko w pamięci, bez haseł)."),
+    "convert": ("ruler", "Narzędzia", "Jednostki (długość, masa, temperatura…) i strefy czasowe – bez internetu."),
+    "textstat": ("text", "Narzędzia", "Liczba znaków, słów, zdań i szacowany czas czytania."),
+    "pwqr": ("qr", "Narzędzia", "Silne hasła i kod QR z adresu aktywnej karty."),
+    "picker": ("droplet", "Narzędzia", "Kolor dowolnego piksela z ekranu – HEX, RGB, HSL."),
+    "clock": ("history", "Informacje", "Godzina i data."),
+    "weather": ("zoom", "Informacje", "Pogoda teraz i prognoza na 5 dni."),
+    "markets": ("share", "Informacje", "Kryptowaluty i akcje z wykresami."),
+    "currency": ("swap", "Informacje", "Przelicznik walut: PLN, USD, EUR, GBP, BTC."),
+    "rss": ("bookmark", "Informacje", "Nagłówki z wybranych kanałów RSS."),
+    "parcels": ("package", "Informacje", "Śledzenie przesyłek – InPost od razu w widgecie, DPD, DHL, Poczta Polska i inni."),
+    "ping": ("signal", "System", "Opóźnienie sieci (ms do 8.8.8.8) i stabilność połączenia."),
+    "system": ("tools", "System", "Użycie procesora, pamięci i baterii."),
+    "audio": ("play", "Multimedia", "Spotify i inne odtwarzacze (tryb System), dźwięk z kart, pliki."),
+    "gmail": ("app", "Konta", "Nieprzeczytane wiadomości z Gmaila."),
+    "calendar": ("history", "Konta", "Najbliższe wydarzenia z Kalendarza Google."),
+    "gtasks": ("select", "Konta", "Zadania Google."),
+    "drive": ("folder", "Konta", "Ostatnie pliki z Dysku Google."),
+    "discord": ("private", "Konta", "Profil, wzmianki i serwer Discord, tryb Czat."),
+}
+
+
+class WidgetMarket(QDialog):
+    """Rynek Widgetów: katalog modułów (instalacja do lewego lub prawego panelu) i lista zainstalowanych
+    (kolejność, przeniesienie na drugą stronę, odinstalowanie). Nie tworzy żadnych widgetów – tylko zmienia układ;
+    widget powstaje dopiero po dodaniu do panelu i jest niszczony od razu po odinstalowaniu."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b, self.store = browser, browser.store
+        self.setObjectName("settings"); self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        self.setModal(True); self.resize(960, 660); self.setMinimumSize(700, 480)
+        root = QVBoxLayout(self); root.setContentsMargins(1, 1, 1, 1); root.setSpacing(0)
+        bar = DragBar(); bl = QHBoxLayout(bar); bl.setContentsMargins(18, 8, 8, 8)
+        ic = QLabel(); ic.setPixmap(glyph("grid", "#ececec").pixmap(20, 20)); bl.addWidget(ic); bl.addSpacing(6)
+        bl.addWidget(lbl("Rynek Widgetów", "h1")); bl.addSpacing(16)
+        grp = QButtonGroup(self); self.tabs = {}
+        for key, text in (("cat", "Katalog"), ("inst", "Zainstalowane")):
+            t = QToolButton(); t.setObjectName("aipick"); t.setCheckable(True); t.setText(text)
+            t.setCursor(Qt.CursorShape.PointingHandCursor); t.clicked.connect(lambda _=False, k=key: self.show_tab(k))
+            grp.addButton(t); bl.addWidget(t); self.tabs[key] = t
+        bl.addStretch()
+        self.search = QLineEdit(); self.search.setObjectName("glassin"); self.search.setPlaceholderText("Szukaj widgetu…")
+        self.search.setFixedWidth(220); self.search.textChanged.connect(lambda _: self.fill_catalog()); bl.addWidget(self.search)
+        x = QToolButton(); x.setIcon(glyph("close")); x.setIconSize(QSize(22, 22)); x.setFixedSize(32, 32); x.clicked.connect(self.accept)
+        bl.addWidget(x); root.addWidget(bar)
+        self.stack = QStackedWidget(); self.stack.setObjectName("clear"); root.addWidget(self.stack, 1)
+        # katalog
+        self.cat_area = QScrollArea(); self.cat_area.setWidgetResizable(True); self.cat_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.cat_area.viewport().setAutoFillBackground(False); self.stack.addWidget(self.cat_area)
+        # zainstalowane
+        inst = QWidget(); inst.setObjectName("clear"); il = QHBoxLayout(inst); il.setContentsMargins(20, 14, 20, 18); il.setSpacing(16)
+        self.cols = {}
+        for side, title in (("left", "Lewy panel"), ("right", "Prawy panel")):
+            box = QFrame(); box.setObjectName("acc"); v = QVBoxLayout(box); v.setContentsMargins(14, 12, 14, 12); v.setSpacing(6)
+            v.addWidget(lbl(title, "h3"))
+            sa = QScrollArea(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.Shape.NoFrame); sa.viewport().setAutoFillBackground(False)
+            sa.setObjectName("clear"); sa.viewport().setObjectName("clear")
+            holder = QWidget(); holder.setObjectName("clear"); col = QVBoxLayout(holder); col.setContentsMargins(0, 0, 0, 0)
+            col.setSpacing(4); sa.setWidget(holder); v.addWidget(sa, 1); il.addWidget(box, 1); self.cols[side] = col
+        self.stack.addWidget(inst)
+        self.store.layout_changed.connect(self._changed)
+        self.show_tab("cat")
+
+    def done(self, r):
+        safe_disconnect(self.store.layout_changed, self._changed); super().done(r)
+
+    def _changed(self):
+        QTimer.singleShot(0, lambda: (self.fill_catalog(), self.fill_installed()))
+
+    def show_tab(self, key):
+        self.tabs[key].setChecked(True); self.search.setVisible(key == "cat")
+        self.stack.setCurrentIndex(0 if key == "cat" else 1)
+        self.fill_catalog() if key == "cat" else self.fill_installed()
+
+    def installed(self, wid):
+        return self.store.wcfg(wid)["on"]
+
+    # --- akcje ---
+    def install(self, wid, side):
+        st = self.store; gate = WIDGETS[wid][4]
+        if gate and not st.feature(gate):                     # np. Gmail włącza integrację z Google
+            st.settings.setdefault("features", {})[gate] = True; st.features_changed.emit()
+        feats = st.settings.setdefault("features", {})
+        if not feats.get(side, True):                           # panel był wyłączony – włącz go
+            feats[side] = True; st.features_changed.emit()
+        other = "right" if side == "left" else "left"
+        ids = {s: [w for w in st.side_order(s) if w != wid] for s in ("left", "right")}
+        ids[side].append(wid); st.set_wcfg(wid, on=True, collapsed=False, emit=False)
+        st.apply_layout(ids["left"], ids["right"])
+        sb = self.b.host.left if side == "left" else self.b.host.right
+        if sb.user_collapsed:
+            self.b.toggle_sidebar(side)
+        self.b.notice.info(f"Dodano „{WIDGETS[wid][0]}” do {'lewego' if side == 'left' else 'prawego'} panelu.")
+
+    def uninstall(self, wid):
+        self.store.set_wcfg(wid, on=False)   # WidgetHost.sync niszczy obiekt: zatrzymuje timery i zapytania, zwalnia pamięć
+
+    def move(self, wid, d):
+        self.b.host.move(wid, d)
+
+    def flip(self, wid):
+        self.b.host.flip(wid)
+
+    # --- widoki ---
+    @staticmethod
+    def _clear(layout):
+        while layout.count():
+            it = layout.takeAt(0)
+            if it.widget():
+                it.widget().deleteLater()
+            elif it.layout():
+                WidgetMarket._clear(it.layout())
+
+    def card(self, wid):
+        title, _, _, _, gate = WIDGETS[wid]; kind, catg, desc = WIDGET_INFO.get(wid, ("app", "Inne", ""))
+        c = QFrame(); c.setObjectName("mcard"); c.setFixedHeight(168)
+        v = QVBoxLayout(c); v.setContentsMargins(14, 12, 14, 12); v.setSpacing(4)
+        top = QHBoxLayout(); top.setSpacing(10)
+        ic = QLabel(); ic.setPixmap(glyph(kind, "#ececec").pixmap(26, 26)); ic.setFixedSize(38, 38); ic.setObjectName("micon")
+        ic.setAlignment(Qt.AlignmentFlag.AlignCenter); top.addWidget(ic)
+        tc = QVBoxLayout(); tc.setSpacing(0); tc.addWidget(lbl(title, "h3")); tc.addWidget(lbl(catg, "muted")); top.addLayout(tc, 1)
+        v.addLayout(top)
+        d = lbl(desc + (f" Włączy integrację: {FEATURES[gate][0]}." if gate and not self.store.feature(gate) else ""),
+                "muted2", wrap=True)
+        v.addWidget(d, 1)
+        row = QHBoxLayout(); row.setSpacing(6)
+        if self.installed(wid):
+            side = self.store.wcfg(wid)["side"]
+            st = lbl(f"Zainstalowany · {'lewy' if side == 'left' else 'prawy'} panel", "muted2"); st.setStyleSheet("color:#3ddc84")
+            row.addWidget(st, 1)
+            un = QPushButton("Odinstaluj"); un.clicked.connect(lambda _=False: self.uninstall(wid)); row.addWidget(un)
+        else:
+            for side, text in (("left", "+ Lewy panel"), ("right", "+ Prawy panel")):
+                bt = QPushButton(text); bt.setObjectName("primary" if side == WIDGETS[wid][1] else "")
+                bt.clicked.connect(lambda _=False, s=side: self.install(wid, s)); row.addWidget(bt, 1)
+        v.addLayout(row)
+        return c
+
+    def fill_catalog(self):
+        q = self.search.text().strip().lower()
+        inner = QWidget(); inner.setObjectName("clear")
+        from PyQt6.QtWidgets import QGridLayout
+        outer = QVBoxLayout(inner); outer.setContentsMargins(20, 14, 20, 20); outer.setSpacing(10)
+        n_inst = sum(1 for w in WIDGETS if self.installed(w))
+        self.tabs["inst"].setText(f"Zainstalowane ({n_inst})")
+        outer.addWidget(lbl("Dodaj widget do lewego albo prawego panelu. Niezainstalowane widgety nie zajmują pamięci "
+                            "i nie wysyłają żadnych zapytań.", "muted2", wrap=True))
+        cats = {}
+        for wid in WIDGETS:
+            kind, catg, desc = WIDGET_INFO.get(wid, ("app", "Inne", ""))
+            if q and q not in (WIDGETS[wid][0] + " " + desc + " " + catg).lower():
+                continue
+            cats.setdefault(catg, []).append(wid)
+        for catg in ("Produktywność", "Narzędzia", "Informacje", "System", "Multimedia", "Konta", "Inne"):
+            if catg not in cats:
+                continue
+            outer.addWidget(lbl(catg.upper(), "cap"))
+            g = QGridLayout(); g.setSpacing(10)
+            for i, wid in enumerate(cats[catg]):
+                g.addWidget(self.card(wid), i // 3, i % 3)
+            for k in range(3):
+                g.setColumnStretch(k, 1)
+            outer.addLayout(g)
+        if not cats:
+            outer.addWidget(lbl("Nic nie znaleziono.", "muted2"))
+        outer.addStretch(1)
+        old = self.cat_area.takeWidget(); self.cat_area.setWidget(inner)
+        if old is not None:
+            old.deleteLater()
+
+    def fill_installed(self):
+        for side, col in self.cols.items():
+            self._clear(col)
+            ids = [w for w in self.store.side_order(side) if self.installed(w)]
+            for i, wid in enumerate(ids):
+                row = QFrame(); row.setObjectName("mrow"); h = QHBoxLayout(row); h.setContentsMargins(10, 6, 6, 6); h.setSpacing(4)
+                ic = QLabel(); ic.setPixmap(glyph(WIDGET_INFO.get(wid, ("app",))[0]).pixmap(18, 18)); h.addWidget(ic)
+                h.addWidget(lbl(WIDGETS[wid][0]), 1)
+                for kind, tip, fn, ok in (("up", "W górę", lambda _=False, w=wid: self.move(w, -1), i > 0),
+                                          ("chev_down", "W dół", lambda _=False, w=wid: self.move(w, 1), i < len(ids) - 1),
+                                          ("swap", "Przenieś do " + ("prawego" if side == "left" else "lewego") + " panelu",
+                                           lambda _=False, w=wid: self.flip(w), True),
+                                          ("trash", "Odinstaluj", lambda _=False, w=wid: self.uninstall(w), True)):
+                    bt = QToolButton(); bt.setIcon(glyph(kind)); bt.setIconSize(QSize(16, 16)); bt.setFixedSize(28, 28)
+                    bt.setToolTip(tip); bt.clicked.connect(fn); h.addWidget(bt)
+                    sp = bt.sizePolicy(); sp.setRetainSizeWhenHidden(True); bt.setSizePolicy(sp); bt.setVisible(ok)
+                col.addWidget(row)
+            if not ids:
+                col.addWidget(lbl("Brak widgetów – dodaj je w Katalogu.", "muted2", wrap=True))
+            col.addStretch(1)
+        self.tabs["inst"].setText(f"Zainstalowane ({sum(1 for w in WIDGETS if self.installed(w))})")
+
+
 WIDGET_CLASSES = {"streak": StreakWidget, "clock": ClockWidget, "weather": WeatherWidget, "markets": MarketsWidget,
                   "currency": CurrencyWidget, "notes": NotesWidget, "todo": TodoWidget, "pomodoro": PomodoroWidget,
                   "clipboard": ClipboardWidget, "calc": CalcWidget, "translate": TranslateWidget, "system": SystemWidget,
                   "audio": AudioWidget, "rss": RssWidget, "gmail": GmailWidget, "calendar": CalendarWidget,
-                  "gtasks": GTasksWidget, "drive": DriveWidget, "discord": DiscordWidget}
+                  "gtasks": GTasksWidget, "drive": DriveWidget, "discord": DiscordWidget, "parcels": ParcelsWidget,
+                  "countdown": CountdownWidget, "ping": PingWidget, "pwqr": PwQrWidget, "picker": ColorPickerWidget,
+                  "convert": ConverterWidget, "textstat": TextStatsWidget}
 
 
 def make_widget(wid, store, host):
@@ -5121,105 +6010,6 @@ def page_features(dlg):
     l.addSpacing(6); l.addWidget(clr, 0, Qt.AlignmentFlag.AlignLeft)
     l.addStretch(1)
     return scroll_page(w)
-
-
-class WidgetsPage(QWidget):
-    """Dwie listy (lewy / prawy panel): przeciągaj, aby zmienić panel i kolejność; pole = włączony."""
-
-    def __init__(self, dlg):
-        super().__init__()
-        self.setObjectName("clear"); self.dlg, self.store = dlg, dlg.store; self._busy = False
-        l = QVBoxLayout(self); l.setContentsMargins(24, 20, 24, 20); l.setSpacing(8)
-        l.addWidget(lbl("Widgety", "h1"))
-        l.addWidget(lbl("Przeciągnij widget do drugiej listy, aby zmienić panel, lub w obrębie listy, aby zmienić kolejność. "
-                        "Zaznaczone widgety są włączone.", "muted2", wrap=True))
-        cols = QHBoxLayout(); cols.setSpacing(14); self.lists = {}
-        for side, title in (("left", "Lewy panel"), ("right", "Prawy panel")):
-            box = QVBoxLayout(); box.addWidget(section(title))
-            lw = QListWidget(); lw.setObjectName("wlist")
-            lw.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop); lw.setDefaultDropAction(Qt.DropAction.MoveAction)
-            lw.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection); lw.setSpacing(2)
-            lw.viewport().setAutoFillBackground(False)
-            self.lists[side] = lw; box.addWidget(lw, 1); cols.addLayout(box, 1)
-        l.addLayout(cols, 1)
-        row = QHBoxLayout(); row.setSpacing(6)
-        for text, fn in (("▲ W górę", lambda: self.shift(-1)), ("▼ W dół", lambda: self.shift(1)),
-                         ("⇄ Drugi panel", self.flip), ("Zwiń / rozwiń", self.collapse), ("Przywróć domyślne", self.reset)):
-            b = QPushButton(text); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
-        row.addStretch(); l.addLayout(row)
-        self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.apply)
-        self.fill()
-        for lw in self.lists.values():
-            m = lw.model(); m.rowsInserted.connect(self._soon); m.rowsRemoved.connect(self._soon); m.rowsMoved.connect(self._soon)
-            lw.itemChanged.connect(self._soon)
-
-    def _soon(self, *a):
-        if not self._busy:
-            self._t.start(60)
-
-    def fill(self):
-        self._busy = True
-        for side, lw in self.lists.items():
-            lw.clear()
-            for wid in self.store.side_order(side):
-                title, _, _, _, gate = WIDGETS[wid]; c = self.store.wcfg(wid)
-                note = f"  — wymaga: {FEATURES[gate][0]}" if gate and not self.store.feature(gate) else ""
-                it = QListWidgetItem(title + ("  · zwinięty" if c["collapsed"] else "") + note)
-                it.setData(Qt.ItemDataRole.UserRole, wid)
-                it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsDragEnabled)
-                it.setCheckState(Qt.CheckState.Checked if c["on"] else Qt.CheckState.Unchecked); lw.addItem(it)
-        self._busy = False
-
-    def apply(self):
-        ids = {s: [lw.item(i).data(Qt.ItemDataRole.UserRole) for i in range(lw.count())] for s, lw in self.lists.items()}
-        if len(ids["left"]) + len(ids["right"]) != len(WIDGETS) or set(ids["left"]) | set(ids["right"]) != set(WIDGETS):
-            return  # przeciąganie w toku
-        ons = {lw.item(i).data(Qt.ItemDataRole.UserRole): lw.item(i).checkState() == Qt.CheckState.Checked
-               for lw in self.lists.values() for i in range(lw.count())}
-        self.store.apply_layout(ids["left"], ids["right"], ons)
-
-    def current(self):
-        for side, lw in self.lists.items():
-            if lw.currentRow() >= 0 and lw.currentItem() is not None and lw.currentItem().isSelected():
-                return side, lw
-        for side, lw in self.lists.items():
-            if lw.currentItem() is not None:
-                return side, lw
-        return None, None
-
-    def shift(self, d):
-        side, lw = self.current()
-        if lw is None:
-            return
-        r = lw.currentRow(); n = r + d
-        if 0 <= n < lw.count():
-            self._busy = True; it = lw.takeItem(r); lw.insertItem(n, it); lw.setCurrentRow(n); self._busy = False
-            self.apply()
-
-    def flip(self):
-        side, lw = self.current()
-        if lw is None:
-            return
-        wid = lw.currentItem().data(Qt.ItemDataRole.UserRole); self.dlg.host.flip(wid); self.fill()
-
-    def collapse(self):
-        side, lw = self.current()
-        if lw is None:
-            return
-        wid = lw.currentItem().data(Qt.ItemDataRole.UserRole); inst = self.dlg.host.inst.get(wid)
-        if inst is not None:
-            inst.toggle()
-        else:
-            self.store.set_wcfg(wid, collapsed=not self.store.wcfg(wid)["collapsed"], emit=False)
-        self.fill()
-
-    def reset(self):
-        self.store.settings.pop("widgets", None); self.store.save_settings(); self.store.layout_changed.emit(); self.fill()
-
-
-@settings_page("widgets", "Widgety")
-def page_widgets(dlg):
-    return WidgetsPage(dlg)
 
 
 class AccountRow(QFrame):
@@ -5414,7 +6204,7 @@ def page_keys(dlg):
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
                  ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
-                 ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + F", "Znajdź na stronie"),
+                 ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
                  ("Ctrl + S", "Zapisz stronę"), ("Ctrl + Shift + Y", "Pobrane pliki"), ("Ctrl + Shift + Del", "Usuń dane przeglądania"),
                  ("F12 / Ctrl + U", "Narzędzia deweloperskie / źródło strony"),
@@ -5655,7 +6445,7 @@ def page_passwords(dlg):
     return scroll_page(w)
 
 
-_ORDER = ["features", "tabs", "widgets", "accounts", "privacy", "passwords", "look", "keys", "dev"]
+_ORDER = ["features", "tabs", "accounts", "privacy", "passwords", "look", "keys", "dev"]
 SETTINGS_PAGES.sort(key=lambda p: _ORDER.index(p[0]))
 
 
@@ -6929,7 +7719,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
-                ("Ctrl+N", self.new_window), ("Ctrl+Shift+N", lambda: self.new_window(True)),
+                ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
                 ("Ctrl+F", self.find_bar.open), ("Ctrl+S", self.save_page), ("F12", self.devtools), ("Ctrl+U", self.view_source),
                 ("F11", self.toggle_fullscreen), ("Ctrl+=", lambda: self.zoom(1)), ("Ctrl++", lambda: self.zoom(1)),
@@ -7220,6 +8010,7 @@ class Browser(QMainWindow):
         self.act(m, "private", "Nowe okno prywatne", lambda: self.new_window(True), "Ctrl+Shift+N")
         m.addSeparator()
         # 2. narzędzia
+        self.act(m, "grid", "Rynek Widgetów", self.open_market, "Ctrl+Shift+E")
         row = MenuRow("sidebar", "Pasek boczny"); cur = self.sidebar_mode(); grp = []
         for mode, text in (("on", "Włączone"), ("auto", "Automatyczne ukrywanie"), ("off", "Wył.")):
             b = row.button(text, checked=(mode == cur), fn=lambda mode=mode: (self.set_sidebar_mode(mode), m.close()))
@@ -7292,6 +8083,9 @@ class Browser(QMainWindow):
         w = Browser(self.store, private=private); w.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         WINDOWS.append(w); w.destroyed.connect(lambda _=None, w=w: WINDOWS.remove(w) if w in WINDOWS else None)
         w.show()
+
+    def open_market(self, tab="cat"):
+        dlg = WidgetMarket(self); dlg.show_tab(tab); dlg.exec()
 
     def quit_all(self):
         for w in list(WINDOWS):
