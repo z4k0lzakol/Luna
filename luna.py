@@ -40,7 +40,7 @@ try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
 except ImportError:
     QSvgRenderer = None
-from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage
+from PyQt6.QtWebEngineCore import QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor
 try:   # systemowe sterowanie multimediami Windows (SMTC): pip install winrt-Windows.Media.Control winrt-Windows.Storage.Streams
     import asyncio, threading
     from winrt.windows.media.control import (GlobalSystemMediaTransportControlsSessionManager as _SMTC,
@@ -2800,7 +2800,12 @@ class SpotifyPane(QWidget):
 
     def sync(self):
         s = self.sp(); self.timer.stop(); self.card.hide(); self.btn.hide(); self.msg.show()
-        if s.expired or not s.logged_in():
+        if not s.configured() and not s.logged_in():
+            self._mode = "system"
+            self.msg.setText("Ta wersja Luny nie ma kluczy Spotify Web API. Tryb „System” steruje aplikacją Spotify "
+                             "bez logowania – utwór, okładka, play/pauza, następny.")
+            self.btn.setText("Przełącz na tryb System"); self.btn.show()
+        elif s.expired or not s.logged_in():
             self._mode = "login"
             self.msg.setText("Sesja Spotify wygasła – połącz konto ponownie." if s.expired else
                              "Połącz konto Spotify, aby widzieć i sterować odtwarzaniem.")
@@ -2811,7 +2816,10 @@ class SpotifyPane(QWidget):
             self.msg.hide(); self.card.show(); self.poll(); self.timer.start(3000)
 
     def on_btn(self):
-        self.sp().login()
+        if self._mode == "system":
+            self.o.select("system")
+        else:
+            self.sp().login()
 
     @staticmethod
     def friendly(err):
@@ -3074,9 +3082,14 @@ class MediaSession(QObject):
     async def _safe(self, coro):
         try:
             await coro
+        except RuntimeError:      # obiekt Qt już usunięty (zamykanie Luny) – zatrzymujemy wątek po cichu
+            self._bind(None); self.loop.stop()
         except Exception as e:    # błąd WinRT nie może zabić wątku ani programu
             print(f"SMTC: {e!r}", file=sys.stderr)
-            self.updated.emit({"error": "Nie udało się odczytać odtwarzacza systemowego."})
+            try:
+                self.updated.emit({"error": "Nie udało się odczytać odtwarzacza systemowego."})
+            except RuntimeError:
+                self.loop.stop()
 
     def _kick(self, *_):          # wywoływane z wątków WinRT – zbieramy serię zdarzeń w jeden odczyt
         if self.loop is not None and not self._pending:
@@ -3477,6 +3490,7 @@ class OAuthService(QObject):
     CT = QNetworkRequest.KnownHeaders.ContentTypeHeader
     STATUS = QNetworkRequest.Attribute.HttpStatusCodeAttribute
     NAME, SECTION, TOKEN_KEY = "?", "x", "refresh"
+    ID_RE = r".+"   # jak wygląda poprawny identyfikator aplikacji – błędnie wklejony tekst (np. adres) jest pomijany
     AUTH_URL = TOKEN_URL = SCOPES = CALLBACK = ""
     NEEDS_SECRET, SYNC_MS, IN_APP = False, 120000, False
 
@@ -3496,7 +3510,10 @@ class OAuthService(QObject):
         return 0
 
     def client_id(self):          # pole w Ustawieniach (twórca) > klucze wbudowane w aplikację
-        return self.cfg().get("client_id") or builtin_oauth(self.SECTION).get("client_id", "")
+        for cid in (self.cfg().get("client_id"), builtin_oauth(self.SECTION).get("client_id")):
+            if cid and re.fullmatch(self.ID_RE, cid.strip()):
+                return cid.strip()
+        return ""
 
     def client_secret(self):
         return self.cfg().get("client_secret") or builtin_oauth(self.SECTION).get("client_secret", "")
@@ -3704,6 +3721,7 @@ GOOGLE_LEGACY_SCOPES = "gmail.readonly calendar.readonly auth/tasks"  # sesje sp
 
 class GoogleService(OAuthService):
     NAME, SECTION, TOKEN_KEY, NEEDS_SECRET = "Google", "google", "refresh", True
+    ID_RE = r"[\w-]+\.apps\.googleusercontent\.com"
     AUTH_URL, TOKEN_URL = "https://accounts.google.com/o/oauth2/v2/auth", "https://oauth2.googleapis.com/token"
     SCOPES = GOOGLE_SCOPES
 
@@ -3756,6 +3774,7 @@ class GoogleService(OAuthService):
 class SpotifyService(OAuthService):
     """Spotify Web API – logowanie PKCE (bez Client Secret). Stały port, bo Spotify wymaga dokładnego Redirect URI."""
     NAME, SECTION, TOKEN_KEY = "Spotify", "spotify", "spotify_refresh"
+    ID_RE = r"[0-9a-fA-F]{32}"
     AUTH_URL, TOKEN_URL = "https://accounts.spotify.com/authorize", "https://accounts.spotify.com/api/token"
     SCOPES = "user-read-playback-state user-modify-playback-state user-read-currently-playing"
     CALLBACK, IN_APP = "/callback", True
@@ -3783,6 +3802,26 @@ DISCORD_APP = "https://discord.com/channels/@me"
 HOST_ALIAS = {"gmail.com": "mail.google.com", "inbox.google.com": "mail.google.com"}
 # licznik w tytule karty: „(3) Discord”, „Odebrane (5) - … - Gmail”; 1–3 cyfry, żeby nie łapać lat w tytułach filmów
 TITLE_COUNT = re.compile(r"^\((\d{1,3})\+?\)\s|\s\((\d{1,3})\+?\)\s+[-–|]")
+
+
+class NoDiscordAppCheck(QWebEngineUrlRequestInterceptor):
+    """Discord Web pyta lokalny port aplikacji Discord (127.0.0.1:6463–6472). Gdy aplikacja działa, zamiast klienta
+    pokazuje ekran „Wykryto aplikację Discord” i czeka na kliknięcie – ukryta strona i Czat w widgecie stałyby wtedy
+    w miejscu. Dla tych dwóch stron blokujemy to sprawdzenie (zwykłe karty działają bez zmian)."""
+
+    def interceptRequest(self, info):
+        u = info.requestUrl()
+        if u.host() in ("127.0.0.1", "localhost") and 6463 <= u.port() <= 6472:
+            info.block(True)
+
+
+_NO_DISCORD_APP = []
+
+
+def no_discord_app_check(page):
+    if not _NO_DISCORD_APP:
+        _NO_DISCORD_APP.append(NoDiscordAppCheck(QApplication.instance()))
+    page.setUrlRequestInterceptor(_NO_DISCORD_APP[0])
 
 
 class SessionBridge(QObject):
@@ -3945,6 +3984,7 @@ class SessionBridge(QObject):
         if self._discord_wanted() and self._dpage is None:
             pg = self._dpage = QWebEnginePage(get_profile(), self)
             pg.setAudioMuted(True)      # dźwięki powiadomień tylko z widocznego Discorda
+            no_discord_app_check(pg)
             pg.titleChanged.connect(lambda t: self.on_tab_title(pg, pg.url().toString(), t))
             pg.urlChanged.connect(lambda u: self._discord_url(u.toString()))
             pg.setUrl(QUrl(DISCORD_APP))
@@ -4278,6 +4318,7 @@ class DiscordService(OAuthService):
     """Discord OAuth2 (kod + PKCE, zakresy publiczne: identify, guilds). Status obecności i powiadomienia użytkownika
     są w API dostępne wyłącznie dla zatwierdzonych partnerów (zakres rpc), więc widget używa publicznego widgetu serwera."""
     NAME, SECTION, TOKEN_KEY = "Discord", "discord", "discord_refresh"
+    ID_RE = r"\d{15,22}"
     AUTH_URL, TOKEN_URL = "https://discord.com/oauth2/authorize", "https://discord.com/api/oauth2/token"
     SCOPES, CALLBACK, IN_APP, SYNC_MS = "identify guilds", "/callback", True, 60000
 
@@ -4397,6 +4438,7 @@ class DiscordWidget(WidgetFrame):
             self.chat.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
             self.chat.link_requested.connect(self.host.browser.open_url_new_tab)
             v = self.chat   # Czat też zasila licznik i wykrywa zalogowanie
+            no_discord_app_check(v.page())
             v.titleChanged.connect(lambda t, v=v: self.store.session.on_tab_title(v, v.url().toString(), t))
             v.urlChanged.connect(lambda u: self.store.session._discord_url(u.toString()))
             self.chat.setUrl(QUrl(DISCORD_APP)); self.chat_box.addWidget(self.chat)
@@ -4685,10 +4727,11 @@ def page_widgets(dlg):
 class AccountRow(QFrame):
     """Wiersz konta: ikona, stan połączenia (zielona kropka / „Połączono jako …”) i jeden przycisk Połącz / Rozłącz."""
 
-    def __init__(self, dlg, title, icon, getter, label, style, session=None, login_url=""):
+    def __init__(self, dlg, title, icon, getter, label, style, session=None, login_url="", fallback=None):
         super().__init__()
         self.setObjectName("acc"); self.getter, self.label, self.style_name, self.dlg = getter, label, style, dlg
         self.session, self.login_url = session, login_url   # połączenie przez sesję z karty Luny (bez kluczy)
+        self.fallback = fallback   # (opis, przycisk, funkcja) – co zrobić, gdy brak kluczy aplikacji
         h = QHBoxLayout(self); h.setContentsMargins(16, 14, 16, 14); h.setSpacing(12)
         ic = QLabel(); ic.setFixedSize(32, 32); ic.setPixmap(icon.pixmap(28, 28))
         col = QVBoxLayout(); col.setSpacing(1); col.addWidget(lbl(title, "h3"))
@@ -4718,6 +4761,8 @@ class AccountRow(QFrame):
             self.status.setText(dot("#f0b232") + "Łączenie… dokończ logowanie w oknie"); self.btn.setText("Anuluj"); self._style("")
         elif self.session is not None and self.session():
             self.status.setText(dot("#3ddc84") + "Połączono przez sesję w karcie Luny (bez kluczy)"); self.btn.hide()
+        elif self.fallback and not s.configured():
+            self.status.setText(dot("#80848e") + self.fallback[0]); self.btn.setText(self.fallback[1]); self._style(self.style_name)
         elif self.login_url and not s.configured():
             self.status.setText(dot("#80848e") + "Niepołączono · zaloguj się w karcie Luny")
             self.btn.setText("Zaloguj w karcie"); self._style(self.style_name)
@@ -4736,6 +4781,8 @@ class AccountRow(QFrame):
             s.logout()
         elif s.busy:
             s.cancel()
+        elif self.fallback and not s.configured():
+            self.fallback[2](); self.dlg.close()
         elif self.login_url and not s.configured():
             self.dlg.host.browser.open_url_new_tab(self.login_url); self.dlg.close()
         else:
@@ -4750,8 +4797,16 @@ def page_accounts(dlg):
     l.addWidget(AccountRow(dlg, "Google", google_g_icon(), lambda: h.google, "Połącz z Google", "gbtn",
                            session=lambda: h.store.session.logged_in("google"),
                            login_url="https://mail.google.com/mail/u/0/#inbox"))
+    def spotify_system():   # bez kluczy: widget audio w trybie System (aplikacja Spotify, bez logowania)
+        h.store.settings["audio_mode"] = "system"; h.store.set_wcfg("audio", on=True, collapsed=False)
+        if "audio" in h.inst:
+            h.inst["audio"].select("system")
+            if h.inst["audio"].collapsed:
+                h.inst["audio"].toggle()
     l.addWidget(AccountRow(dlg, "Spotify", mini_icon("Spotify", "https://open.spotify.com"), lambda: h.spotify,
-                           "Połącz ze Spotify", "spotbtn"))
+                           "Połącz ze Spotify", "spotbtn",
+                           fallback=("Bez logowania · steruj aplikacją Spotify w widgecie audio (tryb System)",
+                                     "Włącz tryb System", spotify_system)))
     l.addWidget(AccountRow(dlg, "Discord", mini_icon("Discord", "https://discord.com"), lambda: h.discord, "Połącz z Discordem",
                            "discbtn", session=lambda: h.store.session.discord_logged_in(), login_url=DISCORD_APP))
     l.addSpacing(8)
