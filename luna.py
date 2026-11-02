@@ -8057,6 +8057,7 @@ TOOL_ITEMS = [("shield", "Blokada reklam i śledzenia"), ("key", "Hasła i alias
               ("google", "Konto Google")]
 TOOL_DEFAULT = ["shield", "key", "reader", "star", "ai", "google"]
 PRIVATE = "__prywatne__"
+PRIVACY_URL = "https://z4k0lzakol.github.io/Luna/privacy.html"   # GitHub Pages z folderu docs/ (wymagane przez Google)
 ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0]
 WINDOWS = []   # dodatkowe okna (zwykłe i prywatne) – referencje, żeby nie zniknęły
 
@@ -9719,6 +9720,7 @@ class Browser(QMainWindow):
         hp = m.addMenu(glyph("help"), "Pomoc")
         self.act(hp, "app", "Skróty klawiszowe", lambda: self.open_settings("keys"))
         self.act(hp, "help", "O Lunie", self.about)
+        self.act(hp, "shield", "Polityka prywatności", lambda: self.open_url_new_tab(PRIVACY_URL))
         self.act(m, "gear", "Ustawienia", self.open_settings, "Ctrl+,")
         self.act(m, "exit", "Zakończ", self.quit_all)
 
