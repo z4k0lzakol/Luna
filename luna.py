@@ -6447,7 +6447,7 @@ def page_keys(dlg):
     w, l = page_box("Skróty klawiszowe i gesty", "Można je wyłączyć w Funkcje → Skróty klawiszowe i gesty myszy.")
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
-                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"), ("Shift + Esc", "Menedżer zadań"),
+                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"), ("Shift + Esc", "Menedżer zadań"), ("Ctrl + Shift + S", "Zrzut fragmentu strony"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
@@ -6484,8 +6484,11 @@ class NoticeBar(QFrame):
             if w:
                 w.deleteLater()
 
-    def ask(self, text, actions):
-        self._t.stop(); self._clear(); self.text.setText(text)
+    def set_icon(self, kind="key"):
+        self.ic.setPixmap(glyph(kind, "#ececec").pixmap(18, 18))
+
+    def ask(self, text, actions, icon="key"):
+        self._t.stop(); self._clear(); self.text.setText(text); self.set_icon(icon)
         for label, fn, primary in actions:
             b = QPushButton(label)
             if primary:
@@ -6494,8 +6497,8 @@ class NoticeBar(QFrame):
             self.btns.addWidget(b)
         self.show()
 
-    def info(self, text, ms=6000):
-        self._clear(); self.text.setText(text); self.show(); self._t.start(ms)
+    def info(self, text, ms=6000, icon="key"):
+        self._clear(); self.text.setText(text); self.set_icon(icon); self.show(); self._t.start(ms)
 
 
 @settings_page("tabs", "Karty i przestrzenie")
@@ -7201,6 +7204,92 @@ class DownloadManager(QObject):
 DOWNLOADS = []
 
 
+def show_in_folder(path):
+    """Eksplorator z zaznaczonym plikiem (funkcja powłoki Windows – bez uruchamiania osobnego programu)."""
+    p = Path(path)
+    if sys.platform == "win32" and p.exists():
+        try:
+            import ctypes
+            sh = ctypes.windll.shell32; sh.ILCreateFromPathW.restype = ctypes.c_void_p
+            pidl = sh.ILCreateFromPathW(str(p))
+            if pidl:
+                try:
+                    if sh.SHOpenFolderAndSelectItems(ctypes.c_void_p(pidl), 0, None, 0) == 0:
+                        return
+                finally:
+                    sh.ILFree(ctypes.c_void_p(pidl))
+        except Exception:
+            pass
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.parent if p.exists() else p)))
+
+
+def download_icon(frac=None, done=False):
+    """Ikona pobierania: strzałka + pierścień postępu (frac 0..1); po zakończeniu – pełny pierścień i kropka."""
+    S = 44; pm = QPixmap(S, S); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor("#c9c9c9"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin); p.setPen(pen)
+    p.drawLine(22, 12, 22, 27); p.drawPolyline(QPolygonF([QPointF(16, 21), QPointF(22, 27), QPointF(28, 21)])); p.drawLine(15, 32, 29, 32)
+    r = QRectF(5, 5, 34, 34)
+    if frac is not None or done:
+        p.setPen(QPen(QColor("#2e2e2e"), 3)); p.drawEllipse(r)
+        p.setPen(QPen(QColor("#ffffff"), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        p.drawArc(r, 90 * 16, -int(360 * 16 * (1.0 if done else max(0.03, min(1.0, frac or 0)))))
+    p.end()
+    return QIcon(pm)
+
+
+class RegionPicker(QWidget):
+    """Zaznaczanie fragmentu strony myszą na nieruchomym zrzucie (Esc – anuluj)."""
+    picked = pyqtSignal(QPixmap)
+
+    def __init__(self, pm, rect):
+        super().__init__(None, Qt.WindowType.FramelessWindowHint | Qt.WindowType.Tool | Qt.WindowType.WindowStaysOnTopHint)
+        self.pm, self.a, self.b = pm, None, None
+        self.setGeometry(rect); self.setCursor(Qt.CursorShape.CrossCursor); self.setMouseTracking(True)
+
+    def sel(self):
+        return QRect(self.a, self.b).normalized() if self.a is not None and self.b is not None else QRect()
+
+    def paintEvent(self, ev):
+        p = QPainter(self); p.drawPixmap(self.rect(), self.pm)
+        p.fillRect(self.rect(), QColor(0, 0, 0, 120)); s = self.sel()
+        if not s.isEmpty():
+            dpr = self.pm.devicePixelRatio()
+            p.drawPixmap(s, self.pm, QRectF(s.x() * dpr, s.y() * dpr, s.width() * dpr, s.height() * dpr))
+            p.setPen(QPen(QColor("#ffffff"), 1)); p.drawRect(s.adjusted(0, 0, -1, -1))
+            p.setPen(QColor("#ffffff")); p.drawText(s.x() + 4, max(14, s.y() - 6), f"{s.width()} × {s.height()}")
+        else:
+            p.setPen(QColor("#e6e6e6")); p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
+                                                    "Zaznacz myszą fragment strony  ·  Esc – anuluj")
+        p.end()
+
+    def mousePressEvent(self, ev):
+        self.a = self.b = ev.position().toPoint(); self.update()
+
+    def mouseMoveEvent(self, ev):
+        if self.a is not None and ev.buttons() & Qt.MouseButton.LeftButton:
+            self.b = ev.position().toPoint(); self.update()
+
+    def mouseReleaseEvent(self, ev):
+        s = self.sel(); self.close()
+        if s.width() > 4 and s.height() > 4:
+            dpr = self.pm.devicePixelRatio()
+            out = self.pm.copy(QRect(int(s.x() * dpr), int(s.y() * dpr), int(s.width() * dpr), int(s.height() * dpr)))
+            out.setDevicePixelRatio(dpr); self.picked.emit(out)
+
+    def keyPressEvent(self, ev):
+        if ev.key() == Qt.Key.Key_Escape:
+            self.close()
+
+
+SHOT_FIXED_JS = r"""(function(on){ // ukrycie pływających nagłówków przy sklejaniu całej strony (od drugiego kadru)
+  if (on) { window.__lunaFixed = [];
+    for (const e of document.querySelectorAll('body *')) { const p = getComputedStyle(e).position;
+      if (p === 'fixed' || p === 'sticky') { window.__lunaFixed.push([e, e.style.visibility]); e.style.visibility = 'hidden'; } } }
+  else { for (const [e, v] of (window.__lunaFixed || [])) e.style.visibility = v; window.__lunaFixed = []; }
+})(%ON%)"""
+
+
 class TaskManager(QDialog):
     """Menedżer zadań Luny: pamięć procesów stron i silnika, uśpij / zamknij / przejdź. Odświeża się tylko, gdy jest otwarty."""
 
@@ -7358,7 +7447,7 @@ class DownloadsDialog(QDialog):
 
     def open_folder(self):
         r = self.sel()
-        self._open(r.downloadDirectory() if r is not None else self.dm.folder())
+        show_in_folder(self.dm.path(r)) if r is not None else self._open(self.dm.folder())
 
     def cancel(self):
         r = self.sel()
@@ -8695,7 +8784,13 @@ class Browser(QMainWindow):
         self.acct_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         am = QMenu(self.acct_btn); am.aboutToShow.connect(self.build_account_menu); self.acct_btn.setMenu(am)
         tl.addWidget(self.acct_btn)
-        self.burger = self.btn("menu", "Menu Luny", lambda: None)   # skrajnie po prawej
+        self.dl_btn = self.btn("menu", "Pobrane pliki", lambda: None)   # pojawia się przy pierwszym pobraniu w tej sesji
+        self.dl_btn.setObjectName("acct"); self.dl_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        dmn = QMenu(self.dl_btn); dmn.aboutToShow.connect(self.downloads_menu); self.dl_btn.setMenu(dmn)
+        self.dl_btn.setIcon(download_icon()); self.dl_btn.hide(); tl.addWidget(self.dl_btn)
+        self._dl_t = QTimer(self); self._dl_t.setSingleShot(True); self._dl_t.timeout.connect(self.update_dl_btn)
+        DOWNLOADS[0].changed.connect(self._dl_changed); self.update_dl_btn()
+        self.burger =self.btn("menu", "Menu Luny", lambda: None)   # skrajnie po prawej
         self.burger.setObjectName("acct"); self.burger.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         bmn = QMenu(self.burger); bmn.setObjectName("burger"); bmn.aboutToShow.connect(self.burger_menu); self.burger.setMenu(bmn)
         tl.addSpacing(2); tl.addWidget(self.burger)
@@ -8805,6 +8900,7 @@ class Browser(QMainWindow):
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
                 ("Ctrl+Shift+Space", self.search_tabs), ("Shift+Esc", self.task_manager),
+                ("Ctrl+Shift+S", lambda: self.screenshot("region")),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
                 ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+D", self.toggle_dark), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
@@ -9046,6 +9142,7 @@ class Browser(QMainWindow):
             DOWNLOADS[0].started.disconnect(self.on_download)
         except (TypeError, RuntimeError):
             pass
+        safe_disconnect(DOWNLOADS[0].changed, self._dl_changed)
         if self.primary:
             self.store.settings["session"] = self.session_data(); self._save_geometry()
         self.store.save_settings()
@@ -9190,6 +9287,10 @@ class Browser(QMainWindow):
         self.act(sm, "save", "Zapisz stronę jako…", self.save_page, "Ctrl+S")
         self.act(sm, "print", "Zapisz jako PDF…", self.save_pdf)
         self.act(sm, "copy", "Kopiuj link", lambda: web and QGuiApplication.clipboard().setText(web.url().toString()))
+        sm.addSeparator()
+        self.act(sm, "copy", "Zrzut: widoczna część", lambda: self.screenshot("visible"))
+        self.act(sm, "copy", "Zrzut: cała strona", lambda: self.screenshot("full"))
+        self.act(sm, "copy", "Zrzut: zaznaczony fragment…", lambda: self.screenshot("region"), "Ctrl+Shift+S")
         tm = m.addMenu(glyph("tools"), "Więcej narzędzi")
         self.act(tm, "tools", "Menedżer zadań", self.task_manager, "Shift+Esc")
         self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
@@ -9308,6 +9409,102 @@ class Browser(QMainWindow):
 
     def show_downloads(self):
         DownloadsDialog(self).exec()
+
+    # --- zrzut strony: widoczna część / cała strona (przewijanie i sklejanie) / fragment; schowek + PNG w Obrazy\Luna ---
+    def screenshot(self, mode="visible"):
+        web = self.web()
+        if web is None:
+            return
+        if mode == "visible":
+            self._shot_done(web.grab())
+        elif mode == "region":
+            pm = web.grab(); r = QRect(web.mapToGlobal(QPoint(0, 0)), web.size())
+            self._picker = RegionPicker(pm, r); self._picker.picked.connect(self._shot_done)
+            self._picker.show(); self._picker.activateWindow(); self._picker.setFocus()
+        else:
+            js = "JSON.stringify([document.documentElement.scrollHeight, window.innerHeight, window.scrollY])"
+            web.page().runJavaScript(js, QWebEngineScript.ScriptWorldId.ApplicationWorld, lambda r: self._full_shot(web, r))
+
+    def _full_shot(self, web, res):
+        try:
+            total, inner, y0 = json.loads(res)
+        except Exception:
+            self._shot_done(web.grab()); return
+        if total <= inner + 2:
+            self._shot_done(web.grab()); return
+        k = web.height() / max(1, inner)                      # piksele widoku na piksel CSS (powiększenie strony)
+        total = min(total, int(20000 / k)); first = web.grab(); dpr = first.devicePixelRatio()
+        img = QImage(int(web.width() * dpr), int(total * k * dpr), QImage.Format.Format_ARGB32_Premultiplied)
+        img.fill(QColor("#111111")); st = {"y": 0, "img": img}
+        world = QWebEngineScript.ScriptWorldId.ApplicationWorld
+        self.notice.info("Robię zrzut całej strony…", 20000, "copy")
+
+        def step():
+            web.page().runJavaScript(f"window.scrollTo({{top:{st['y']}, behavior:'instant'}}); window.scrollY", world,
+                                     lambda sy: QTimer.singleShot(260, lambda: grab(sy)))
+
+        def grab(sy):
+            try:
+                pm = web.grab()
+            except RuntimeError:
+                return
+            p = QPainter(st["img"]); p.drawImage(0, int((sy or 0) * k * dpr), pm.toImage()); p.end()
+            if st["y"] == 0:
+                web.page().runJavaScript(SHOT_FIXED_JS.replace("%ON%", "true"), world)
+            if (sy or 0) + inner >= total or st["y"] > total:
+                web.page().runJavaScript(SHOT_FIXED_JS.replace("%ON%", "false"), world)
+                web.page().runJavaScript(f"window.scrollTo({{top:{y0}, behavior:'instant'}})", world)
+                out = QPixmap.fromImage(st["img"]); out.setDevicePixelRatio(dpr); self._shot_done(out); return
+            st["y"] += inner; step()
+        step()
+
+    def _shot_done(self, pm):
+        if pm is None or pm.isNull():
+            return
+        QGuiApplication.clipboard().setPixmap(pm)
+        from PyQt6.QtCore import QStandardPaths
+        folder = Path(QStandardPaths.writableLocation(QStandardPaths.StandardLocation.PicturesLocation) or HOME) / "Luna"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"Luna {datetime.now().strftime('%Y-%m-%d %H.%M.%S')}.png"; pm.save(str(path), "PNG")
+        except OSError:
+            self.notice.info("Zrzut jest w schowku (nie udało się zapisać pliku).", icon="copy"); return
+        self.notice.ask(f"Zrzut zapisany i skopiowany: {path.name}",
+                        [("Otwórz", lambda p=str(path): QDesktopServices.openUrl(QUrl.fromLocalFile(p)), True),
+                         ("Pokaż w folderze", lambda p=str(path): show_in_folder(p), False), ("OK", None, False)], icon="copy")
+
+    # --- pobieranie na pasku: pierścień postępu, lista z „Otwórz” / „Pokaż w folderze” ---
+    def _dl_changed(self):
+        if not self._dl_t.isActive():
+            self._dl_t.start(250)   # bajty przychodzą bardzo często – odświeżamy ikonę najwyżej 4× na sekundę
+
+    def update_dl_btn(self):
+        dm = DOWNLOADS[0]; S = QWebEngineDownloadRequest.DownloadState
+        if not dm.items:
+            self.dl_btn.hide(); return
+        act = [r for r in dm.items if r.state() == S.DownloadInProgress]
+        if act:
+            tot = sum(r.totalBytes() for r in act if r.totalBytes() > 0); got = sum(r.receivedBytes() for r in act if r.totalBytes() > 0)
+            frac = got / tot if tot else 0.05
+            self.dl_btn.setIcon(download_icon(frac)); self.dl_btn.setToolTip(f"Pobieranie: {len(act)} · {round(frac * 100)}%")
+        else:
+            self.dl_btn.setIcon(download_icon(done=True)); self.dl_btn.setToolTip("Pobrane pliki")
+        self.dl_btn.show()
+
+    def downloads_menu(self):
+        m = self.dl_btn.menu(); m.clear(); dm = DOWNLOADS[0]; S = QWebEngineDownloadRequest.DownloadState
+        for r in dm.items[:8]:
+            st, tot, got = r.state(), r.totalBytes(), r.receivedBytes()
+            info = (f"{got * 100 // tot}%" if tot > 0 else f"{got // 1024} KB") if st == S.DownloadInProgress else \
+                {S.DownloadCompleted: "gotowe", S.DownloadCancelled: "anulowane", S.DownloadInterrupted: "przerwane"}.get(st, "")
+            sm = m.addMenu(glyph("download"), f"{r.downloadFileName()[:40]}   ·   {info}")
+            path = dm.path(r)
+            self.act(sm, "external", "Otwórz", lambda p=path: QDesktopServices.openUrl(QUrl.fromLocalFile(p)), enabled=st == S.DownloadCompleted)
+            self.act(sm, "folder", "Pokaż w folderze", lambda p=path: show_in_folder(p))
+            if st == S.DownloadInProgress:
+                self.act(sm, "close", "Anuluj", r.cancel)
+        m.addSeparator()
+        self.act(m, "download", "Wszystkie pobrane…", self.show_downloads, "Ctrl+Shift+Y")
 
     def on_download(self, name):
         if self.isActiveWindow():
