@@ -2100,6 +2100,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                      "dopiero po wejściu na kartę).", True),
     "sleep_tabs": ("Usypianie nieaktywnych kart", "Karty nieużywane przez dłuższy czas zwalniają pamięć RAM i nie zużywają baterii "
                    "(nie dotyczy kart odtwarzających dźwięk).", True),
+    "battery_saver": ("Oszczędzanie baterii", "Gdy laptop działa na baterii: nieużywane karty usypiają się po 5 minutach, "
+                      "a filmy w kartach w tle zatrzymują się. Na komputerze bez baterii opcja jest ukryta.", True),
     "adblock": ("Blokada reklam i śledzenia", "Blokuje skrypty śledzące i reklamy z cudzych domen na poziomie sieci – bez wtyczek.", True),
     "passwords": ("Menedżer haseł", "Proponuje zapis haseł po zalogowaniu i sam wypełnia formularze. Hasła są szyfrowane "
                   "na tym komputerze.", True),
@@ -3368,6 +3370,95 @@ def read_system(prev=[None]):
     except Exception:
         pass
     return cpu, ram, bat, plug
+
+
+_HAS_BATTERY = []
+
+
+def power_status():
+    """(jest bateria, zasilanie z sieci) – jednorazowy odczyt systemowy, bez odpytywania w tle."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            class PS(ctypes.Structure):
+                _fields_ = [("ac", ctypes.c_ubyte), ("flag", ctypes.c_ubyte), ("pct", ctypes.c_ubyte), ("saver", ctypes.c_ubyte),
+                            ("life", ctypes.c_ulong), ("full", ctypes.c_ulong)]
+            ps = PS()
+            if ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(ps)):
+                return ps.pct != 255 and not ps.flag & 128, ps.ac != 0
+        else:
+            for b in Path("/sys/class/power_supply").glob("BAT*"):
+                return True, (b / "status").read_text().strip() != "Discharging"
+    except Exception:
+        pass
+    return False, True
+
+
+def has_battery():
+    if not _HAS_BATTERY:
+        _HAS_BATTERY.append(power_status()[0])
+    return _HAS_BATTERY[0]
+
+
+def proc_memory(pid):
+    """Pamięć prywatna procesu w bajtach (Windows: PrivateUsage, Linux: VmRSS) albo None."""
+    if not pid:
+        return None
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes as wt
+            class PMC(ctypes.Structure):
+                _fields_ = [("cb", wt.DWORD), ("faults", wt.DWORD)] + [(n, ctypes.c_size_t) for n in (
+                    "peak_ws", "ws", "qpp", "qp", "qnpp", "qnp", "pagefile", "peak_pagefile", "private")]
+            k = ctypes.windll.kernel32; k.OpenProcess.restype = wt.HANDLE
+            h = k.OpenProcess(0x1000, False, int(pid))   # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                return None
+            try:
+                c = PMC(); c.cb = ctypes.sizeof(PMC)
+                return c.private if k.K32GetProcessMemoryInfo(wt.HANDLE(h), ctypes.byref(c), c.cb) else None
+            finally:
+                k.CloseHandle(wt.HANDLE(h))
+        for line in open(f"/proc/{int(pid)}/status"):
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1]) * 1024
+    except Exception:
+        pass
+    return None
+
+
+def child_pids(pid):
+    """Procesy potomne (silnik stron: GPU, sieć, strony) – migawka listy procesów Windows."""
+    out = []
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes as wt
+            class PE(ctypes.Structure):
+                _fields_ = [("size", wt.DWORD), ("usage", wt.DWORD), ("pid", wt.DWORD), ("heap", ctypes.c_size_t),
+                            ("mod", wt.DWORD), ("threads", wt.DWORD), ("ppid", wt.DWORD), ("prio", ctypes.c_long),
+                            ("flags", wt.DWORD), ("exe", ctypes.c_wchar * 260)]
+            k = ctypes.windll.kernel32; k.CreateToolhelp32Snapshot.restype = wt.HANDLE
+            snap = k.CreateToolhelp32Snapshot(2, 0)
+            e = PE(); e.size = ctypes.sizeof(PE)
+            ok = k.Process32FirstW(wt.HANDLE(snap), ctypes.byref(e))
+            while ok:
+                if e.ppid == pid:
+                    out.append(e.pid)
+                ok = k.Process32NextW(wt.HANDLE(snap), ctypes.byref(e))
+            k.CloseHandle(wt.HANDLE(snap))
+        else:
+            for p in Path("/proc").iterdir():
+                if p.name.isdigit():
+                    try:
+                        if int((p / "stat").read_text().split(")")[1].split()[1]) == pid:
+                            out.append(int(p.name))
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return out
 
 
 class SystemWidget(WidgetFrame):
@@ -6148,6 +6239,8 @@ def page_features(dlg):
     w, l = page_box("Zarządzanie funkcjami", "Wyłączone moduły nie ładują zasobów ani nie wysyłają zapytań w tle. "
                                             "Zmiany zapisują się automatycznie.")
     for fid, (name, desc, _) in FEATURES.items():
+        if fid == "battery_saver" and not has_battery():   # komputer stacjonarny – opcja niepotrzebna
+            continue
         l.addWidget(switch_row(name, desc, dlg.store.feature(fid), lambda v, f=fid: dlg.store.set_feature(f, v)))
         sep = QFrame(); sep.setObjectName("sep"); l.addWidget(sep)
     clr = QPushButton("Wyczyść historię przeglądania"); clr.clicked.connect(lambda: dlg.store.clear_history())
@@ -6354,7 +6447,7 @@ def page_keys(dlg):
     w, l = page_box("Skróty klawiszowe i gesty", "Można je wyłączyć w Funkcje → Skróty klawiszowe i gesty myszy.")
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
-                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"),
+                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"), ("Shift + Esc", "Menedżer zadań"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
@@ -6410,7 +6503,7 @@ def page_tabs(dlg):
     w, l = page_box("Karty i przestrzenie", "Pionowe karty z grupami, przestrzenie robocze (np. Praca, Zakupy, Hobby), "
                                             "podział ekranu i usypianie nieaktywnych kart.")
     st, b = dlg.store, dlg.browser
-    for fid in ("workspaces", "vertical_tabs", "restore_tabs", "sleep_tabs"):
+    for fid in ("workspaces", "vertical_tabs", "restore_tabs", "sleep_tabs") + (("battery_saver",) if has_battery() else ()):
         name, desc, _ = FEATURES[fid]
         l.addWidget(switch_row(name, desc, st.feature(fid), lambda v, f=fid: st.set_feature(f, v)))
     combo = QComboBox()
@@ -7106,6 +7199,113 @@ class DownloadManager(QObject):
 
 
 DOWNLOADS = []
+
+
+class TaskManager(QDialog):
+    """Menedżer zadań Luny: pamięć procesów stron i silnika, uśpij / zamknij / przejdź. Odświeża się tylko, gdy jest otwarty."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b = browser
+        self.setWindowTitle("Menedżer zadań"); self.resize(fit_size(720, 480)); self.setObjectName("settings")
+        v = QVBoxLayout(self); v.setContentsMargins(18, 16, 18, 16); v.setSpacing(8)
+        v.addWidget(lbl("Menedżer zadań", "h1"))
+        v.addWidget(lbl("Pamięć zajmowana przez karty i silnik Luny. Karty tej samej witryny mogą dzielić jeden proces.",
+                        "muted2", wrap=True))
+        self.tree = QTreeWidget(); self.tree.setObjectName("vtabs"); self.tree.setRootIsDecorated(False)
+        self.tree.setHeaderLabels(["Karta", "Stan", "Pamięć"]); self.tree.setIconSize(QSize(16, 16))
+        self.tree.header().setStretchLastSection(False)
+        self.tree.header().setSectionResizeMode(0, self.tree.header().ResizeMode.Stretch)
+        for c in (1, 2):
+            self.tree.header().setSectionResizeMode(c, self.tree.header().ResizeMode.ResizeToContents)
+        self.tree.itemDoubleClicked.connect(lambda *_: self.go())
+        v.addWidget(self.tree, 1)
+        self.total = lbl("", "muted2"); v.addWidget(self.total)
+        row = QHBoxLayout(); row.setSpacing(6)
+        self.b_sleep = QPushButton("Uśpij"); self.b_close = QPushButton("Zamknij kartę"); self.b_go = QPushButton("Przejdź do karty")
+        for bt, fn in ((self.b_go, self.go), (self.b_sleep, self.sleep), (self.b_close, self.close_tab)):
+            bt.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(bt)
+        row.addStretch(); v.addLayout(row)
+        self.tree.currentItemChanged.connect(lambda *_: self.buttons())
+        self.rows = []; self.timer = QTimer(self); self.timer.timeout.connect(self.fill); self.timer.start(2000); self.fill()
+
+    def done(self, r):
+        self.timer.stop(); super().done(r)
+
+    @staticmethod
+    def mb(n):
+        return "–" if n is None else f"{n / 1048576:.0f} MB"
+
+    def fill(self):
+        b = self.b; sel = self.rows[self.tree.indexOfTopLevelItem(self.tree.currentItem())] \
+            if self.tree.currentItem() is not None and self.tree.indexOfTopLevelItem(self.tree.currentItem()) < len(self.rows) else None
+        tabs = [t for w in [b] + [x for x in WINDOWS if isinstance(x, Browser)] for t in w.all_tabs()]
+        pids = {}
+        for t in tabs:
+            for v in t.views():
+                try:
+                    p = v.page().renderProcessPid()
+                except RuntimeError:
+                    p = 0
+                if p:
+                    pids.setdefault(p, set()).add(t)
+        mem = {p: proc_memory(p) for p in pids}
+        me = os.getpid(); engine = [p for p in child_pids(me) if p not in pids]
+        core = sum(x for x in [proc_memory(me)] + [proc_memory(p) for p in engine] if x)
+        self.tree.clear(); self.rows = []; total = core
+        it = QTreeWidgetItem(["Luna (okno, silnik, grafika)", "", self.mb(core)]); it.setIcon(0, QIcon(logo_pixmap(32)))
+        self.tree.addTopLevelItem(it); self.rows.append(None)
+        for p, m in mem.items():
+            total += m or 0
+        for t in tabs:
+            ps = {v.page().renderProcessPid() for v in t.views()} - {0}
+            if t.asleep or t.pending or not ps:
+                state, m = "uśpiona" if (t.asleep or t.pending) else "ekran główny", "0 MB"
+            else:
+                shared = max(len(pids.get(p, ())) for p in ps)
+                state = "aktywna" if t is b.cur() else ("gra dźwięk" if t.audible() else "w tle")
+                m = self.mb(sum(mem.get(p) or 0 for p in ps)) + (f"  (wspólnie z {shared - 1})" if shared > 1 else "")
+            name = t.title_text or ("Ekran główny" if t.main is None else t.main.url().toString())
+            if t.sides:
+                name += "  (podzielony ekran)"
+            row = QTreeWidgetItem([name, state, m]); row.setIcon(0, tab_icon(t.icon, None, t.asleep or bool(t.pending)))
+            self.tree.addTopLevelItem(row); self.rows.append(t)
+            if t is sel:
+                self.tree.setCurrentItem(row)
+        self.total.setText(f"Razem: {self.mb(total)}  ·  procesów stron: {len(pids)}")
+        self.buttons()
+
+    def cur_tab(self):
+        it = self.tree.currentItem()
+        i = self.tree.indexOfTopLevelItem(it) if it is not None else -1
+        t = self.rows[i] if 0 <= i < len(self.rows) else None
+        return t if t is not None and t.window() is not None else None
+
+    def owner(self, t):
+        w = t.window()
+        return w if isinstance(w, Browser) else self.b
+
+    def buttons(self):
+        t = self.cur_tab(); ok = t is not None
+        self.b_go.setEnabled(ok); self.b_close.setEnabled(ok)
+        self.b_sleep.setEnabled(ok and not t.asleep and not t.pending and t.main is not None and t is not self.owner(t).cur())
+
+    def go(self):
+        t = self.cur_tab()
+        if t is not None:
+            w = self.owner(t)
+            if t.ws != w.ws and w.store.feature("workspaces"):
+                w.switch_ws(t.ws)
+            w.activate(t); w.raise_(); w.activateWindow()
+
+    def sleep(self):
+        t = self.cur_tab()
+        if t is not None:
+            self.owner(t).sleep_now(t); QTimer.singleShot(300, self.fill)
+
+    def close_tab(self, *_):
+        t = self.cur_tab()
+        if t is not None:
+            self.owner(t).close_tab(t); QTimer.singleShot(300, self.fill)
 
 
 class DownloadsDialog(QDialog):
@@ -8393,6 +8593,7 @@ class Browser(QMainWindow):
         self._laid, self._g_ref, self._pinned, self._suggest = False, None, None, None
         self._prev_tab, self._ws_last, self._last_user, self._pw_pending, self._popup_from = None, {}, {}, None, None
         self._closed = []   # ostatnio zamknięte karty (uśpione widoki z historią) – Ctrl+Shift+T
+        self._on_batt = has_battery() and not power_status()[1]
         self.setWindowTitle("Luna – okno prywatne" if private else "Luna"); self.setWindowIcon(app_icon())
         scr = cur_screen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
         # okno ~82% ekranu (duże monitory nie dostają „okienka”), małe ekrany – prawie cały ekran
@@ -8603,7 +8804,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
-                ("Ctrl+Shift+Space", self.search_tabs),
+                ("Ctrl+Shift+Space", self.search_tabs), ("Shift+Esc", self.task_manager),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
                 ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+D", self.toggle_dark), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
@@ -8990,6 +9191,7 @@ class Browser(QMainWindow):
         self.act(sm, "print", "Zapisz jako PDF…", self.save_pdf)
         self.act(sm, "copy", "Kopiuj link", lambda: web and QGuiApplication.clipboard().setText(web.url().toString()))
         tm = m.addMenu(glyph("tools"), "Więcej narzędzi")
+        self.act(tm, "tools", "Menedżer zadań", self.task_manager, "Shift+Esc")
         self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
         self.act(tm, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U", web is not None)
         self.act(tm, "tabs", "Karty i grupy", self.toggle_tab_popup, "Ctrl+Shift+A")
@@ -9304,6 +9506,9 @@ class Browser(QMainWindow):
             if old["view"] is not None:
                 old["view"].deleteLater()
 
+    def task_manager(self):
+        TaskManager(self).exec()
+
     def search_tabs(self):
         if getattr(self, "_tab_search", None) is None:
             self._tab_search = TabSearch(self)
@@ -9367,6 +9572,8 @@ class Browser(QMainWindow):
         if prev is not None and prev in self.all_tabs():
             prev.last_active = time.time()
             self._snap(prev)
+            if self.saving() and 0 <= i < self.stack.count() and self.stack.widget(i) is not prev:
+                self._pause_background(prev)   # na baterii film w opuszczonej karcie się zatrzymuje
         if 0 <= i < self.stack.count():
             self.stack.setCurrentIndex(i)
             t = self.stack.widget(i); self._prev_tab = t
@@ -9430,11 +9637,39 @@ class Browser(QMainWindow):
             k = vis.index(cur) if cur in vis else 0
             self.bar.setCurrentIndex(vis[(k + d) % len(vis)])
 
-    def _sleep_tick(self):
-        """Usypia karty nieużywane dłużej niż ustawiony czas (nie: bieżącą, grającą dźwięk ani ładującą się)."""
-        if not self.store.feature("sleep_tabs"):
+    # --- oszczędzanie baterii (tylko gdy jest bateria; stan zasilania sprawdza istniejący, minutowy zegar usypiania) ---
+    def saving(self):
+        return self._on_batt and self.store.feature("battery_saver") and has_battery()
+
+    def _check_power(self):
+        if not has_battery():
             return
-        limit = int(self.store.settings.get("sleep_after", 15)) * 60; now = time.time(); cur = self.cur(); changed = False
+        batt = not power_status()[1]
+        if batt != self._on_batt:
+            self._on_batt = batt
+            if batt and self.store.feature("battery_saver") and self.isActiveWindow():
+                self.notice.info("Zasilanie z baterii: karty usypiają się po 5 minutach, a filmy w tle są zatrzymywane.")
+
+    PAUSE_VIDEO_JS = ("document.querySelectorAll('video').forEach(v => { if (!v.paused && document.pictureInPictureElement !== v) "
+                      "v.pause(); })")
+
+    def _pause_background(self, t):
+        for v in t.views():
+            try:
+                v.page().runJavaScript(self.PAUSE_VIDEO_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld)
+            except RuntimeError:
+                pass
+
+    def _sleep_tick(self):
+        """Usypia karty nieużywane dłużej niż ustawiony czas (nie: bieżącą, grającą dźwięk ani ładującą się).
+        Na baterii (oszczędzanie włączone) – najpóźniej po 5 minutach."""
+        self._check_power()
+        if not self.store.feature("sleep_tabs") and not self.saving():
+            return
+        limit = int(self.store.settings.get("sleep_after", 15)) * 60
+        if self.saving():
+            limit = min(limit, 5 * 60)
+        now = time.time(); cur = self.cur(); changed = False
         for t in self.all_tabs():
             if t is not cur and not t.asleep and t.main is not None and now - t.last_active > limit:
                 t.sleep(); changed = changed or t.asleep
