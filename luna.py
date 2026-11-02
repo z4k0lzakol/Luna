@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget,
                              QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QDialog, QDialogButtonBox, QFrame,
                              QScrollArea, QPlainTextEdit, QGraphicsOpacityEffect, QButtonGroup, QToolTip, QComboBox,
                              QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy, QMessageBox, QStyledItemDelegate, QStyle,
-                             QGraphicsDropShadowEffect, QSplitter, QTreeWidget, QTreeWidgetItem, QWidgetAction)
+                             QGraphicsDropShadowEffect, QSplitter, QSplitterHandle, QTreeWidget, QTreeWidgetItem, QWidgetAction)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
@@ -869,6 +869,8 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         p.drawEllipse(9, 15, 13, 13); p.drawLine(21, 21, 35, 21); p.drawLine(30, 21, 30, 27); p.drawLine(35, 21, 35, 26)
     elif kind == "split":
         p.drawRoundedRect(QRectF(9, 11, 26, 22), 4, 4); p.drawLine(22, 11, 22, 33)
+    elif kind == "splitv":
+        p.drawRoundedRect(QRectF(11, 9, 22, 26), 4, 4); p.drawLine(11, 22, 33, 22)
     elif kind == "folder":
         p.drawPath(_path([(8, 14), (17, 14), (20, 17), (36, 17), (36, 32), (8, 32)], True))
     elif kind == "swap":
@@ -1083,10 +1085,19 @@ QTreeWidget#vtabs::branch:selected { background:#ececec; border-top-left-radius:
 QFrame#notice { background:#1b1b1b; border-bottom:1px solid #2a2a2a; }
 QPushButton#primary { background:#ececec; color:#111111; font-weight:600; }
 QPushButton#primary:hover { background:#ffffff; }
-QWidget#splithead { background:#141414; border-bottom:1px solid #222222; }
-QLineEdit#splitaddr { background:#1d1d1d; border:1px solid #2a2a2a; border-radius:13px; padding:3px 10px; color:#dcdcdc; }
-QSplitter#split::handle { background:#1d1d1d; }
-QSplitter#split::handle:hover { background:#3a3a3a; }
+QSplitter#split { background:#0a0a0a; }
+QFrame#splitside { background:#0d0d0d; border:1px solid #1a1a1a; border-radius:9px; }
+QFrame#splitside[active="true"] { border:1px solid #4a4a4a; }
+QWidget#splithead { background:transparent; }
+QLabel#splittitle { color:#6f6f6f; font-size:12px; }
+QFrame#splitside[active="true"] QLabel#splittitle { color:#e6e6e6; }
+QToolButton#splitbtn { background:transparent; border-radius:6px; padding:0; }
+QToolButton#splitbtn:hover { background:#232323; }
+QLineEdit#splitaddr { background:#1a1a1a; border:1px solid #2a2a2a; border-radius:16px; padding:6px 14px; color:#dcdcdc; }
+QLineEdit#splitaddr:focus { border:1px solid #4a4a4a; }
+QListWidget#splitlist { background:transparent; border:none; outline:0; color:#c9c9c9; }
+QListWidget#splitlist::item { border-radius:8px; padding:6px 8px; }
+QListWidget#splitlist::item:hover { background:#1c1c1c; color:#ffffff; }
 """
 
 
@@ -1096,6 +1107,17 @@ def full_style() -> str:
     for tok, key in (("%SWOFF%", "sw_off"), ("%SWON%", "sw_on"), ("%CKOFF%", "ck_off"), ("%CKON%", "ck_on")):
         s = s.replace(tok, imgs.get(key, ""))
     return s
+
+
+def cur_screen():
+    """Ekran, na którym jest kursor (przy kilku monitorach okno otwiera się tam, gdzie pracuje użytkownik)."""
+    return QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
+
+
+def fit_size(w, h, frac=0.92):
+    """Rozmiar okna dialogowego przycięty do ekranu (małe laptopy, duże skalowanie Windows 125–200%)."""
+    a = cur_screen().availableGeometry()
+    return QSize(min(w, int(a.width() * frac)), min(h, int(a.height() * frac)))
 
 
 POPUPS, _PROFILE = [], []
@@ -1804,7 +1826,7 @@ class AddDialog(QDialog):
 
     def __init__(self, parent, existing):
         super().__init__(parent)
-        self.setWindowTitle("Dodaj aplikacje"); self.resize(420, 540)
+        self.setWindowTitle("Dodaj aplikacje"); self.resize(fit_size(420, 540))
         lay = QVBoxLayout(self); lay.setSpacing(8)
         h = QLabel("Własna strona"); h.setObjectName("h2"); lay.addWidget(h)
         self.name = QLineEdit(placeholderText="Nazwa (opcjonalnie)")
@@ -3338,12 +3360,14 @@ def read_system(prev=[None]):
 
 class SystemWidget(WidgetFrame):
     def build(self):
-        self.bars = {}
+        self.bars, self.rows = {}, {}
         for k, t in (("cpu", "Procesor"), ("ram", "Pamięć RAM"), ("bat", "Bateria")):
+            box = QWidget(); box.setObjectName("clear"); bl = QVBoxLayout(box); bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(4)
             row = QHBoxLayout(); a = lbl(t, "muted2"); v = lbl("–", "h3")
-            row.addWidget(a); row.addStretch(); row.addWidget(v); self.lay.addLayout(row)
-            pb = QProgressBar(); pb.setRange(0, 100); pb.setTextVisible(False); pb.setFixedHeight(6); self.lay.addWidget(pb)
-            self.bars[k] = (v, pb)
+            row.addWidget(a); row.addStretch(); row.addWidget(v); bl.addLayout(row)
+            pb = QProgressBar(); pb.setRange(0, 100); pb.setTextVisible(False); pb.setFixedHeight(6); bl.addWidget(pb)
+            self.lay.addWidget(box); self.bars[k] = (v, pb); self.rows[k] = box
+        self.rows["bat"].setVisible(read_system()[2] is not None)   # komputer stacjonarny: bez wiersza baterii
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick)
 
     def start(self):
@@ -3354,6 +3378,8 @@ class SystemWidget(WidgetFrame):
 
     def tick(self):
         cpu, ram, bat, plug = read_system()
+        if self.rows["bat"].isVisibleTo(self) != (bat is not None):
+            self.rows["bat"].setVisible(bat is not None)
         for k, val in (("cpu", cpu), ("ram", ram), ("bat", bat)):
             v, pb = self.bars[k]
             v.setText("–" if val is None else f"{val:.0f}%" + (" · ładuje" if k == "bat" and plug else ""))
@@ -3479,7 +3505,7 @@ TAB_JS_TOGGLE = ("(function(){var e=[].slice.call(document.querySelectorAll('vid
 
 class TabAudioRow(QWidget):
     def __init__(self, pane, tab):
-        super().__init__(); self.setObjectName("clear"); self.pane, self.tab = pane, tab
+        super().__init__(); self.setObjectName("clear"); self.pane, self.tab, self.web = pane, tab, None
         h = QHBoxLayout(self); h.setContentsMargins(0, 3, 0, 3); h.setSpacing(4)
         col = QVBoxLayout(); col.setSpacing(0)
         self.title = lbl("", "h3"); self.sub = lbl("", "muted"); col.addWidget(self.title); col.addWidget(self.sub)
@@ -3490,7 +3516,7 @@ class TabAudioRow(QWidget):
             gicon(b, kind, 16); b.setToolTip(tip); b.setFixedSize(30, 30); b.clicked.connect(lambda _=False, f=fn: f()); h.addWidget(b)
 
     def page(self):
-        return self.tab.web.page()
+        return (self.web or self.tab.main).page()
 
     def toggle(self):
         self.page().runJavaScript(TAB_JS_TOGGLE); QTimer.singleShot(400, self.pane.refresh)
@@ -3502,7 +3528,7 @@ class TabAudioRow(QWidget):
         br = self.pane.o.host.browser; br.bar.setCurrentIndex(br.stack.indexOf(self.tab))
 
     def update_from(self, web):
-        page = web.page(); self.title.setText((web.title() or host_of(web.url().toString()) or "Karta")[:34])
+        self.web = web; page = web.page(); self.title.setText((web.title() or host_of(web.url().toString()) or "Karta")[:34])
         gicon(self.b_mute, "mute" if page.isAudioMuted() else "volume", 16)
         gicon(self.b_play, "pause" if page.recentlyAudible() else "play", 16)
         self.sub.setText("gra" if page.recentlyAudible() else "wstrzymano")
@@ -3541,9 +3567,10 @@ class TabsPane(QWidget):
     def refresh(self):
         br = self.o.host.browser; live = {}
         for i in range(br.stack.count()):
-            t = br.stack.widget(i); web = getattr(t, "web", None)
-            if web is None:
+            t = br.stack.widget(i); vs = t.views() if hasattr(t, "views") else []
+            if not vs:
                 continue
+            web = next((w for w in vs if w.page().recentlyAudible()), vs[0])   # przy podziale ekranu: strona, która gra
             if web.page().recentlyAudible():
                 self.known.add(t)
             if t in self.known:
@@ -4077,7 +4104,7 @@ class LoginWindow(QWidget):
 
     def __init__(self, url, title):
         super().__init__()
-        self.setWindowTitle(title); self.setWindowIcon(app_icon()); self.resize(520, 740)
+        self.setWindowTitle(title); self.setWindowIcon(app_icon()); self.resize(fit_size(520, 740))
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0)
         self.view = WebView(); v.addWidget(self.view); self.view.setUrl(QUrl(url))
@@ -5859,7 +5886,7 @@ class WidgetMarket(QDialog):
     def __init__(self, browser):
         super().__init__(browser); self.b, self.store = browser, browser.store
         self.setObjectName("settings"); self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        self.setModal(True); self.resize(960, 660); self.setMinimumSize(700, 480)
+        self.setModal(True); self.resize(fit_size(960, 660)); self.setMinimumSize(fit_size(700, 480, 0.8))
         root = QVBoxLayout(self); root.setContentsMargins(1, 1, 1, 1); root.setSpacing(0)
         bar = DragBar(); bl = QHBoxLayout(bar); bl.setContentsMargins(18, 8, 8, 8)
         ic = QLabel(); ic.setPixmap(glyph("grid", "#ececec").pixmap(20, 20)); bl.addWidget(ic); bl.addSpacing(6)
@@ -6578,7 +6605,7 @@ class SettingsDialog(QDialog):
         super().__init__(browser)
         self.store, self.host, self.browser, self.built = store, host, browser, {}
         self.setObjectName("settings"); self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        self.setModal(True); self.resize(940, 640); self.setMinimumSize(660, 460)
+        self.setModal(True); self.resize(fit_size(940, 640)); self.setMinimumSize(fit_size(660, 460, 0.8))
         root = QVBoxLayout(self); root.setContentsMargins(1, 1, 1, 1); root.setSpacing(0)
         bar = DragBar(); bl = QHBoxLayout(bar); bl.setContentsMargins(18, 8, 8, 8)
         lg = QLabel(); lg.setPixmap(logo_pixmap(20)); lg.setFixedSize(20, 20)
@@ -7061,7 +7088,7 @@ class DownloadsDialog(QDialog):
 
     def __init__(self, browser):
         super().__init__(browser); self.dm = DOWNLOADS[0]
-        self.setWindowTitle("Pobrane pliki"); self.resize(560, 420); self.setObjectName("settings")
+        self.setWindowTitle("Pobrane pliki"); self.resize(fit_size(560, 420)); self.setObjectName("settings")
         v = QVBoxLayout(self); v.setContentsMargins(18, 16, 18, 16); v.setSpacing(8)
         v.addWidget(lbl("Pobrane pliki", "h1")); v.addWidget(lbl(f"Folder: {self.dm.folder()}", "muted2", wrap=True))
         self.list = QListWidget(); self.list.setObjectName("wlist"); self.list.viewport().setAutoFillBackground(False)
@@ -7167,7 +7194,7 @@ class HistoryDialog(QDialog):
     def __init__(self, browser):
         super().__init__(browser); self.b, self.store = browser, browser.store; self._icons = {}
         self.setObjectName("settings"); self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        self.setModal(True); self.resize(820, 640); self.setMinimumSize(560, 420)
+        self.setModal(True); self.resize(fit_size(820, 640)); self.setMinimumSize(fit_size(560, 420, 0.8))
         root = QVBoxLayout(self); root.setContentsMargins(1, 1, 1, 1); root.setSpacing(0)
         bar = DragBar(); bl = QHBoxLayout(bar); bl.setContentsMargins(18, 8, 8, 8)
         ic = QLabel(); ic.setPixmap(glyph("history", "#ececec").pixmap(20, 20)); bl.addWidget(ic); bl.addSpacing(6)
@@ -7281,7 +7308,7 @@ class ClearDataDialog(QDialog):
 
     def __init__(self, browser):
         super().__init__(browser); self.b = browser
-        self.setWindowTitle("Usuń dane przeglądania"); self.setObjectName("settings"); self.resize(460, 330)
+        self.setWindowTitle("Usuń dane przeglądania"); self.setObjectName("settings"); self.resize(fit_size(460, 330))
         v = QVBoxLayout(self); v.setContentsMargins(20, 18, 20, 18); v.setSpacing(8)
         v.addWidget(lbl("Usuń dane przeglądania", "h1"))
         self.opts = {}
@@ -7398,30 +7425,123 @@ def tab_icon(icon, color=None, asleep=False):
     return QIcon(pm)
 
 
-class SplitPane(QWidget):
-    """Druga strona w podziale ekranu: własny pasek adresu i zamknięcie podziału."""
+class SplitHandle(QSplitterHandle):
+    """Uchwyt podziału: cienka pigułka pośrodku, jaśniejsza pod kursorem; dwuklik wyrównuje strony 50/50."""
 
-    def __init__(self, tab, url):
-        super().__init__(); self.setObjectName("clear"); self.tab = tab
-        v = QVBoxLayout(self); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(0)
-        head = QWidget(); head.setObjectName("splithead"); head.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        h = QHBoxLayout(head); h.setContentsMargins(8, 4, 4, 4); h.setSpacing(4)
-        self.addr = QLineEdit(); self.addr.setObjectName("splitaddr"); self.addr.setPlaceholderText("Adres lub wyszukiwanie…")
-        self.addr.returnPressed.connect(lambda: self.web.setUrl(QUrl(normalize(self.addr.text()))) if self.addr.text().strip() else None)
-        sw = QToolButton(); sw.setIcon(glyph("swap")); sw.setIconSize(QSize(16, 16)); sw.setFixedSize(26, 26)
-        sw.setToolTip("Zamień strony miejscami"); sw.clicked.connect(lambda: tab.swap_split())
-        x = QToolButton(); x.setIcon(glyph("close")); x.setIconSize(QSize(16, 16)); x.setFixedSize(26, 26)
-        x.setToolTip("Zamknij podział (ta strona zniknie)"); x.clicked.connect(lambda: tab.unsplit())
-        h.addWidget(self.addr, 1); h.addWidget(sw); h.addWidget(x); v.addWidget(head)
-        self.web = WebView(container=tab.container); v.addWidget(self.web, 1)
-        self.web.link_requested.connect(lambda u: tab.browser.open_url_new_tab(u, tab.container))
-        self.web.urlChanged.connect(lambda u: self.addr.setText(u.toString()))
-        self.web.page().pw_captured.connect(lambda d: tab.browser.on_pw(d))
-        self.web.loadFinished.connect(lambda ok: tab.browser.autofill(self.web) if ok else None)
-        if url:
-            self.web.setUrl(QUrl(normalize(url)))
+    def __init__(self, o, parent):
+        super().__init__(o, parent); self.setMouseTracking(True); self._hot = False
+
+    def enterEvent(self, ev):
+        self._hot = True; self.update(); super().enterEvent(ev)
+
+    def leaveEvent(self, ev):
+        self._hot = False; self.update(); super().leaveEvent(ev)
+
+    def mouseDoubleClickEvent(self, ev):
+        s = self.splitter(); n = sum(s.sizes()); s.setSizes([n // 2, n - n // 2])
+
+    def paintEvent(self, ev):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#8a8a8a" if self._hot else "#2e2e2e"))
+        w, h = self.width(), self.height()
+        if self.orientation() == Qt.Orientation.Horizontal:
+            p.drawRoundedRect(QRectF((w - 4) / 2, (h - 40) / 2, 4, 40), 2, 2)
         else:
-            QTimer.singleShot(0, self.addr.setFocus)
+            p.drawRoundedRect(QRectF((w - 40) / 2, (h - 4) / 2, 40, 4), 2, 2)
+        p.end()
+
+
+class SplitView(QSplitter):
+    def __init__(self, o):
+        super().__init__(o); self.setObjectName("split"); self.setChildrenCollapsible(False); self.setHandleWidth(10)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+
+    def createHandle(self):
+        return SplitHandle(self.orientation(), self)
+
+
+class SplitSide(QFrame):
+    """Jedna strona podziału ekranu: cienki nagłówek (ikona, tytuł, akcje) i strona WWW – albo, gdy jeszcze pusta,
+    wybór karty do dołączenia / pole adresu. Kliknięcie w stronę czyni ją aktywną (pasek adresu działa na nią)."""
+
+    def __init__(self, tab, view=None):
+        super().__init__(); self.tab, self.view = tab, None
+        self.setObjectName("splitside"); self.setProperty("active", False); self.setMinimumSize(220, 160)
+        v = QVBoxLayout(self); v.setContentsMargins(1, 0, 1, 1); v.setSpacing(0); self.v = v
+        head = QWidget(); head.setObjectName("splithead"); head.setFixedHeight(30)
+        h = QHBoxLayout(head); h.setContentsMargins(10, 2, 4, 0); h.setSpacing(2)
+        self.ic = QLabel(); self.ic.setFixedSize(16, 16); self.ic.setScaledContents(True)
+        self.title = QLabel("Nowa strona"); self.title.setObjectName("splittitle")
+        self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        h.addWidget(self.ic); h.addSpacing(6); h.addWidget(self.title, 1)
+        self.b_swap = self._b(h, "swap", "Zamień strony miejscami", lambda: tab.swap_split())
+        self.b_turn = self._b(h, "splitv", "Układ pionowy / poziomy", lambda: tab.turn_split())
+        self.b_out = self._b(h, "external", "Odłącz do osobnej karty", lambda: tab.detach_side(self))
+        self._b(h, "close", "Zamknij tę stronę", lambda: tab.close_side(self))
+        v.addWidget(head); self.picker = None
+        if view is not None:
+            self.set_view(view)
+        else:
+            self._make_picker()
+
+    def _b(self, h, kind, tip, fn):
+        b = QToolButton(); b.setObjectName("splitbtn"); b.setIcon(glyph(kind, "#9a9a9a")); b.setIconSize(QSize(15, 15))
+        b.setFixedSize(26, 26); b.setToolTip(tip); b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.clicked.connect(lambda: fn()); h.addWidget(b)
+        return b
+
+    def mousePressEvent(self, ev):
+        self.tab.set_active_side(self); super().mousePressEvent(ev)
+
+    def set_active(self, on):
+        if self.property("active") != on:
+            self.setProperty("active", on); self.style().unpolish(self); self.style().polish(self)
+            self.title.style().unpolish(self.title); self.title.style().polish(self.title)
+
+    def set_view(self, view):
+        if self.picker is not None:
+            self.picker.deleteLater(); self.picker = None
+        self.view = view; view.setParent(self); self.v.addWidget(view, 1); view.show()
+        self.refresh()
+
+    def take_view(self):
+        w, self.view = self.view, None
+        if w is not None:
+            self.v.removeWidget(w); w.setParent(None)
+        return w
+
+    def refresh(self):
+        w = self.view
+        t = (w.title() or host_of(w.url().toString())) if w is not None else ""
+        self.title.setText(t or "Nowa strona"); self.title.setToolTip(t)
+        ic = w.icon() if w is not None else QIcon()
+        self.ic.setPixmap((ic if not ic.isNull() else glyph("app", "#6f6f6f")).pixmap(32, 32))
+        self.b_swap.setEnabled(all(s.view is not None for s in self.tab.sides or []))
+        vert = self.tab.split is not None and self.tab.split.orientation() == Qt.Orientation.Vertical
+        self.b_turn.setIcon(glyph("split" if vert else "splitv", "#9a9a9a")); self.b_out.setVisible(w is not None)
+
+    def _make_picker(self):
+        """Pusta strona podziału: pole adresu i lista otwartych kart (wybrana karta przechodzi tu bez przeładowania)."""
+        pk = QWidget(); pk.setObjectName("clear"); self.picker = pk
+        l = QVBoxLayout(pk); l.setContentsMargins(18, 14, 18, 14); l.setSpacing(10)
+        self.addr = QLineEdit(); self.addr.setObjectName("splitaddr"); self.addr.setPlaceholderText("Wpisz adres lub wyszukaj…")
+        self.addr.addAction(glyph("search"), QLineEdit.ActionPosition.LeadingPosition)
+        self.addr.returnPressed.connect(lambda: self.tab.load_side(self, self.addr.text()) if self.addr.text().strip() else None)
+        l.addWidget(self.addr)
+        lst = QListWidget(); lst.setObjectName("splitlist"); lst.setIconSize(QSize(16, 16))
+        lst.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        lst.setTextElideMode(Qt.TextElideMode.ElideRight)
+        others = self.tab.browser.split_candidates(self.tab); self.picks = [o for o, _ in others]
+        for i, (o, url) in enumerate(others):
+            it = QListWidgetItem(tab_icon(o.icon), o.title_text or url); it.setToolTip(url)
+            it.setData(Qt.ItemDataRole.UserRole, i); lst.addItem(it)
+        lst.itemClicked.connect(lambda it: self.tab.adopt_tab(self, self.picks[it.data(Qt.ItemDataRole.UserRole)]))
+        l.addWidget(lbl("Otwarte karty" if others else "Brak innych otwartych kart – wpisz adres powyżej.", "cap"))
+        l.addWidget(lst, 1); lst.setVisible(bool(others))
+        if not others:
+            l.addStretch()
+        self.v.addWidget(pk, 1); self.refresh()
+        QTimer.singleShot(0, self.addr.setFocus)
 
 
 class TabPanel(QWidget):
@@ -7512,82 +7632,230 @@ class Tab(QStackedWidget):
 
     def __init__(self, store, browser, ws="", group="", container=""):
         super().__init__()
-        self.browser, self.web = browser, None
+        self.browser, self._main = browser, None
         self.ws, self.group, self.container = ws, group, container
-        self.title_text, self.icon, self.split = "", None, None
-        self.asleep, self.pending, self.last_active = False, "", time.time()
+        self.title_text, self.icon, self.split, self.sides, self._act = "", None, None, None, 0
+        self.asleep, self.pending, self.pending_split, self.last_active = False, "", None, time.time()
         self.home = HomePage(store)
         self.addWidget(self.home)
         self.home.attach_suggest(browser)
         self.home.opened.connect(self.go)
 
+    @property
+    def main(self):
+        """Główna (lewa / górna) strona karty – od niej karta bierze tytuł i ikonę, ją zapisuje sesja."""
+        return self._main
+
+    @property
+    def web(self):
+        """Strona, na którą działają pasek adresu i przyciski: przy podziale ekranu – aktywna (ostatnio kliknięta)."""
+        return self.sides[self._act].view if self.sides else self._main
+
     def _web_widget(self):
-        return self.split if self.split is not None else self.web
+        return self.split if self.split is not None else self._main
+
+    def _new_view(self):
+        """Sygnały kierujemy przez v.owner, więc widok można przenieść do innej karty bez przeładowania strony."""
+        v = WebView(container=self.container); v.owner = self
+        v.link_requested.connect(lambda u, v=v: v.owner.browser.open_url_new_tab(u, v.owner.container))
+        v.page().recentlyAudibleChanged.connect(lambda _, v=v: v.owner.browser.audio_changed.emit())
+        v.titleChanged.connect(lambda t, v=v: v.owner._view_title(v, t))
+        v.urlChanged.connect(lambda u, v=v: v.owner._view_url(v, u))
+        v.iconChanged.connect(lambda i, v=v: v.owner._view_icon(v, i))
+        v.loadFinished.connect(lambda ok, v=v: v.owner.browser.on_loaded(v.owner, ok, v))
+        v.loadStarted.connect(lambda v=v: v.owner.browser.on_load_started(v.owner, v))
+        v.page().pw_captured.connect(lambda d, v=v: v.owner.browser.on_pw(d))
+        return v
+
+    def _view_title(self, v, t):
+        if v is self._main:
+            self.browser.on_title(self, t)
+        self._side_refresh(v)
+
+    def _view_url(self, v, u):
+        if v is self.web:
+            self.browser.on_url(self, u)
+        self._side_refresh(v)
+
+    def _view_icon(self, v, i):
+        if v is self._main:
+            self.browser.on_icon(self, i)
+        self._side_refresh(v)
+
+    def _side_refresh(self, v):
+        for s in self.sides or []:
+            if s.view is v:
+                s.refresh()
 
     def go(self, url):
         self.pending = ""
-        if self.web is None:
-            self.web = WebView(container=self.container)
-            self.web.link_requested.connect(lambda u: self.browser.open_url_new_tab(u, self.container))
-            self.addWidget(self.web)
-            self.web.page().recentlyAudibleChanged.connect(lambda _: self.browser.audio_changed.emit())
-            self.web.titleChanged.connect(lambda t: self.browser.on_title(self, t))
-            self.web.urlChanged.connect(lambda u: self.browser.on_url(self, u))
-            self.web.iconChanged.connect(lambda i: self.browser.on_icon(self, i))
-            self.web.loadFinished.connect(lambda ok: self.browser.on_loaded(self, ok))
-            self.web.loadStarted.connect(lambda: self.browser.on_load_started(self))
-            self.web.page().pw_captured.connect(lambda d: self.browser.on_pw(d))
-        self.web.setUrl(QUrl(normalize(url)))
+        if self.sides:   # podział ekranu: adres trafia do aktywnej strony
+            s = self.sides[self._act]
+            if s.view is None:
+                self.load_side(s, url)
+            else:
+                s.view.setUrl(QUrl(normalize(url))); self.setCurrentWidget(self.split)
+            self.browser.update_sidebars_soon(); return
+        if self._main is None:
+            self._main = self._new_view(); self.addWidget(self._main)
+        self._main.setUrl(QUrl(normalize(url)))
         self.setCurrentWidget(self._web_widget())
         self.browser.update_sidebars_soon()
+
+    def adopt_view(self, v):
+        """Przyjmuje gotową stronę z innej karty (bez przeładowania)."""
+        v.owner = self; self._main = v; self.addWidget(v); self.setCurrentWidget(v)
+        self.browser.on_title(self, v.title()); self.browser.on_icon(self, v.icon())
 
     def show_home(self):
         self.setCurrentWidget(self.home)
         self.browser.update_sidebars_soon()
 
     def show_web(self):
-        if self.web is not None:
+        if self._web_widget() is not None:
             self.setCurrentWidget(self._web_widget())
 
     def on_home(self):
         return self.currentWidget() is self.home
 
-    # --- podział ekranu (dwie strony obok siebie w jednej karcie) ---
-    def split_with(self, url=""):
-        if self.web is None:
+    # --- podział ekranu (dwie równorzędne strony w jednej karcie) ---
+    def split_with(self, url="", vertical=None):
+        if self._main is None:
             return
         if self.split is None:
-            self.split = QSplitter(Qt.Orientation.Horizontal); self.split.setObjectName("split")
-            self.split.setChildrenCollapsible(False); self.split.setHandleWidth(6)
-            self.removeWidget(self.web); self.split.addWidget(self.web)
-            self.pane = SplitPane(self, url); self.split.addWidget(self.pane)
-            self.addWidget(self.split); self.split.setSizes([1, 1])
-        elif url:
-            self.pane.web.setUrl(QUrl(normalize(url)))
-        self.setCurrentWidget(self.split); self.browser.update_sidebars_soon()
+            if vertical is None:   # wąskie okno albo monitor w pionie → strony jedna pod drugą
+                vertical = self.width() < self.height() * 0.9
+            self.split = SplitView(Qt.Orientation.Vertical if vertical else Qt.Orientation.Horizontal); self.sides = []
+            self.removeWidget(self._main)
+            a = SplitSide(self, self._main); self.sides.append(a); b = SplitSide(self); self.sides.append(b)
+            self.split.addWidget(a); self.split.addWidget(b); self.split.setSizes([10000, 10000])
+            self.addWidget(self.split); self._act = -1; self.set_active_side(b)
+        if url:
+            s = self.sides[1]
+            self.load_side(s, url) if s.view is None else s.view.setUrl(QUrl(normalize(url)))
+        self.setCurrentWidget(self.split)
+        for s in self.sides:
+            s.refresh()
+        self.browser.sync_address(); self.browser.update_sidebars_soon(); self.browser.decorate(self)
+
+    def set_active_side(self, side):
+        if not self.sides or side not in self.sides:
+            return
+        i = self.sides.index(side)
+        if i != self._act:
+            self._act = i
+            for k, s in enumerate(self.sides):
+                s.set_active(k == i)
+            self.browser.split_focus_changed(self)
+
+    def load_side(self, side, url):
+        v = self._new_view(); side.set_view(v); v.setUrl(QUrl(normalize(url)))
+        self._act = -1; self.set_active_side(side); v.setFocus()
+        for s in self.sides:
+            s.refresh()
+
+    def adopt_tab(self, side, o):
+        """Przenosi kartę o na wskazaną stronę podziału: ta sama strona, bez przeładowania (inny kontener – wczytuje adres)."""
+        b = self.browser
+        if not self.sides or side not in self.sides or o is self or o not in b.all_tabs() or o.split is not None:
+            return
+        url = o.pending or (o.main.url().toString() if o.main is not None and not o.on_home() else "")
+        if not url:
+            return
+        self._clear_side(side)
+        if o.main is not None and not o.pending and not o.on_home() and o.container == self.container:
+            v = o._main; o.removeWidget(v); o._main = None; v.setParent(None); v.owner = self
+            if o.asleep:
+                try:
+                    v.page().setLifecycleState(QWebEnginePage.LifecycleState.Active)
+                except Exception:
+                    pass
+            side.set_view(v); self._act = -1; self.set_active_side(side)
+        else:
+            self.load_side(side, url)
+        b.close_tab(o); self.setCurrentWidget(self.split); b.activate(self)
+        for s in self.sides:
+            s.refresh()
+        b.sync_address(); b.decorate(self)
+
+    def _clear_side(self, side):
+        """Strona zajęta → jej dotychczasowa zawartość przechodzi do osobnej karty (nic nie ginie)."""
+        v = side.take_view()
+        if v is not None:
+            self._to_new_tab(v)
+
+    def _to_new_tab(self, v):
+        b = self.browser
+        t2 = b.new_tab(container=self.container, ws=self.ws, group=self.group, activate=False)
+        b.bar.moveTab(b.stack.indexOf(t2), b.stack.indexOf(self) + 1); t2.adopt_view(v)
+        return t2
+
+    def _other(self, side):
+        return self.sides[1] if self.sides[0] is side else self.sides[0]
+
+    def detach_side(self, side):
+        if not self.sides or side not in self.sides:
+            return
+        v = side.take_view(); self._dissolve(self._other(side))
+        if v is not None:
+            self._to_new_tab(v)
+
+    def close_side(self, side):
+        if not self.sides or side not in self.sides:
+            return
+        v = side.take_view(); self._dissolve(self._other(side))
+        if v is not None:
+            v.deleteLater()
 
     def unsplit(self):
-        if self.split is None:
-            return
-        sp, self.split = self.split, None
-        self.web.setParent(None); self.addWidget(self.web); self.setCurrentWidget(self.web)
-        self.removeWidget(sp); sp.deleteLater(); self.pane = None
-        self.browser.update_sidebars_soon()
+        if self.sides:
+            self.close_side(self.sides[1])
+
+    def _dissolve(self, keep_side):
+        sp, keep = self.split, keep_side.take_view()
+        self.split, self.sides, self._act = None, None, 0
+        self.removeWidget(sp); sp.deleteLater(); self._main = keep
+        b = self.browser
+        if keep is not None:
+            self.addWidget(keep); self.setCurrentWidget(keep)
+            b.on_title(self, keep.title()); b.on_icon(self, keep.icon()); keep.setFocus()
+        else:
+            self.title_text, self.icon = "", None; self.show_home()
+            b.bar.setTabText(b.stack.indexOf(self), "Ekran główny")
+        b.decorate(self); b.sync_address(); b.update_sidebars_soon(); b.tabs_changed()
 
     def swap_split(self):
+        if not self.sides or any(s.view is None for s in self.sides):
+            return
+        sz = self.split.sizes(); self.split.insertWidget(0, self.sides[1]); self.split.setSizes(sz)
+        self.sides.reverse(); self._act = 1 - self._act; self._main = self.sides[0].view
+        self.browser.on_title(self, self._main.title()); self.browser.on_icon(self, self._main.icon())
+        self.browser.decorate(self)
+
+    def turn_split(self):
         if self.split is not None:
-            a, b = self.pane.web.url(), self.web.url()
-            self.web.setUrl(a); self.pane.web.setUrl(b)
+            h = self.split.orientation() == Qt.Orientation.Horizontal
+            self.split.setOrientation(Qt.Orientation.Vertical if h else Qt.Orientation.Horizontal)
+            self.split.setSizes([10000, 10000])
+            for s in self.sides:
+                s.refresh()
+
+    def split_state(self):
+        """Do zapisu sesji: adres drugiej strony i układ (pionowy?)."""
+        if self.sides and self.sides[1].view is not None:
+            u = self.sides[1].view.url().toString()
+            return {"url": u, "v": self.split.orientation() == Qt.Orientation.Vertical} if u else None
+        return self.pending_split
 
     # --- usypianie (zwalnia RAM; strona wczyta się ponownie po powrocie) ---
     def views(self):
-        return [w for w in (self.web, getattr(self.pane, "web", None) if self.split is not None else None) if w is not None]
+        return [w for w in ([s.view for s in self.sides] if self.sides else [self._main]) if w is not None]
 
     def audible(self):
         return any(w.page().recentlyAudible() for w in self.views())
 
     def sleep(self):
-        if self.asleep or self.web is None or self.audible():
+        if self.asleep or not self.views() or self.audible():
             return
         for w in self.views():
             try:
@@ -7600,6 +7868,11 @@ class Tab(QStackedWidget):
         self.last_active = time.time()
         if self.pending:
             self.go(self.pending)
+            ps, self.pending_split = self.pending_split, None
+            if isinstance(ps, dict) and ps.get("url"):   # przywrócony podział ekranu z poprzedniej sesji
+                self.split_with(ps["url"], bool(ps.get("v")))
+                if self.sides:
+                    self.set_active_side(self.sides[0])
         if self.asleep:
             self.asleep = False
             for w in self.views():
@@ -7791,12 +8064,16 @@ class Browser(QMainWindow):
         self._laid, self._g_ref, self._pinned, self._suggest = False, None, None, None
         self._prev_tab, self._ws_last, self._last_user, self._pw_pending, self._popup_from = None, {}, {}, None, None
         self.setWindowTitle("Luna – okno prywatne" if private else "Luna"); self.setWindowIcon(app_icon())
-        scr = QGuiApplication.primaryScreen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
-        self.resize(min(1300, int(scr.width() * 0.94)), min(860, int(scr.height() * 0.92)))
+        scr = cur_screen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
+        # okno ~82% ekranu (duże monitory nie dostają „okienka”), małe ekrany – prawie cały ekran
+        self.resize(min(1680, int(scr.width() * (0.96 if scr.width() < 1400 else 0.82))),
+                    min(1050, int(scr.height() * (0.94 if scr.height() < 800 else 0.86))))
         self.move(scr.center() - self.rect().center())
-        self.setMinimumSize(min(640, scr.width()), min(480, scr.height()))
+        self.setMinimumSize(min(560, scr.width()), min(420, scr.height()))
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)  # bez ramki systemowej
         self.store = store or Store()
+        if self.primary:
+            self._restore_geometry(scr)
 
         central = Frame(); v = QVBoxLayout(central); self.frame_layout = v
         v.setContentsMargins(5, 5, 5, 5); v.setSpacing(0)
@@ -7886,6 +8163,9 @@ class Browser(QMainWindow):
         self.burger.setObjectName("acct"); self.burger.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         bmn = QMenu(self.burger); bmn.setObjectName("burger"); bmn.aboutToShow.connect(self.burger_menu); self.burger.setMenu(bmn)
         tl.addSpacing(2); tl.addWidget(self.burger)
+        self._tool_lay, self._compact = tl, None
+        self._dense = [w for w in (tl.itemAt(i).widget() for i in range(tl.count()))
+                       if isinstance(w, QToolButton) and w is not self.acct_btn]
         self.tool_btns = {"shield": self.shield_btn, "key": self.key_btn, "split": self.split_btn, "star": self.star_btn,
                           "ai": self.ai_btn, "gear": self.gear_btn, "google": self.acct_btn}
         v.addWidget(tool)
@@ -7899,6 +8179,7 @@ class Browser(QMainWindow):
         self.host = WidgetHost(self.store, self)
         self._state_cb = lambda st: self.host.set_active(st == Qt.ApplicationState.ApplicationActive)
         QGuiApplication.instance().applicationStateChanged.connect(self._state_cb)
+        QApplication.instance().focusChanged.connect(self._focus_changed)   # podział ekranu: aktywna strona = kliknięta
         self.assistant = Assistant(self.store, self); self.assistant.hide()
         self.tabpanel = TabPanel(self); self.body = body
         self.tab_popup = QFrame(self, Qt.WindowType.Popup); self.tab_popup.setObjectName("tabpop")   # lista kart z przycisku na pasku
@@ -7913,6 +8194,8 @@ class Browser(QMainWindow):
         self._sb_t = QTimer(self); self._sb_t.setSingleShot(True); self._sb_t.timeout.connect(self.update_sidebars)
         self._tabs_t = QTimer(self); self._tabs_t.setSingleShot(True); self._tabs_t.timeout.connect(self._apply_tabs)
         self._sleep_t = QTimer(self); self._sleep_t.timeout.connect(self._sleep_tick); self._sleep_t.start(60000)
+        if self.windowState() & Qt.WindowState.WindowMaximized:   # okno przywrócone jako zmaksymalizowane
+            self.frame_layout.setContentsMargins(0, 0, 0, 0); self.max_btn.setIcon(glyph("restore"))
         self.update_engine_ui()
         self.setup_shortcuts()
         self.store.features_changed.connect(self.apply_features)
@@ -7925,6 +8208,34 @@ class Browser(QMainWindow):
         if SHIELD:
             QTimer.singleShot(8000, SHIELD[0].maybe_update)   # lista domen raz w tygodniu, po starcie
         self.store.ensure_fonts()
+
+    # --- położenie okna między uruchomieniami (dopasowane do aktualnych monitorów) ---
+    def _restore_geometry(self, scr):
+        g = self.store.settings.get("window")
+        if not isinstance(g, dict):
+            if scr.width() < 1280 or scr.height() < 720:   # mały ekran laptopa: od razu cały ekran
+                self.setWindowState(Qt.WindowState.WindowMaximized)
+            return
+        try:
+            r = QRect(int(g["x"]), int(g["y"]), int(g["w"]), int(g["h"]))
+        except (KeyError, TypeError, ValueError):
+            r = None
+        s = QGuiApplication.screenAt(r.center()) if r is not None else None
+        if s is not None:   # monitor odłączony / zmieniona rozdzielczość → zostaje rozmiar domyślny
+            a = s.availableGeometry(); w, h = min(r.width(), a.width()), min(r.height(), a.height())
+            self.resize(w, h)
+            self.move(max(a.left(), min(r.x(), a.right() - w + 1)), max(a.top(), min(r.y(), a.bottom() - h + 1)))
+        if g.get("max"):
+            self.setWindowState(Qt.WindowState.WindowMaximized)
+
+    def _save_geometry(self):
+        full = self.isMaximized() or self.isFullScreen()
+        r = self.normalGeometry() if full else self.geometry()
+        g = dict(self.store.settings.get("window") or {}) if isinstance(self.store.settings.get("window"), dict) else {}
+        if r.width() >= 300 and r.height() >= 200:
+            g.update(x=r.x(), y=r.y(), w=r.width(), h=r.height())
+        g["max"] = self.isMaximized()
+        self.store.settings["window"] = g
 
     # --- pomocnicze ---
     def btn(self, kind, tip, fn, size=38):
@@ -8123,7 +8434,23 @@ class Browser(QMainWindow):
         self._sb_t.start(40)
 
     def resizeEvent(self, ev):
-        super().resizeEvent(ev); self._sb_t.start(120)
+        super().resizeEvent(ev); self._sb_t.start(120); self._apply_density()
+
+    def _apply_density(self):
+        """Wąskie okno (mały laptop, pół ekranu): mniejsze przyciski i marginesy paska, węższy panel kart."""
+        c = self.width() < 1000
+        if not hasattr(self, "_dense") or c == self._compact:
+            return
+        self._compact = c; s = 32 if c else 38
+        for b in self._dense:
+            b.setFixedSize(s, s); b.setIconSize(QSize(s - 8, s - 8))
+        self.acct_btn.setFixedSize(s - 4 if c else 34, s - 4 if c else 34)
+        self._tool_lay.setContentsMargins(*((8, 5, 8, 5) if c else (12, 8, 12, 8))); self._tool_lay.setSpacing(2 if c else 4)
+        if self.store.feature("vertical_tabs"):
+            self.tabpanel.setFixedWidth(self._tabpanel_w())
+
+    def _tabpanel_w(self):
+        return 204 if self._compact else TabPanel.W
 
     def open_settings(self, page=None):
         dlg = SettingsDialog(self.store, self.host, self)
@@ -8172,13 +8499,14 @@ class Browser(QMainWindow):
 
     def closeEvent(self, ev):
         safe_disconnect(QGuiApplication.instance().applicationStateChanged, self._state_cb)   # sprzątanie nasłuchiwaczy
+        safe_disconnect(QApplication.instance().focusChanged, self._focus_changed)
         self.hide_suggest(); self.host.shutdown_all()
         try:
             DOWNLOADS[0].started.disconnect(self.on_download)
         except (TypeError, RuntimeError):
             pass
         if self.primary:
-            self.store.settings["session"] = self.session_data()
+            self.store.settings["session"] = self.session_data(); self._save_geometry()
         self.store.save_settings()
         super().closeEvent(ev)
 
@@ -8238,7 +8566,9 @@ class Browser(QMainWindow):
                 elif k == "google" and self.host.google is not None:
                     sm = m.addMenu(google_g_icon(), names[k]); sm.aboutToShow.connect(lambda sm=sm: self.build_account_menu(sm))
                 elif k == "split":
-                    self.act(m, "split", "Podziel ekran", self.split_current, "Ctrl+\\", web is not None)
+                    on = bool(self.cur() and self.cur().sides)
+                    self.act(m, "split", "Zakończ podział ekranu" if on else "Podziel ekran", self.split_current, "Ctrl+\\",
+                             on or web is not None)
                 elif k == "star":
                     self.act(m, "star", "Dodaj do ekranu głównego", self.pin_current, "Ctrl+D", web is not None)
                 elif k == "ai" and self.store.feature("assistant"):
@@ -8563,6 +8893,8 @@ class Browser(QMainWindow):
             tip += f"\nGrupa: {t.group}"
         if t.container:
             tip += f"\nKontener: {self.container_name(t.container)}"
+        if t.sides and t.sides[1].view is not None:
+            tip += f"\nPodzielony ekran z: {t.sides[1].view.title() or host_of(t.sides[1].view.url().toString())}"
         if t.asleep or t.pending:
             tip += "\nUśpiona – wybudzi się po kliknięciu"
         self.bar.setTabToolTip(i, tip)
@@ -8604,7 +8936,7 @@ class Browser(QMainWindow):
             return
         limit = int(self.store.settings.get("sleep_after", 15)) * 60; now = time.time(); cur = self.cur(); changed = False
         for t in self.all_tabs():
-            if t is not cur and not t.asleep and t.web is not None and now - t.last_active > limit:
+            if t is not cur and not t.asleep and t.main is not None and now - t.last_active > limit:
                 t.sleep(); changed = changed or t.asleep
                 if t.asleep:
                     self.decorate(t)
@@ -8619,9 +8951,12 @@ class Browser(QMainWindow):
     def session_data(self):
         tabs = []
         for t in self.all_tabs():
-            url = t.pending or (t.web.url().toString() if t.web is not None and not t.on_home() else "")
-            tabs.append({"url": url, "title": t.title_text if url else "", "ws": t.ws, "group": t.group,
-                         "container": t.container})
+            url = t.pending or (t.main.url().toString() if t.main is not None and not t.on_home() else "")
+            d = {"url": url, "title": t.title_text if url else "", "ws": t.ws, "group": t.group, "container": t.container}
+            sp = t.split_state() if url else None
+            if sp:
+                d["split"] = sp
+            tabs.append(d)
         return {"tabs": tabs, "current": self.stack.currentIndex()}
 
     def restore_session(self):
@@ -8631,8 +8966,10 @@ class Browser(QMainWindow):
             self.new_tab(); return
         known = self.workspaces()
         for d in tabs:
-            self.new_tab(container=d.get("container", ""), ws=d.get("ws") if d.get("ws") in known else known[0],
-                         group=d.get("group", ""), title=d.get("title", ""), lazy_url=d.get("url", ""), activate=False)
+            nt = self.new_tab(container=d.get("container", ""), ws=d.get("ws") if d.get("ws") in known else known[0],
+                              group=d.get("group", ""), title=d.get("title", ""), lazy_url=d.get("url", ""), activate=False)
+            if d.get("url") and isinstance(d.get("split"), dict):
+                nt.pending_split = d["split"]
         i = s.get("current", 0)
         t = self.stack.widget(i) if isinstance(i, int) and 0 <= i < self.stack.count() else self.stack.widget(0)
         self.ws = t.ws; self.store.settings["ws_current"] = t.ws
@@ -8729,7 +9066,7 @@ class Browser(QMainWindow):
             self.tab_popup.hide()
             if self.body.indexOf(tp) < 0:
                 self.body.insertWidget(0, tp)
-            tp.setFixedWidth(TabPanel.W); tp.setObjectName("tabpanel"); tp.show()
+            tp.setFixedWidth(self._tabpanel_w()); tp.setObjectName("tabpanel"); tp.show()
         else:
             if self.tab_popup.layout().indexOf(tp) < 0:
                 self.tab_popup.layout().addWidget(tp)
@@ -8808,7 +9145,7 @@ class Browser(QMainWindow):
     def reopen_in(self, tab, cid):
         if tab is None or cid == tab.container:
             return
-        url = tab.pending or (tab.web.url().toString() if tab.web is not None and not tab.on_home() else "")
+        url = tab.pending or (tab.main.url().toString() if tab.main is not None and not tab.on_home() else "")
         t = self.new_tab(container=cid, ws=tab.ws, group=tab.group)
         self.bar.moveTab(self.stack.indexOf(t), self.stack.indexOf(tab) + 1)
         if url:
@@ -8833,18 +9170,23 @@ class Browser(QMainWindow):
                 wm.addAction(w, lambda _=False, w=w: self.move_to_ws(t, w))
         wm.addAction("Nowa przestrzeń…", lambda: self._move_new_ws(t))
         m.addAction("Otwórz w kontenerze…", lambda: self.container_menu(QCursor.pos(), t))
-        sm = m.addMenu("Podziel ekran")
-        if t.web is None or t.pending:
+        sm = m.addMenu(glyph("split"), "Podziel ekran")
+        if t.main is None or t.pending:
             sm.setEnabled(False)
-        sm.addAction("Z pustą stroną", lambda: (self.activate(t), t.split_with("")))
-        for o in self.all_tabs():
-            if o is not t and self.in_view(o):
-                url = o.pending or (o.web.url().toString() if o.web is not None and not o.on_home() else "")
-                if url:
-                    sm.addAction(tab_icon(o.icon), (o.title_text or url)[:40],
-                                 lambda _=False, o=o, u=url: (self.activate(t), t.split_with(u), self.close_tab(o)))
-        if t.split is not None:
-            sm.addSeparator(); sm.addAction("Zamknij podział", t.unsplit)
+        if t.split is None:
+            sm.addAction("Wybierz stronę…", lambda: (self.activate(t), t.split_with("")))
+        cands = self.split_candidates(t)
+        if cands:
+            sm.addSeparator()
+        for o, url in cands:
+            sm.addAction(tab_icon(o.icon), (o.title_text or url)[:40], lambda _=False, o=o: self.split_with_tab(t, o))
+        if t.sides:
+            sm.addSeparator()
+            sm.addAction(glyph("swap"), "Zamień strony miejscami", t.swap_split)
+            sm.addAction(glyph("splitv"), "Układ pionowy / poziomy", t.turn_split)
+            if t.sides[1].view is not None:
+                sm.addAction(glyph("external"), "Odłącz drugą stronę do karty", lambda: t.detach_side(t.sides[1]))
+            sm.addAction(glyph("close"), "Zamknij drugą stronę", t.unsplit)
         z = m.addAction("Uśpij teraz", lambda: self.sleep_now(t)); z.setEnabled(t is not self.cur() and t.web is not None and not t.asleep)
         m.addSeparator(); m.addAction("Zamknij kartę", lambda: self.close_tab(t))
         m.exec(pos)
@@ -8863,9 +9205,45 @@ class Browser(QMainWindow):
             self.tab_menu(self.stack.widget(i), self.bar.mapToGlobal(pos))
 
     def split_current(self):
+        """Ctrl+\\: włącza podział (wybór drugiej strony); ponownie – druga strona wraca do osobnej karty (nic nie ginie)."""
         t = self.cur()
-        if t is not None and t.web is not None and not t.on_home():
-            t.unsplit() if t.split is not None else t.split_with("")
+        if t is None:
+            return
+        if t.sides:
+            s = t.sides[1]
+            t.detach_side(s) if s.view is not None else t.close_side(s)
+        elif t.main is not None and not t.on_home():
+            t.split_with("")
+
+    def split_with_tab(self, t, o):
+        self.activate(t)
+        if t.split is None:
+            t.split_with("")
+        if t.sides:
+            t.adopt_tab(t.sides[1], o)
+
+    def split_candidates(self, tab):
+        """Karty, które można dołożyć do podziału: z bieżącej przestrzeni, ze stroną i bez własnego podziału."""
+        out = []
+        for o in self.all_tabs():
+            if o is tab or o.split is not None or not self.in_view(o):
+                continue
+            url = o.pending or (o.main.url().toString() if o.main is not None and not o.on_home() else "")
+            if url:
+                out.append((o, url))
+        return out
+
+    def split_focus_changed(self, tab):
+        if tab is self.cur():
+            self.sync_address(); self.update_page_bg()
+
+    def _focus_changed(self, old, new):
+        t = self.cur()
+        if new is None or t is None or not t.sides:
+            return
+        for s in t.sides:
+            if s.isAncestorOf(new):
+                t.set_active_side(s); break
 
     # --- tarcza (blokada śledzenia) ---
     def shield_menu(self, m=None):
@@ -9048,26 +9426,28 @@ class Browser(QMainWindow):
         if i >= 0:
             self.bar.setTabText(i, title[:26] or "…"); self.decorate(tab)
         self.tabs_changed()
-        if tab.web is not None:
-            self.store.session.on_tab_title(tab, tab.web.url().toString(), title)
+        if tab.main is not None:
+            self.store.session.on_tab_title(tab, tab.main.url().toString(), title)
 
     def on_icon(self, tab, icon):
         tab.icon = icon; self.decorate(tab); self.tabs_changed()
 
-    def on_load_started(self, tab):
-        if SHIELD and tab.web is not None:
-            SHIELD[0].reset(tab.web.url().toString())
+    def on_load_started(self, tab, view=None):
+        view = view or tab.main
+        if SHIELD and view is not None:
+            SHIELD[0].reset(view.url().toString())
 
-    def on_loaded(self, tab, ok):
-        if tab is self.cur():
+    def on_loaded(self, tab, ok, view=None):
+        view = view or tab.main
+        if tab is self.cur() and view is tab.web:
             self.update_shield(); self.update_page_bg()
-        if ok and tab.web:
-            self.autofill(tab.web)
-            url = tab.web.url().toString()
+        if ok and view is not None:
+            self.autofill(view)
+            url = view.url().toString()
             if self.private:
                 return
             if url.startswith("http"):
-                self.store.add_recent((tab.web.title() or host_of(url))[:40], url)
+                self.store.add_recent((view.title() or host_of(url))[:40], url)
 
     def on_url(self, tab, url):
         if tab is self.cur() and not tab.on_home():
@@ -9080,6 +9460,10 @@ class Browser(QMainWindow):
             self.update_shield()
         self.address.setText("" if not t or t.on_home() or not t.web else t.web.url().toString())
         self.update_star()
+        on = bool(t and t.sides)
+        if hasattr(self, "split_btn") and self.split_btn.property("on") != on:   # podświetlona ikona = podział włączony
+            self.split_btn.setProperty("on", on); self.split_btn.setIcon(glyph("split", "#ffffff" if on else "#c9c9c9"))
+            self.split_btn.setToolTip("Zakończ podział ekranu (Ctrl+\\)" if on else "Podziel ekran (Ctrl+\\)")
 
 
 def load_local_fonts():
@@ -9090,7 +9474,8 @@ def load_local_fonts():
 
 if __name__ == "__main__":
     # rasteryzacja stron na GPU i przesyłanie bez kopiowania – płynniejsze przewijanie i animacje (można nadpisać zmienną)
-    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-gpu-rasterization --enable-zero-copy")
+    # --process-per-site: karty tej samej witryny dzielą jeden proces strony – wyraźnie mniej RAM przy wielu kartach
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-gpu-rasterization --enable-zero-copy --process-per-site")
     if sys.platform == "win32":  # własna ikona na pasku zadań (a nie ikona Pythona)
         try:
             import ctypes
