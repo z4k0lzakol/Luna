@@ -6735,17 +6735,17 @@ class SuggestPopup(QFrame):
     activated = pyqtSignal(dict)
 
     def __init__(self):
-        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint
+        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.owner = None
         self.setObjectName("sugg_popup"); self.setWindowTitle("Luna")
-        if sys.platform == "win32":   # bez systemowej animacji pojawiania się (na Windows miga wtedy czarny prostokąt)
-            try:
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating); self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        if sys.platform == "win32":   # bez systemowej animacji pojawiania się (na Windows miga wtedy czarny prostokąt);
+            try:                      # dopiero po WA_TranslucentBackground – wcześniejszy winId() daje czarne tło zamiast przezroczystego
                 import ctypes
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(int(self.winId()), 3, ctypes.byref(ctypes.c_int(1)), 4)
             except Exception:
                 pass
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating); self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         outer = QVBoxLayout(self); outer.setContentsMargins(12, 2, 12, 18)
         self.card = QFrame(); self.card.setObjectName("sugg_card")
         sh = QGraphicsDropShadowEffect(self.card); sh.setBlurRadius(30); sh.setOffset(0, 8); sh.setColor(QColor(0, 0, 0, 175))
