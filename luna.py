@@ -6354,7 +6354,7 @@ def page_keys(dlg):
     w, l = page_box("Skróty klawiszowe i gesty", "Można je wyłączyć w Funkcje → Skróty klawiszowe i gesty myszy.")
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
-                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"),
+                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
@@ -7605,6 +7605,21 @@ def tab_icon(icon, color=None, asleep=False):
     return QIcon(pm)
 
 
+class _Null:
+    """Właściciel zastępczy dla widoku zamkniętej karty: każde odwołanie i wywołanie jest pustą operacją."""
+    def __getattr__(self, name):
+        return self
+
+    def __call__(self, *a, **k):
+        return self
+
+    def __bool__(self):
+        return False
+
+
+_NULL = _Null()
+
+
 class SplitHandle(QSplitterHandle):
     """Uchwyt podziału: cienka pigułka pośrodku, jaśniejsza pod kursorem; dwuklik wyrównuje strony 50/50."""
 
@@ -7962,7 +7977,7 @@ class Tab(QStackedWidget):
             side.set_view(v); self._act = -1; self.set_active_side(side)
         else:
             self.load_side(side, url)
-        b.close_tab(o); self.setCurrentWidget(self.split); b.activate(self)
+        b.close_tab(o, remember=False); self.setCurrentWidget(self.split); b.activate(self)
         for s in self.sides:
             s.refresh()
         b.sync_address(); b.decorate(self)
@@ -8257,6 +8272,7 @@ class Browser(QMainWindow):
         self._was_max, self._zoom_lbl = False, None
         self._laid, self._g_ref, self._pinned, self._suggest = False, None, None, None
         self._prev_tab, self._ws_last, self._last_user, self._pw_pending, self._popup_from = None, {}, {}, None, None
+        self._closed = []   # ostatnio zamknięte karty (uśpione widoki z historią) – Ctrl+Shift+T
         self.setWindowTitle("Luna – okno prywatne" if private else "Luna"); self.setWindowIcon(app_icon())
         scr = cur_screen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
         # okno ~82% ekranu (duże monitory nie dostają „okienka”), małe ekrany – prawie cały ekran
@@ -8463,7 +8479,7 @@ class Browser(QMainWindow):
                 ("Ctrl+Backtab", lambda: self.cycle_tab(-1)), ("Ctrl+PgDown", lambda: self.cycle_tab(1)),
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
-                ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader),
+                ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
                 ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+D", self.toggle_dark), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
@@ -8785,7 +8801,14 @@ class Browser(QMainWindow):
         pw = m.addMenu(glyph("key"), "Hasła i autouzupełnianie")
         pw.aboutToShow.connect(lambda: self.key_menu(pw))
         hm = m.addMenu(glyph("history"), "Historia")
-        self.act(hm, "history", "Pełna historia…", self.show_history, "Ctrl+H"); hm.addSeparator()
+        self.act(hm, "history", "Pełna historia…", self.show_history, "Ctrl+H")
+        self.act(hm, "reload", "Przywróć zamkniętą kartę", self.restore_closed, "Ctrl+Shift+T", bool(self._closed))
+        if self._closed:
+            cm = hm.addMenu(glyph("tabs"), "Ostatnio zamknięte")
+            for i in range(len(self._closed) - 1, -1, -1):
+                d = self._closed[i]
+                cm.addAction(tab_icon(d["icon"]), (d["title"] or d["url"])[:48], lambda i=i: self.restore_closed(i))
+        hm.addSeparator()
         for r in self.store.recent[:10]:
             self.act(hm, "history", (r["name"] or r["url"])[:48], lambda u=r["url"]: self.open_url_new_tab(u))
         if not self.store.recent:
@@ -9088,7 +9111,7 @@ class Browser(QMainWindow):
                 t.wake(); self.decorate(t)
             self.bar.setCurrentIndex(i)
 
-    def close_tab(self, tab):
+    def close_tab(self, tab, remember=True):
         if tab is None:
             return
         if self.bar.count() <= 1:
@@ -9096,10 +9119,58 @@ class Browser(QMainWindow):
         if self.store.feature("workspaces") and sum(1 for t in self.all_tabs() if t.ws == tab.ws) == 1:   # przestrzeń nie zostaje pusta
             self.new_tab(ws=tab.ws, activate=False)
         i = self.stack.indexOf(tab)
+        if remember:
+            self._remember_closed(tab, i)
         self.store.session.forget_tab(tab)
         self.bar.removeTab(i); self.stack.removeWidget(tab); tab.deleteLater()
         self.stack.setCurrentIndex(self.bar.currentIndex())
         self.sync_address(); self.tabs_changed()
+
+    # --- zamknięte karty: widok zostaje uśpiony (Discarded – bez RAM-u stron), więc wraca z historią wstecz/dalej ---
+    CLOSED_MAX = 10
+
+    def _remember_closed(self, tab, index):
+        url = tab.pending or (tab.main.url().toString() if tab.main is not None and not tab.on_home() else "")
+        if not url:
+            return
+        v = None
+        if tab.main is not None and not tab.pending:
+            v = tab.sides[0].take_view() if tab.sides else tab._main
+            if not tab.sides:
+                tab.removeWidget(v)
+            tab._main = None
+            v.owner = _NULL; v.setParent(self); v.hide()   # bez właściciela: sygnały zamkniętej strony nic nie robią
+            try:
+                v.page().setLifecycleState(QWebEnginePage.LifecycleState.Discarded)
+            except Exception:
+                pass
+        self._closed.append({"view": v, "url": url, "title": tab.title_text, "icon": tab.icon, "ws": tab.ws,
+                             "group": tab.group, "container": tab.container, "index": index})
+        while len(self._closed) > self.CLOSED_MAX:
+            old = self._closed.pop(0)
+            if old["view"] is not None:
+                old["view"].deleteLater()
+
+    def restore_closed(self, i=None):
+        if not self._closed:
+            return
+        d = self._closed.pop(len(self._closed) - 1 if i is None else i)
+        ws = d["ws"] if d["ws"] in self.workspaces() else self.ws
+        t = self.new_tab(container=d["container"], ws=ws, group=d["group"], activate=False)
+        self.bar.moveTab(self.stack.indexOf(t), max(0, min(d["index"], self.bar.count() - 1)))
+        v = d["view"]
+        if v is not None:
+            v.setParent(None)
+            try:
+                v.page().setLifecycleState(QWebEnginePage.LifecycleState.Active)
+            except Exception:
+                pass
+            t.adopt_view(v); v.show()
+        else:
+            t.go(d["url"])
+        if ws != self.ws:
+            self.switch_ws(ws)
+        self.activate(t)
 
     def on_tab_changed(self, i):
         prev = self._prev_tab
