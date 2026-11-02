@@ -869,6 +869,9 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         p.drawEllipse(9, 15, 13, 13); p.drawLine(21, 21, 35, 21); p.drawLine(30, 21, 30, 27); p.drawLine(35, 21, 35, 26)
     elif kind == "split":
         p.drawRoundedRect(QRectF(9, 11, 26, 22), 4, 4); p.drawLine(22, 11, 22, 33)
+    elif kind == "book":
+        p.drawPolyline(P((22, 14), (14, 11), (8, 12), (8, 31), (14, 30), (22, 33)))
+        p.drawPolyline(P((22, 14), (30, 11), (36, 12), (36, 31), (30, 30), (22, 33))); p.drawLine(22, 14, 22, 33)
     elif kind == "splitv":
         p.drawRoundedRect(QRectF(11, 9, 22, 26), 4, 4); p.drawLine(11, 22, 33, 22)
     elif kind == "folder":
@@ -1341,6 +1344,7 @@ class LunaPage(QWebEnginePage):
     """Strona z kanałem zwrotnym z naszych skryptów (hasła, token DuckDuckGo) przez komunikaty konsoli z kluczem sesji.
     Pilnuje też ciemnego trybu: włączony w silniku przed wczytaniem strony (wyjątki dla wybranych domen)."""
     pw_captured = pyqtSignal(dict)
+    reader_state = pyqtSignal(dict)   # tryb czytania: {"state": "on"|"off"|"none", "prefs": {...}}
 
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent); LUNA_PAGES.add(self)
@@ -1359,6 +1363,14 @@ class LunaPage(QWebEnginePage):
         if not msg.startswith(PW_KEY):
             return super().javaScriptConsoleMessage(level, msg, line, src)
         body = msg[len(PW_KEY):]
+        if body.startswith("reader:"):
+            try:
+                d = json.loads(body[7:])
+            except ValueError:
+                return
+            if isinstance(d, dict):
+                self.reader_state.emit(d)
+            return
         if body.startswith("ddg:"):
             if self.url().host().endswith("duckduckgo.com") and VAULT:
                 VAULT[0].set_ddg_token(body[4:].strip())
@@ -6342,7 +6354,7 @@ def page_keys(dlg):
     w, l = page_box("Skróty klawiszowe i gesty", "Można je wyłączyć w Funkcje → Skróty klawiszowe i gesty myszy.")
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
-                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"),
+                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
@@ -7384,11 +7396,166 @@ def menu_row_action(menu, row):
 
 # ikony, które można przypiąć do paska obok wyszukiwarki (reszta trafia do menu burgera)
 TOOL_ITEMS = [("shield", "Blokada reklam i śledzenia"), ("key", "Hasła i aliasy"), ("split", "Podział ekranu"),
-              ("star", "Dodaj do ekranu głównego"), ("ai", "Asystent AI"), ("gear", "Ustawienia"), ("google", "Konto Google")]
-TOOL_DEFAULT = ["shield", "key", "star", "ai", "google"]
+              ("reader", "Tryb czytania"), ("star", "Dodaj do ekranu głównego"), ("ai", "Asystent AI"), ("gear", "Ustawienia"),
+              ("google", "Konto Google")]
+TOOL_DEFAULT = ["shield", "key", "reader", "star", "ai", "google"]
 PRIVATE = "__prywatne__"
 ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0]
 WINDOWS = []   # dodatkowe okna (zwykłe i prywatne) – referencje, żeby nie zniknęły
+
+
+# Tryb czytania: nakładka w zamkniętym Shadow DOM (style strony jej nie psują), treść wyciągnięta heurystycznie
+# (articleBody / <article> / kontener z największą ilością akapitów), bez przeładowania strony. Wywołanie ponowne zamyka.
+READER_JS = r"""(function(){
+const K = %K%, P = %P%, ID = '__luna_reader';
+const say = o => console.log(K + 'reader:' + JSON.stringify(o));
+const old = document.getElementById(ID);
+if (old && old.__close) { old.__close(); return 'off'; }
+const BAD = /comment|share|social|related|promo|advert|sponsor|sidebar|newsletter|subscribe|cookie|consent|footer|navbar|nav-|menu|banner|popup|modal|breadcrumb|recommend|outbrain|taboola|paywall|toolbar/i;
+const tl = e => ((e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim()).length;
+const cls = e => (e.id || '') + ' ' + (typeof e.className === 'string' ? e.className : '');
+function pick() {
+  const ab = document.querySelector('[itemprop="articleBody"]');
+  if (ab && tl(ab) > 400) return ab;
+  const arts = [...document.querySelectorAll('article')].filter(a => tl(a) > 400);
+  if (arts.length === 1) return arts[0];
+  const sc = new Map();
+  for (const p of document.querySelectorAll('p, pre, blockquote')) {
+    const t = (p.innerText || '').trim(); if (t.length < 60) continue;
+    const s = 1 + Math.min(3, Math.floor(t.length / 100)) + (t.split(',').length - 1) * 0.3;
+    let e = p.parentElement, k = 1;
+    for (let d = 0; e && d < 3; d++, e = e.parentElement) {
+      sc.set(e, (sc.get(e) || 0) + s * k * (BAD.test(cls(e)) ? 0.2 : 1)); k = d === 0 ? 0.5 : 0.33;
+    }
+  }
+  let best = null, bs = 0;
+  for (const [e, s] of sc) {
+    const links = [...e.querySelectorAll('a')].reduce((n, a) => n + (a.innerText || '').length, 0);
+    const v = s * (1 - Math.min(0.9, links / (tl(e) || 1)));
+    if (v > bs) { bs = v; best = e; }
+  }
+  if (bs <= 8) {
+    if (arts[0]) return arts[0];
+    // stare strony bez <p> (tekst rozdzielony <br>): element z największą ilością własnego tekstu
+    let top = null, tn = 0;
+    for (const e of document.querySelectorAll('td, div, font, section, main, center, span')) {
+      let n = 0;
+      for (const ch of e.childNodes) if (ch.nodeType === 3) n += ch.textContent.trim().length;
+      if (n > tn) { tn = n; top = e; }
+    }
+    return tn > 1000 ? top : null;
+  }
+  // treść podzielona na sekcje (np. dokumentacja): idziemy w górę, dopóki rodzic dokłada akapitów, a nie linków
+  const ptext = e => [...e.querySelectorAll('p, pre, blockquote, li')].reduce((n, p) => n + (p.innerText || '').length, 0);
+  const ldens = e => [...e.querySelectorAll('a')].reduce((n, a) => n + (a.innerText || '').length, 0) / (tl(e) || 1);
+  let pb = ptext(best);
+  for (let up = best.parentElement; up && up !== document.body && up !== document.documentElement; up = up.parentElement) {
+    const pu = ptext(up);
+    if (pu < pb * 1.25 || ldens(up) > 0.35 || BAD.test(cls(up))) break;
+    best = up; pb = pu;
+  }
+  return best;
+}
+const src = pick();
+if (!src) { say({state: 'none'}); return 'none'; }
+const all = src.querySelectorAll('*');
+if (all.length < 30000) for (const e of all) {      // ukryte elementy i leniwe obrazki – zaznaczamy na oryginale
+  const cs = getComputedStyle(e);
+  if (cs.display === 'none' || cs.visibility === 'hidden') e.setAttribute('data-luna-x', '1');
+  else if (e.tagName === 'IMG') e.setAttribute('data-luna-src', e.currentSrc || e.src || e.dataset.src || e.dataset.lazySrc || '');
+}
+const c = src.cloneNode(true);
+for (const e of all) { e.removeAttribute('data-luna-x'); e.removeAttribute('data-luna-src'); }
+c.querySelectorAll('[data-luna-x],script,style,noscript,iframe,form,button,input,select,textarea,nav,aside,footer,object,embed,canvas,dialog,[role="navigation"],[role="complementary"],[aria-hidden="true"]').forEach(e => e.remove());
+c.querySelectorAll('*').forEach(e => { if (BAD.test(cls(e)) && (e.textContent || '').length < 1500) e.remove(); });
+c.querySelectorAll('svg').forEach(e => { if (!e.closest('figure')) e.remove(); });
+const KEEP = {A: ['href'], IMG: ['alt'], TD: ['colspan', 'rowspan'], TH: ['colspan', 'rowspan']};
+for (const e of [c, ...c.querySelectorAll('*')]) {
+  const s = e.getAttribute('data-luna-src'), h = e.getAttribute('href');
+  for (const a of [...e.attributes]) if (!(KEEP[e.tagName] || []).includes(a.name)) e.removeAttribute(a.name);
+  if (e.tagName === 'IMG') { if (s) e.setAttribute('src', s); else e.remove(); }
+  if (e.tagName === 'A' && h) { try { e.setAttribute('href', new URL(h, location.href).href); } catch (_) {} e.setAttribute('target', '_blank'); }
+}
+c.querySelectorAll('div, span, section, p').forEach(e => { if (!e.textContent.trim() && !e.querySelector('img, video, picture')) e.remove(); });
+const meta = n => (document.querySelector(`meta[property="${n}"], meta[name="${n}"]`) || {}).content || '';
+let title = (meta('og:title') || document.title || '').trim();
+for (const h of document.querySelectorAll('h1')) {   // nagłówek strony zamiast tytułu z dopiskiem („– Wikipedia, wolna…”)
+  const t = (h.textContent || '').replace(/\[[^\]]*\]/g, '').replace(/\s+/g, ' ').trim();   // bez „[edytuj]”
+  if (t.length > 2 && t.length < 200 && (!title || title.includes(t))) { title = t; break; }
+}
+const h1 = c.querySelector('h1');
+if (h1 && title && (title.includes(h1.textContent.trim()) || h1.textContent.trim().includes(title))) h1.remove();
+const words = (c.textContent.match(/\S+/g) || []).length;
+const site = meta('og:site_name') || location.hostname.replace(/^www\./, '');
+const author = meta('author');
+
+const host = document.createElement('div'); host.id = ID;
+host.style.cssText = 'all:initial !important;position:fixed !important;inset:0 !important;z-index:2147483647 !important;';
+const root = host.attachShadow({mode: 'closed'});
+const css = `
+.wrap{position:fixed;inset:0;overflow:auto;background:#0b0b0b;color:#d4d4d4;font-size:var(--s);line-height:1.72;font-family:var(--f);
+  scrollbar-color:#333 transparent;outline:none;-webkit-font-smoothing:antialiased}
+.doc{max-width:var(--w);margin:0 auto;padding:76px 28px 140px;box-sizing:border-box}
+.meta{color:#7c7c7c;font:13px/1.5 'Segoe UI',system-ui,sans-serif;margin:0 0 14px;letter-spacing:.02em}
+h1.t{font-size:1.85em;line-height:1.22;color:#f2f2f2;margin:0 0 30px;font-weight:700}
+.body h1,.body h2,.body h3,.body h4,.body h5{color:#ececec;line-height:1.3;margin:1.6em 0 .6em}
+.body h1{font-size:1.5em}.body h2{font-size:1.3em}.body h3{font-size:1.12em}
+.body p{margin:0 0 1.1em}
+.body a{color:#8ab4ff;text-decoration:none;border-bottom:1px solid rgba(138,180,255,.3)}
+.body a:hover{border-bottom-color:#8ab4ff}
+.body img,.body video,.body picture{max-width:100%;height:auto;border-radius:10px;display:block;margin:1.3em auto}
+.body figure{margin:1.4em 0}.body figcaption{color:#8a8a8a;font-size:.8em;text-align:center;margin-top:-.6em}
+.body blockquote{border-left:3px solid #343434;margin:1.3em 0;padding:.1em 0 .1em 1.1em;color:#bcbcbc}
+.body pre,.body code{font-family:'Cascadia Mono',Consolas,monospace;font-size:.84em;background:#161616;border-radius:6px}
+.body code{padding:.1em .35em}.body pre{padding:14px 16px;overflow:auto}.body pre code{padding:0;background:none}
+.body table{border-collapse:collapse;width:100%;font-size:.88em;margin:1.2em 0}
+.body td,.body th{border:1px solid #262626;padding:6px 9px;text-align:left}
+.body ul,.body ol{padding-left:1.4em}.body li{margin:.3em 0}.body hr{border:none;border-top:1px solid #262626;margin:2em 0}
+.bar{position:fixed;top:14px;right:22px;display:flex;gap:2px;background:rgba(20,20,20,.94);border:1px solid #262626;border-radius:12px;padding:4px}
+.bar button{all:unset;width:32px;height:32px;display:grid;place-items:center;border-radius:8px;cursor:pointer;color:#b8b8b8}
+.bar button:hover{background:#262626;color:#fff}
+.bar svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.sep{width:1px;background:#2a2a2a;margin:6px 3px}`;
+try { const sh = new CSSStyleSheet(); sh.replaceSync(css); root.adoptedStyleSheets = [sh]; }
+catch (_) { const st = document.createElement('style'); st.textContent = css; root.appendChild(st); }
+const el = (tag, cl, txt) => { const e = document.createElement(tag); if (cl) e.className = cl; if (txt) e.textContent = txt; return e; };
+const wrap = el('div', 'wrap'); wrap.tabIndex = -1;
+const bar = el('div', 'bar'), doc = el('article', 'doc');
+const prefs = {size: +P.size || 19, serif: P.serif !== false, width: +P.width || 720};
+const apply = () => {
+  wrap.style.setProperty('--s', prefs.size + 'px'); wrap.style.setProperty('--w', prefs.width + 'px');
+  wrap.style.setProperty('--f', prefs.serif ? "Georgia,'Times New Roman',serif" : "'Segoe UI',system-ui,sans-serif");
+};
+const btn = (d, tip, fn) => {
+  const b = el('button'); b.title = tip;
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); s.setAttribute('viewBox', '0 0 24 24');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path'); p.setAttribute('d', d); s.appendChild(p); b.appendChild(s);
+  b.addEventListener('click', ev => { ev.stopPropagation(); fn(); }); bar.appendChild(b);
+};
+const save = () => { apply(); say({state: 'on', prefs}); };
+btn('M3 18 8 7l5 11M5 14h6M16 12h5', 'Mniejsza czcionka', () => { prefs.size = Math.max(14, prefs.size - 1); save(); });
+btn('M3 18 8 7l5 11M5 14h6M16 12h5M18.5 9.5v5', 'Większa czcionka', () => { prefs.size = Math.min(30, prefs.size + 1); save(); });
+btn('M5 7V5h14v2M12 5v14M9 19h6', 'Czcionka szeryfowa / bezszeryfowa', () => { prefs.serif = !prefs.serif; save(); });
+btn('M4 12h16M7 9l-3 3 3 3M17 9l3 3-3 3', 'Szerokość tekstu', () => {
+  const W = [600, 720, 880, 1040]; prefs.width = W[(W.indexOf(prefs.width) + 1) % W.length] || 720; save(); });
+bar.appendChild(el('div', 'sep'));
+btn('M6 6l12 12M18 6 6 18', 'Zamknij tryb czytania (Esc)', () => close());
+const m = [site, author, words ? Math.max(1, Math.round(words / 200)) + ' min czytania' : ''].filter(Boolean).join('  ·  ');
+doc.appendChild(el('div', 'meta', m)); if (title) doc.appendChild(el('h1', 't', title));
+const body = el('div', 'body'); body.appendChild(c); doc.appendChild(body);
+wrap.appendChild(doc); root.appendChild(wrap); root.appendChild(bar);
+const de = document.documentElement, bd = document.body, ov = [de.style.overflow, bd ? bd.style.overflow : ''];
+const key = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+function close() {
+  window.removeEventListener('keydown', key, true); host.remove();
+  de.style.overflow = ov[0]; if (bd) bd.style.overflow = ov[1]; say({state: 'off'});
+}
+host.__close = close; apply();
+de.appendChild(host); de.style.overflow = 'hidden'; if (bd) bd.style.overflow = 'hidden';
+window.addEventListener('keydown', key, true); wrap.focus({preventScroll: true});
+say({state: 'on'});
+return 'on';
+})()"""
 
 
 PAGE_BG_JS = r"""(function(){
@@ -7678,6 +7845,7 @@ class Tab(QStackedWidget):
         v.loadFinished.connect(lambda ok, v=v: v.owner.browser.on_loaded(v.owner, ok, v))
         v.loadStarted.connect(lambda v=v: v.owner.browser.on_load_started(v.owner, v))
         v.page().pw_captured.connect(lambda d, v=v: v.owner.browser.on_pw(d))
+        v.page().reader_state.connect(lambda d, v=v: v.owner.browser.on_reader(v, d))
         return v
 
     def _view_title(self, v, t):
@@ -8166,6 +8334,8 @@ class Browser(QMainWindow):
             mm = QMenu(b_); mm.aboutToShow.connect(fn); b_.setMenu(mm); tl.addWidget(b_)
         self.split_btn = self.btn("split", "Podziel ekran (Ctrl+\\)", self.split_current)
         tl.addWidget(self.split_btn)
+        self.reader_btn = self.btn("book", "Tryb czytania (F9)", self.toggle_reader)
+        tl.addWidget(self.reader_btn)
         self.star_btn = self.btn("star", "Dodaj stronę do ekranu głównego", self.pin_current)
         tl.addWidget(self.star_btn)
         self.ai_btn = self.btn("assistant", "Asystent AI (Ctrl+J)", self.toggle_assistant)
@@ -8184,7 +8354,8 @@ class Browser(QMainWindow):
         self._tool_lay, self._compact = tl, None
         self._dense = [w for w in (tl.itemAt(i).widget() for i in range(tl.count()))
                        if isinstance(w, QToolButton) and w is not self.acct_btn]
-        self.tool_btns = {"shield": self.shield_btn, "key": self.key_btn, "split": self.split_btn, "star": self.star_btn,
+        self.tool_btns = {"shield": self.shield_btn, "key": self.key_btn, "split": self.split_btn, "reader": self.reader_btn,
+                          "star": self.star_btn,
                           "ai": self.ai_btn, "gear": self.gear_btn, "google": self.acct_btn}
         v.addWidget(tool)
         self.notice = NoticeBar(); v.addWidget(self.notice)
@@ -8284,6 +8455,7 @@ class Browser(QMainWindow):
                 ("Ctrl+Backtab", lambda: self.cycle_tab(-1)), ("Ctrl+PgDown", lambda: self.cycle_tab(1)),
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
+                ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
                 ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+D", self.toggle_dark), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
@@ -8589,6 +8761,8 @@ class Browser(QMainWindow):
                              on or web is not None)
                 elif k == "star":
                     self.act(m, "star", "Dodaj do ekranu głównego", self.pin_current, "Ctrl+D", web is not None)
+                elif k == "reader":
+                    pass   # w sekcji „widok”
                 elif k == "ai" and self.store.feature("assistant"):
                     self.act(m, "assistant", "Asystent AI", self.toggle_assistant, "Ctrl+J")
             if not m.isEmpty():
@@ -8629,6 +8803,8 @@ class Browser(QMainWindow):
         sep = QFrame(); sep.setObjectName("vsep"); sep.setFixedSize(1, 22); zr.h.addWidget(sep)
         zr.button(kind="fullscreen", tip="Pełny ekran (F11)", fn=lambda: (m.close(), self.toggle_fullscreen()))
         menu_row_action(m, zr)
+        rd = self.act(m, "book", "Tryb czytania", self.toggle_reader, "F9", web is not None)
+        rd.setCheckable(True); rd.setChecked(bool(web is not None and getattr(web, "reader_on", False)))
         dk = self.act(m, "moon", "Ciemny tryb stron", self.toggle_dark, "Ctrl+Shift+D")
         dk.setCheckable(True); dk.setChecked(self.store.feature("dark_pages"))
         if web is not None and self.store.feature("dark_pages"):
@@ -8694,6 +8870,36 @@ class Browser(QMainWindow):
 
     def toggle_dark(self):
         self.store.set_feature("dark_pages", not self.store.feature("dark_pages"))
+
+    # --- tryb czytania (nakładka na stronę; ponowne wywołanie zamyka) ---
+    def toggle_reader(self):
+        web = self.web()
+        if web is None:
+            return
+        prefs = self.store.settings.get("reader") if isinstance(self.store.settings.get("reader"), dict) else {}
+        js = READER_JS.replace("%K%", json.dumps(PW_KEY)).replace("%P%", json.dumps(prefs))
+
+        def done(res):
+            try:
+                if res == "none":
+                    self.notice.info("Na tej stronie nie znaleziono artykułu do czytania.")
+            except RuntimeError:
+                pass
+        web.page().runJavaScript(js, QWebEngineScript.ScriptWorldId.ApplicationWorld, done)
+
+    def on_reader(self, view, d):
+        view.reader_on = d.get("state") == "on"
+        if isinstance(d.get("prefs"), dict):
+            self.store.settings["reader"] = {k: d["prefs"][k] for k in ("size", "serif", "width") if k in d["prefs"]}
+            self.store.save_soon()
+        if view is self.web():
+            self.update_reader_btn()
+
+    def update_reader_btn(self):
+        web = self.web(); on = bool(web is not None and getattr(web, "reader_on", False))
+        if self.reader_btn.property("on") != on:
+            self.reader_btn.setProperty("on", on); self.reader_btn.setIcon(glyph("book", "#ffffff" if on else "#c9c9c9"))
+            self.reader_btn.setToolTip("Zamknij tryb czytania (F9)" if on else "Tryb czytania (F9)")
 
     def open_market(self, tab="cat"):
         dlg = WidgetMarket(self); dlg.show_tab(tab); dlg.exec()
@@ -9452,6 +9658,10 @@ class Browser(QMainWindow):
 
     def on_load_started(self, tab, view=None):
         view = view or tab.main
+        if view is not None and getattr(view, "reader_on", False):   # nowa strona – nakładka czytania znika razem ze starą
+            view.reader_on = False
+            if view is self.web():
+                self.update_reader_btn()
         if SHIELD and view is not None:
             SHIELD[0].reset(view.url().toString())
 
@@ -9478,6 +9688,8 @@ class Browser(QMainWindow):
             self.update_shield()
         self.address.setText("" if not t or t.on_home() or not t.web else t.web.url().toString())
         self.update_star()
+        if hasattr(self, "reader_btn"):
+            self.update_reader_btn()
         on = bool(t and t.sides)
         if hasattr(self, "split_btn") and self.split_btn.property("on") != on:   # podświetlona ikona = podział włączony
             self.split_btn.setProperty("on", on); self.split_btn.setIcon(glyph("split", "#ffffff" if on else "#c9c9c9"))
