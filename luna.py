@@ -7821,6 +7821,32 @@ class TabPanel(QWidget):
             self.b.tab_menu(self.tabs[id(it)], gp)
 
 
+class TabPreview(QFrame):
+    """Podgląd karty po najechaniu: tytuł, adres/informacje i miniatura zrobiona przy ostatnim opuszczeniu karty."""
+
+    def __init__(self):
+        super().__init__(None, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+        self.setObjectName("tabprev"); self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        self.setStyleSheet("QFrame#tabprev{background:#141414;border:1px solid #2c2c2c;border-radius:10px}"
+                           "QLabel{background:transparent}")
+        v = QVBoxLayout(self); v.setContentsMargins(10, 8, 10, 10); v.setSpacing(4)
+        self.title = lbl("", "h3"); self.info = lbl("", "muted2"); self.img = QLabel()
+        for x in (self.title, self.info):
+            x.setMaximumWidth(260)
+        v.addWidget(self.title); v.addWidget(self.info); v.addWidget(self.img)
+
+    def show_for(self, t, title, info, pos):
+        fm = self.title.fontMetrics()
+        self.title.setText(fm.elidedText(title, Qt.TextElideMode.ElideRight, 260))
+        self.info.setText("\n".join(self.info.fontMetrics().elidedText(x, Qt.TextElideMode.ElideRight, 260) for x in info if x))
+        self.info.setVisible(bool(self.info.text()))
+        th = getattr(t, "thumb", None)
+        self.img.setVisible(th is not None and not th.isNull())
+        if th is not None:
+            self.img.setPixmap(th)
+        self.adjustSize(); self.move(pos); self.show()
+
+
 class TabSearch(QFrame):
     """Szybkie wyszukiwanie kart (Ctrl+Shift+Spacja): kilka liter → Enter przenosi do karty, także z innej przestrzeni."""
 
@@ -8291,7 +8317,28 @@ class TabBar(QTabBar):
     """Pasek kart: środkowy przycisk myszy zamyka kartę (na pustym miejscu paska – nowa karta)."""
     middle_close = pyqtSignal(int)
     middle_new = pyqtSignal()
+    hover_tab = pyqtSignal(int)    # najechanie na kartę (po krótkiej chwili) → podgląd; -1 = koniec
     pinned_fn = None   # indeks → czy karta przypięta (wąska, sama ikona)
+
+    def __init__(self):
+        super().__init__(); self.setMouseTracking(True); self._hov = -1
+        self._ht = QTimer(self); self._ht.setSingleShot(True); self._ht.timeout.connect(lambda: self.hover_tab.emit(self._hov))
+
+    def mouseMoveEvent(self, ev):
+        i = self.tabAt(ev.position().toPoint())
+        if i != self._hov:
+            self._hov = i; self.hover_tab.emit(-1)
+            if i >= 0 and not (ev.buttons() & Qt.MouseButton.LeftButton):
+                self._ht.start(450)
+        super().mouseMoveEvent(ev)
+
+    def leaveEvent(self, ev):
+        self._hov = -1; self._ht.stop(); self.hover_tab.emit(-1); super().leaveEvent(ev)
+
+    def event(self, ev):
+        if ev.type() == QEvent.Type.ToolTip:   # zamiast dymka – podgląd karty (z tymi samymi informacjami)
+            return True
+        return super().event(ev)
 
     def tabSizeHint(self, i):
         s = super().tabSizeHint(i)
@@ -8371,6 +8418,7 @@ class Browser(QMainWindow):
         self.bar.middle_close.connect(lambda i: self.store.feature("shortcuts") and not self.stack.widget(i).pinned
                                       and self.close_tab(self.stack.widget(i)))   # przypiętej kółko nie zamyka
         self.bar.pinned_fn = lambda i: 0 <= i < self.stack.count() and self.stack.widget(i).pinned
+        self._preview = None; self.bar.hover_tab.connect(self._tab_hover)
         self.bar.middle_new.connect(lambda: self.mmb_new())
         self.bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.bar.customContextMenuRequested.connect(self._bar_menu)
         self.logo_btn = QToolButton(); self.logo_btn.setObjectName("logo"); self.logo_btn.setIcon(QIcon(logo_pixmap(44)))
@@ -8791,6 +8839,8 @@ class Browser(QMainWindow):
         safe_disconnect(QGuiApplication.instance().applicationStateChanged, self._state_cb)   # sprzątanie nasłuchiwaczy
         safe_disconnect(QApplication.instance().focusChanged, self._focus_changed)
         self.hide_suggest(); self.host.shutdown_all()
+        if self._preview is not None:
+            self._preview.deleteLater(); self._preview = None
         try:
             DOWNLOADS[0].started.disconnect(self.on_download)
         except (TypeError, RuntimeError):
@@ -9282,10 +9332,41 @@ class Browser(QMainWindow):
             self.switch_ws(ws)
         self.activate(t)
 
+    def _tab_hover(self, i):
+        p = self._preview
+        if i < 0 or i >= self.stack.count():
+            if p is not None:
+                p.hide()
+            return
+        t = self.stack.widget(i)
+        if p is None:
+            self._preview = p = TabPreview()
+        url = t.pending or (t.main.url().toString() if t.main is not None and not t.on_home() else "")
+        title = t.title_text or ("Ekran główny" if not url else url)
+        info = [host_of(url)] + self.bar.tabToolTip(i).split("\n")[1:]   # grupa, kontener, podział, uśpienie
+        r = self.bar.tabRect(i)
+        p.show_for(t if t is not self.cur() else None, title, info, self.bar.mapToGlobal(QPoint(r.left(), r.bottom() + 6)))
+
+    def _snap(self, t):
+        """Miniatura do podglądu – jedno zdjęcie strony w chwili jej opuszczania (bez pracy w tle)."""
+        try:
+            w = t._web_widget()
+            if w is None or t.on_home() or not w.isVisible():
+                return
+            pm = w.grab()
+            if not pm.isNull() and pm.width() > 40:
+                pm = pm.scaledToWidth(260, Qt.TransformationMode.SmoothTransformation)
+                t.thumb = pm.copy(0, 0, 260, min(pm.height(), 160))
+        except RuntimeError:
+            pass
+
     def on_tab_changed(self, i):
         prev = self._prev_tab
+        if self._preview is not None:
+            self._preview.hide()
         if prev is not None and prev in self.all_tabs():
             prev.last_active = time.time()
+            self._snap(prev)
         if 0 <= i < self.stack.count():
             self.stack.setCurrentIndex(i)
             t = self.stack.widget(i); self._prev_tab = t
