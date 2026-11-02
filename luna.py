@@ -6354,7 +6354,7 @@ def page_keys(dlg):
     w, l = page_box("Skróty klawiszowe i gesty", "Można je wyłączyć w Funkcje → Skróty klawiszowe i gesty myszy.")
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
-                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"),
+                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
@@ -7821,6 +7821,69 @@ class TabPanel(QWidget):
             self.b.tab_menu(self.tabs[id(it)], gp)
 
 
+class TabSearch(QFrame):
+    """Szybkie wyszukiwanie kart (Ctrl+Shift+Spacja): kilka liter → Enter przenosi do karty, także z innej przestrzeni."""
+
+    def __init__(self, browser):
+        super().__init__(browser, Qt.WindowType.Popup); self.b = browser
+        self.setObjectName("tabpop"); self.setFixedWidth(560)
+        v = QVBoxLayout(self); v.setContentsMargins(10, 10, 10, 10); v.setSpacing(8)
+        self.edit = QLineEdit(); self.edit.setObjectName("splitaddr"); self.edit.setPlaceholderText("Szukaj w otwartych kartach…")
+        self.edit.addAction(glyph("search"), QLineEdit.ActionPosition.LeadingPosition)
+        self.edit.textChanged.connect(self.fill); self.edit.installEventFilter(self)
+        self.list = QListWidget(); self.list.setObjectName("splitlist"); self.list.setIconSize(QSize(16, 16))
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.list.itemActivated.connect(self.choose); self.list.itemClicked.connect(self.choose)
+        v.addWidget(self.edit); v.addWidget(self.list)
+        self.tabs = []
+
+    def open(self):
+        self.edit.clear(); self.fill("")
+        g = self.b.geometry(); self.move(g.x() + (g.width() - self.width()) // 2, g.y() + 90)
+        self.show(); self.edit.setFocus()
+
+    def fill(self, q):
+        b = self.b; words = q.lower().split(); self.list.clear(); self.tabs = []
+        multi = b.store.feature("workspaces") and len(b.workspaces()) > 1
+        for t in b.all_tabs():
+            url = t.pending or (t.main.url().toString() if t.main is not None and not t.on_home() else "")
+            title = t.title_text or ("Ekran główny" if not url else url)
+            hay = f"{title} {url} {t.ws} {t.group}".lower()
+            if words and not all(w in hay for w in words):
+                continue
+            extra = "  ·  ".join(x for x in (host_of(url), t.ws if multi else "", t.group) if x)
+            it = QListWidgetItem(tab_icon(t.icon, b.container_color(t.container), t.asleep or bool(t.pending)),
+                                 title + (f"      {extra}" if extra else ""))
+            it.setToolTip(url or title); self.list.addItem(it); self.tabs.append(t)
+            if t is b.cur():
+                f = it.font(); f.setBold(True); it.setFont(f)
+        self.list.setCurrentRow(0 if self.tabs else -1)
+        rows = min(10, max(1, self.list.count()))
+        self.list.setFixedHeight(rows * 34 + 6); self.adjustSize()
+
+    def eventFilter(self, obj, ev):
+        if obj is self.edit and ev.type() == QEvent.Type.KeyPress:
+            k = ev.key(); n = self.list.count()
+            if k in (Qt.Key.Key_Down, Qt.Key.Key_Up) and n:
+                self.list.setCurrentRow((self.list.currentRow() + (1 if k == Qt.Key.Key_Down else -1)) % n); return True
+            if k in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                it = self.list.currentItem()
+                if it is not None:
+                    self.choose(it)
+                return True
+        return super().eventFilter(obj, ev)
+
+    def choose(self, it):
+        i = self.list.row(it)
+        if 0 <= i < len(self.tabs):
+            t = self.tabs[i]; self.hide()
+            if t in self.b.all_tabs():
+                if t.ws != self.b.ws and self.b.store.feature("workspaces"):
+                    self.b.switch_ws(t.ws)
+                self.b.activate(t)
+
+
 class Tab(QStackedWidget):
     """Karta: ekran główny, a po wejściu na stronę – widok WWW (tworzony leniwie). Należy do przestrzeni roboczej,
     opcjonalnie do grupy i kontenera; może mieć podział ekranu (druga strona obok) i może zostać uśpiona."""
@@ -7831,6 +7894,7 @@ class Tab(QStackedWidget):
         self.ws, self.group, self.container = ws, group, container
         self.title_text, self.icon, self.split, self.sides, self._act = "", None, None, None, 0
         self.asleep, self.pending, self.pending_split, self.last_active = False, "", None, time.time()
+        self.pinned = False
         self.home = HomePage(store)
         self.addWidget(self.home)
         self.home.attach_suggest(browser)
@@ -8025,7 +8089,7 @@ class Tab(QStackedWidget):
             b.on_title(self, keep.title()); b.on_icon(self, keep.icon()); keep.setFocus()
         else:
             self.title_text, self.icon = "", None; self.show_home()
-            b.bar.setTabText(b.stack.indexOf(self), "Ekran główny")
+            b.set_tab_text(self, "Ekran główny")
         b.decorate(self); b.sync_address(); b.update_sidebars_soon(); b.tabs_changed()
 
     def swap_split(self):
@@ -8227,6 +8291,15 @@ class TabBar(QTabBar):
     """Pasek kart: środkowy przycisk myszy zamyka kartę (na pustym miejscu paska – nowa karta)."""
     middle_close = pyqtSignal(int)
     middle_new = pyqtSignal()
+    pinned_fn = None   # indeks → czy karta przypięta (wąska, sama ikona)
+
+    def tabSizeHint(self, i):
+        s = super().tabSizeHint(i)
+        return QSize(44, s.height()) if self.pinned_fn is not None and self.pinned_fn(i) else s
+
+    def minimumTabSizeHint(self, i):
+        s = super().minimumTabSizeHint(i)
+        return QSize(44, s.height()) if self.pinned_fn is not None and self.pinned_fn(i) else s
 
     def mousePressEvent(self, ev):
         if ev.button() == Qt.MouseButton.MiddleButton:   # QTabBar ignoruje środkowy przycisk – wciśnięcie trafiało do paska
@@ -8295,7 +8368,9 @@ class Browser(QMainWindow):
         self.bar.setDrawBase(False); self.bar.setElideMode(Qt.TextElideMode.ElideRight)
         self.bar.currentChanged.connect(self.on_tab_changed)
         self.bar.tabMoved.connect(self.on_tab_moved)
-        self.bar.middle_close.connect(lambda i: self.store.feature("shortcuts") and self.close_tab(self.stack.widget(i)))
+        self.bar.middle_close.connect(lambda i: self.store.feature("shortcuts") and not self.stack.widget(i).pinned
+                                      and self.close_tab(self.stack.widget(i)))   # przypiętej kółko nie zamyka
+        self.bar.pinned_fn = lambda i: 0 <= i < self.stack.count() and self.stack.widget(i).pinned
         self.bar.middle_new.connect(lambda: self.mmb_new())
         self.bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.bar.customContextMenuRequested.connect(self._bar_menu)
         self.logo_btn = QToolButton(); self.logo_btn.setObjectName("logo"); self.logo_btn.setIcon(QIcon(logo_pixmap(44)))
@@ -8480,6 +8555,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
+                ("Ctrl+Shift+Space", self.search_tabs),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
                 ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+D", self.toggle_dark), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
@@ -8793,6 +8869,7 @@ class Browser(QMainWindow):
                 m.addSeparator()
         # 1. karty i okna
         self.act(m, "plus", "Nowa karta", self.new_tab, "Ctrl+T")
+        self.act(m, "search", "Szukaj w kartach…", self.search_tabs, "Ctrl+Shift+Space")
         self.act(m, "window", "Nowe okno", self.new_window, "Ctrl+N")
         self.act(m, "private", "Nowe okno prywatne", lambda: self.new_window(True), "Ctrl+Shift+N")
         m.addSeparator()
@@ -9089,10 +9166,7 @@ class Browser(QMainWindow):
         t = Tab(self.store, self, ws or self.ws, group or "", container)
         self.stack.addWidget(t)
         i = self.bar.addTab((title or "Ekran główny")[:26])
-        cb = QToolButton(); cb.setObjectName("tabclose"); cb.setFixedSize(20, 20); cb.setIconSize(QSize(14, 14))
-        cb.setIcon(glyph("close", "#8c8c8c")); cb.setCursor(Qt.CursorShape.PointingHandCursor); cb.setToolTip("Zamknij kartę")
-        cb.clicked.connect(lambda: self.close_tab(t))
-        self.bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, cb)
+        self._close_btn(t, True)
         if lazy_url:   # przywrócona karta: strona wczyta się dopiero po wejściu na kartę
             t.pending, t.title_text = lazy_url, title
         self.decorate(t)
@@ -9100,6 +9174,35 @@ class Browser(QMainWindow):
             self.bar.setCurrentIndex(i)
         self.refresh_close_icons(); self.tabs_changed()
         return t
+
+    def _close_btn(self, t, on):
+        i = self.stack.indexOf(t)
+        if i < 0:
+            return
+        cb = None
+        if on:
+            cb = QToolButton(); cb.setObjectName("tabclose"); cb.setFixedSize(20, 20); cb.setIconSize(QSize(14, 14))
+            cb.setIcon(glyph("close", "#8c8c8c")); cb.setCursor(Qt.CursorShape.PointingHandCursor); cb.setToolTip("Zamknij kartę")
+            cb.clicked.connect(lambda: self.close_tab(t))
+        self.bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, cb)
+
+    def set_tab_text(self, t, text):
+        """Tytuł na pasku kart; przypięta karta pokazuje samą ikonę (tytuł w podpowiedzi)."""
+        i = self.stack.indexOf(t)
+        if i >= 0:
+            self.bar.setTabText(i, "" if t.pinned else (text[:26] or "…"))
+
+    # --- przypięte karty: sama ikona na początku paska, bez krzyżyka, kółko ich nie zamyka ---
+    def pin_tab(self, t, on):
+        if t.pinned == on or self.stack.indexOf(t) < 0:
+            return
+        t.pinned = on
+        n = sum(1 for x in self.all_tabs() if x.pinned and x is not t)   # przypięte trzymają się lewej strony
+        self.bar.moveTab(self.stack.indexOf(t), n)
+        self._close_btn(t, not on)
+        self.set_tab_text(t, t.title_text or "Ekran główny"); self.decorate(t)
+        self.refresh_close_icons(); self.tabs_changed()
+        self.bar.updateGeometry(); self.bar.adjustSize()   # wąska karta – pasek od razu się zwęża (bez dziury przed „+”)
 
     def all_tabs(self):
         return [self.stack.widget(i) for i in range(self.stack.count())]
@@ -9145,11 +9248,16 @@ class Browser(QMainWindow):
             except Exception:
                 pass
         self._closed.append({"view": v, "url": url, "title": tab.title_text, "icon": tab.icon, "ws": tab.ws,
-                             "group": tab.group, "container": tab.container, "index": index})
+                             "group": tab.group, "container": tab.container, "index": index, "pinned": tab.pinned})
         while len(self._closed) > self.CLOSED_MAX:
             old = self._closed.pop(0)
             if old["view"] is not None:
                 old["view"].deleteLater()
+
+    def search_tabs(self):
+        if getattr(self, "_tab_search", None) is None:
+            self._tab_search = TabSearch(self)
+        self._tab_search.open()
 
     def restore_closed(self, i=None):
         if not self._closed:
@@ -9168,6 +9276,8 @@ class Browser(QMainWindow):
             t.adopt_view(v); v.show()
         else:
             t.go(d["url"])
+        if d.get("pinned"):
+            self.pin_tab(t, True)
         if ws != self.ws:
             self.switch_ws(ws)
         self.activate(t)
@@ -9195,7 +9305,7 @@ class Browser(QMainWindow):
         if i < 0:
             return
         col = self.container_color(t.container)
-        has = (t.icon is not None and not t.icon.isNull()) or col or t.asleep or t.pending
+        has = (t.icon is not None and not t.icon.isNull()) or col or t.asleep or t.pending or t.pinned
         self.bar.setTabIcon(i, tab_icon(t.icon, col, t.asleep or bool(t.pending)) if has else QIcon())
         tip = t.title_text or "Ekran główny"
         if t.group:
@@ -9265,6 +9375,8 @@ class Browser(QMainWindow):
             sp = t.split_state() if url else None
             if sp:
                 d["split"] = sp
+            if t.pinned:
+                d["pinned"] = True
             tabs.append(d)
         return {"tabs": tabs, "current": self.stack.currentIndex()}
 
@@ -9279,6 +9391,8 @@ class Browser(QMainWindow):
                               group=d.get("group", ""), title=d.get("title", ""), lazy_url=d.get("url", ""), activate=False)
             if d.get("url") and isinstance(d.get("split"), dict):
                 nt.pending_split = d["split"]
+            if d.get("pinned"):
+                self.pin_tab(nt, True)
         i = s.get("current", 0)
         t = self.stack.widget(i) if isinstance(i, int) and 0 <= i < self.stack.count() else self.stack.widget(0)
         self.ws = t.ws; self.store.settings["ws_current"] = t.ws
@@ -9464,6 +9578,8 @@ class Browser(QMainWindow):
     # --- menu karty (pasek poziomy i panel pionowy) ---
     def tab_menu(self, t, pos):
         m = QMenu(self)
+        m.addAction(glyph("pin"), "Odepnij kartę" if t.pinned else "Przypnij kartę", lambda: self.pin_tab(t, not t.pinned))
+        m.addSeparator()
         if t.group:
             m.addAction("Nowa karta w tej grupie", lambda: self.new_tab(group=t.group, container=t.container))
         gm = m.addMenu("Grupa")
@@ -9704,8 +9820,7 @@ class Browser(QMainWindow):
 
     def go_home(self):
         t = self.cur(); t.show_home(); t.title_text, t.icon = "", None
-        i = self.stack.indexOf(t)
-        self.bar.setTabText(i, "Ekran główny"); self.decorate(t); self.tabs_changed()
+        self.set_tab_text(t, "Ekran główny"); self.decorate(t); self.tabs_changed()
         self.address.clear(); self.update_sidebars_soon()
 
     def submit(self):
@@ -9733,7 +9848,7 @@ class Browser(QMainWindow):
         i = self.stack.indexOf(tab)
         tab.title_text = title
         if i >= 0:
-            self.bar.setTabText(i, title[:26] or "…"); self.decorate(tab)
+            self.set_tab_text(tab, title); self.decorate(tab)
         self.tabs_changed()
         if tab.main is not None:
             self.store.session.on_tab_title(tab, tab.main.url().toString(), title)
