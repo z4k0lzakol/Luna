@@ -8037,6 +8037,11 @@ class TabBar(QTabBar):
     middle_close = pyqtSignal(int)
     middle_new = pyqtSignal()
 
+    def mousePressEvent(self, ev):
+        if ev.button() == Qt.MouseButton.MiddleButton:   # QTabBar ignoruje środkowy przycisk – wciśnięcie trafiało do paska
+            ev.accept(); return                          # tytułu (= nowa karta), więc kółko zamykało kartę I otwierało nową
+        super().mousePressEvent(ev)
+
     def mouseReleaseEvent(self, ev):
         if ev.button() == Qt.MouseButton.MiddleButton:
             i = self.tabAt(ev.position().toPoint())
