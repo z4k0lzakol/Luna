@@ -1544,6 +1544,26 @@ class WebView(QWebEngineView):
         self.setPage(LunaPage(get_profile(container), self))
         self.page().setBackgroundColor(QColor("#111111"))
 
+    # karta przeciągnięta z paska kart → podział ekranu (ta strona + przeciągnięta). Przeciąganie nad stroną trafia do
+    # wewnętrznego widżetu silnika (focusProxy), więc tam podpinamy filtr; inne przeciągane dane idą do strony jak dotąd.
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        fp = self.focusProxy()
+        if fp is not None and getattr(self, "_drop_fp", None) is not fp:
+            self._drop_fp = fp; fp.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        t = ev.type()
+        if t in (QEvent.Type.DragEnter, QEvent.Type.DragMove, QEvent.Type.Drop) and ev.mimeData().hasFormat(TAB_MIME):
+            if not getattr(self, "owner", None):
+                return False
+            ev.acceptProposedAction()
+            if t == QEvent.Type.Drop:
+                b = self.owner.browser; tab = b.tab_from_mime(ev.mimeData())
+                QTimer.singleShot(0, lambda: b.drop_tab_on_view(self, tab))
+            return True
+        return super().eventFilter(obj, ev)
+
     def createWindow(self, wtype):
         W = QWebEnginePage.WebWindowType
         if wtype in (W.WebDialog, W.WebBrowserWindow):  # np. okno logowania Google/OAuth
@@ -2399,6 +2419,10 @@ class Skeleton(QWidget):
             p.setBrush(QBrush(g)); p.drawRoundedRect(r, 7, 7)
 
 
+WIDGET_MIME = "application/x-luna-widget"
+TAB_MIME = "application/x-luna-tab"
+
+
 class WidgetFrame(QFrame):
     """Szklana ramka widgetu: nagłówek (tytuł, zwijanie, menu) + treść. Timery i sieć działają tylko, gdy
     widget jest widoczny i rozwinięty (start/stop); po wyłączeniu widget jest usuwany z pamięci."""
@@ -2422,7 +2446,11 @@ class WidgetFrame(QFrame):
         self.fold_btn.setToolTip("Zwiń / rozwiń"); self.fold_btn.clicked.connect(lambda: self.toggle())
         h.addWidget(self.menu_btn); h.addWidget(self.fold_btn)
         v.addWidget(self.head)
-        self.head.mousePressEvent = lambda ev: self.toggle() if ev.button() == Qt.MouseButton.LeftButton else None
+        # nagłówek: kliknięcie zwija, przeciągnięcie przenosi widget (kolejność albo drugi panel)
+        self._press = None
+        self.head.mousePressEvent = self._head_press
+        self.head.mouseMoveEvent = self._head_move
+        self.head.mouseReleaseEvent = self._head_release
         self.body = QWidget(); self.body.setObjectName("clear")
         self.lay = QVBoxLayout(self.body); self.lay.setContentsMargins(16, 0, 16, 14); self.lay.setSpacing(6)
         v.addWidget(self.body)
@@ -2456,6 +2484,29 @@ class WidgetFrame(QFrame):
 
     def set_badge(self, n):
         self.badge.setText(str(n)); self.badge.setVisible(bool(n))
+
+    def _head_press(self, ev):
+        self._press = ev.position().toPoint() if ev.button() == Qt.MouseButton.LeftButton else None
+
+    def _head_move(self, ev):
+        if self._press is None or not ev.buttons() & Qt.MouseButton.LeftButton:
+            return
+        if (ev.position().toPoint() - self._press).manhattanLength() < QApplication.startDragDistance():
+            return
+        self._press = None
+        from PyQt6.QtGui import QDrag
+        from PyQt6.QtCore import QMimeData
+        md = QMimeData(); md.setData(WIDGET_MIME, self.wid.encode())
+        d = QDrag(self.head); d.setMimeData(md)
+        pm = self.grab(QRect(0, 0, self.width(), min(self.height(), 140)))
+        d.setPixmap(pm.scaledToWidth(max(1, int(pm.width() / max(1.0, pm.devicePixelRatio()) * 0.8)),
+                                     Qt.TransformationMode.SmoothTransformation))
+        d.setHotSpot(QPoint(20, 12)); d.exec(Qt.DropAction.MoveAction)
+
+    def _head_release(self, ev):
+        if self._press is not None and ev.button() == Qt.MouseButton.LeftButton:
+            self.toggle()
+        self._press = None
 
     def _fold_icon(self):
         self.fold_btn.setIcon(glyph("chev_right" if self.collapsed else "chev_down", "#9a9a9a"))
@@ -2564,7 +2615,42 @@ class Sidebar(QWidget):
         self.user_collapsed = bool(store.settings.get("sidebar", {}).get(side, False))  # wybór użytkownika (zapisywany)
         self.collapsed = self.user_collapsed                                            # stan widoczny (może być wymuszony)
         self.scroll.setVisible(not self.collapsed); self._rail_icon()
-        self._count = 0
+        self._count = 0; self.frames = []
+        self.setAcceptDrops(True)   # upuszczenie widgetu: zmiana kolejności albo przeniesienie z drugiego panelu
+        self.marker = QFrame(self.inner); self.marker.setStyleSheet("background:#e6e6e6;border-radius:1px")
+        self.marker.setFixedHeight(3); self.marker.hide()
+        self.on_drop = None   # (wid, side, index) – ustawia WidgetHost
+
+    def _drop_index(self, pos):
+        y = self.inner.mapFrom(self, pos).y()
+        for i, f in enumerate(self.frames):
+            if f.isVisible() and y < f.y() + f.height() / 2:
+                return i
+        return len(self.frames)
+
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasFormat(WIDGET_MIME):
+            ev.acceptProposedAction()
+
+    def dragMoveEvent(self, ev):
+        if not ev.mimeData().hasFormat(WIDGET_MIME):
+            return
+        ev.acceptProposedAction(); i = self._drop_index(ev.position().toPoint())
+        vis = [f for f in self.frames if f.isVisible()]
+        if i < len(self.frames):
+            y = self.frames[i].y() - 7
+        else:
+            y = (vis[-1].y() + vis[-1].height() + 5) if vis else 12
+        self.marker.setGeometry(12, max(2, y), self.inner.width() - 24, 3); self.marker.show(); self.marker.raise_()
+
+    def dragLeaveEvent(self, ev):
+        self.marker.hide()
+
+    def dropEvent(self, ev):
+        self.marker.hide()
+        if ev.mimeData().hasFormat(WIDGET_MIME) and self.on_drop is not None:
+            wid = bytes(ev.mimeData().data(WIDGET_MIME)).decode()
+            self.on_drop(wid, self.side, self._drop_index(ev.position().toPoint())); ev.acceptProposedAction()
 
     def has_widgets(self):
         return self._count > 0
@@ -2604,7 +2690,7 @@ class Sidebar(QWidget):
         for w in ws:
             self.col.addWidget(w); w.show()
         self.col.addStretch(1)
-        self._count = len(ws)
+        self._count = len(ws); self.frames = list(ws)
 
 
 class WidgetHost(QObject):
@@ -2618,6 +2704,7 @@ class WidgetHost(QObject):
         self.app_active = True
         self.left, self.right = Sidebar("left", store), Sidebar("right", store)
         self.left.rail_clicked.connect(browser.toggle_sidebar); self.right.rail_clicked.connect(browser.toggle_sidebar)
+        self.left.on_drop = self.right.on_drop = self.drop
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.sync)
         store.layout_changed.connect(lambda: self._t.start(30))
 
@@ -2682,6 +2769,18 @@ class WidgetHost(QObject):
         a, b = ids.index(on[i]), ids.index(on[j]); ids[a], ids[b] = ids[b], ids[a]   # pomijamy niezainstalowane
         self.store.apply_layout(**{side: ids, ("right" if side == "left" else "left"):
                                    self.store.side_order("right" if side == "left" else "left")})
+
+    def drop(self, wid, side, index):
+        """Przeciągnięty widget ląduje w panelu `side` przed `index`-tym widocznym widgetem (lub na końcu)."""
+        if wid not in WIDGETS:
+            return
+        sb = self.left if side == "left" else self.right
+        before = sb.frames[index].wid if index < len(sb.frames) else None
+        other = "right" if side == "left" else "left"
+        a = [w for w in self.store.side_order(side) if w != wid]
+        a.insert(a.index(before) if before in a else len(a), wid)
+        b = [w for w in self.store.side_order(other) if w != wid]
+        self.store.apply_layout(**{side: a, other: b})
 
     def flip(self, wid):
         side = self.store.wcfg(wid)["side"]; other = "right" if side == "left" else "left"
@@ -8163,6 +8262,22 @@ def tab_icon(icon, color=None, asleep=False):
     return QIcon(pm)
 
 
+class _DropFilter(QObject):
+    """Przyjmuje przeciąganie danego typu na zwykły widżet (np. przycisk) i wywołuje fn() po upuszczeniu."""
+
+    def __init__(self, mime, fn, target):
+        super().__init__(target); self.mime, self.fn = mime, fn; target.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        t = ev.type()
+        if t in (QEvent.Type.DragEnter, QEvent.Type.DragMove) and ev.mimeData().hasFormat(self.mime):
+            ev.acceptProposedAction(); return True
+        if t == QEvent.Type.Drop and ev.mimeData().hasFormat(self.mime):
+            ev.acceptProposedAction(); data = bytes(ev.mimeData().data(self.mime))
+            QTimer.singleShot(0, lambda: self.fn(data)); return True
+        return False
+
+
 class _Null:
     """Właściciel zastępczy dla widoku zamkniętej karty: każde odwołanie i wywołanie jest pustą operacją."""
     def __getattr__(self, name):
@@ -8220,6 +8335,7 @@ class SplitSide(QFrame):
     def __init__(self, tab, view=None):
         super().__init__(); self.tab, self.view = tab, None
         self.setObjectName("splitside"); self.setProperty("active", False); self.setMinimumSize(220, 160)
+        self.setAcceptDrops(True)
         v = QVBoxLayout(self); v.setContentsMargins(1, 0, 1, 1); v.setSpacing(0); self.v = v
         head = QWidget(); head.setObjectName("splithead"); head.setFixedHeight(30)
         h = QHBoxLayout(head); h.setContentsMargins(10, 2, 4, 0); h.setSpacing(2)
@@ -8245,6 +8361,16 @@ class SplitSide(QFrame):
 
     def mousePressEvent(self, ev):
         self.tab.set_active_side(self); super().mousePressEvent(ev)
+
+    def dragEnterEvent(self, ev):   # karta upuszczona na nagłówek lub pustą stronę podziału
+        if ev.mimeData().hasFormat(TAB_MIME):
+            ev.acceptProposedAction()
+
+    def dropEvent(self, ev):
+        if ev.mimeData().hasFormat(TAB_MIME):
+            ev.acceptProposedAction(); t = self.tab.browser.tab_from_mime(ev.mimeData())
+            if t is not None:
+                QTimer.singleShot(0, lambda: self.tab.adopt_tab(self, t))
 
     def set_active(self, on):
         if self.property("active") != on:
@@ -8534,6 +8660,13 @@ class Tab(QStackedWidget):
             self.browser.on_icon(self, i)
         self._side_refresh(v)
 
+    def _sync_main(self):
+        """Główna strona karty = lewa/górna strona podziału (po podmianie tej strony – nowy tytuł i ikona karty)."""
+        if self.sides and self.sides[0].view is not self._main:
+            self._main = self.sides[0].view
+            if self._main is not None:
+                self.browser.on_title(self, self._main.title()); self.browser.on_icon(self, self._main.icon())
+
     def _side_refresh(self, v):
         for s in self.sides or []:
             if s.view is v:
@@ -8601,7 +8734,7 @@ class Tab(QStackedWidget):
             self.browser.split_focus_changed(self)
 
     def load_side(self, side, url):
-        v = self._new_view(); side.set_view(v); v.setUrl(QUrl(normalize(url)))
+        v = self._new_view(); side.set_view(v); v.setUrl(QUrl(normalize(url))); self._sync_main()
         self._act = -1; self.set_active_side(side); v.setFocus()
         for s in self.sides:
             s.refresh()
@@ -8622,7 +8755,7 @@ class Tab(QStackedWidget):
                     v.page().setLifecycleState(QWebEnginePage.LifecycleState.Active)
                 except Exception:
                     pass
-            side.set_view(v); self._act = -1; self.set_active_side(side)
+            side.set_view(v); self._sync_main(); self._act = -1; self.set_active_side(side)
         else:
             self.load_side(side, url)
         b.close_tab(o, remember=False); self.setCurrentWidget(self.split); b.activate(self)
@@ -8876,13 +9009,21 @@ class TabBar(QTabBar):
     middle_close = pyqtSignal(int)
     middle_new = pyqtSignal()
     hover_tab = pyqtSignal(int)    # najechanie na kartę (po krótkiej chwili) → podgląd; -1 = koniec
+    drag_out = pyqtSignal(int)     # karta wyciągnięta w dół/górę z paska → przeciąganie na stronę lub przestrzeń
     pinned_fn = None   # indeks → czy karta przypięta (wąska, sama ikona)
 
     def __init__(self):
-        super().__init__(); self.setMouseTracking(True); self._hov = -1
+        super().__init__(); self.setMouseTracking(True); self._hov = -1; self._press_i = -1
         self._ht = QTimer(self); self._ht.setSingleShot(True); self._ht.timeout.connect(lambda: self.hover_tab.emit(self._hov))
 
     def mouseMoveEvent(self, ev):
+        y = ev.position().y()
+        if self._press_i >= 0 and ev.buttons() & Qt.MouseButton.LeftButton and (y < -28 or y > self.height() + 28):
+            self._press_i = -1
+            from PyQt6.QtGui import QMouseEvent   # kończymy wewnętrzne przesuwanie karty, zanim zacznie się przeciąganie
+            super().mouseReleaseEvent(QMouseEvent(QEvent.Type.MouseButtonRelease, ev.position(), ev.globalPosition(),
+                                                  Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
+            self.hover_tab.emit(-1); self.drag_out.emit(self.currentIndex()); return
         i = self.tabAt(ev.position().toPoint())
         if i != self._hov:
             self._hov = i; self.hover_tab.emit(-1)
@@ -8909,9 +9050,11 @@ class TabBar(QTabBar):
     def mousePressEvent(self, ev):
         if ev.button() == Qt.MouseButton.MiddleButton:   # QTabBar ignoruje środkowy przycisk – wciśnięcie trafiało do paska
             ev.accept(); return                          # tytułu (= nowa karta), więc kółko zamykało kartę I otwierało nową
+        self._press_i = self.tabAt(ev.position().toPoint()) if ev.button() == Qt.MouseButton.LeftButton else -1
         super().mousePressEvent(ev)
 
     def mouseReleaseEvent(self, ev):
+        self._press_i = -1
         if ev.button() == Qt.MouseButton.MiddleButton:
             i = self.tabAt(ev.position().toPoint())
             self.middle_close.emit(i) if i >= 0 else self.middle_new.emit()
@@ -8978,6 +9121,7 @@ class Browser(QMainWindow):
                                       and self.close_tab(self.stack.widget(i)))   # przypiętej kółko nie zamyka
         self.bar.pinned_fn = lambda i: 0 <= i < self.stack.count() and self.stack.widget(i).pinned
         self._preview = None; self.bar.hover_tab.connect(self._tab_hover)
+        self._dragging = None; self.bar.drag_out.connect(self._drag_tab_out)
         self.bar.middle_new.connect(lambda: self.mmb_new())
         self.bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.bar.customContextMenuRequested.connect(self._bar_menu)
         self.logo_btn = QToolButton(); self.logo_btn.setObjectName("logo"); self.logo_btn.setIcon(QIcon(logo_pixmap(44)))
@@ -8996,6 +9140,7 @@ class Browser(QMainWindow):
         self.ws_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup); self.ws_btn.setToolTip("Przestrzeń robocza")
         self.ws_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         wm = QMenu(self.ws_btn); wm.aboutToShow.connect(self.ws_menu); self.ws_btn.setMenu(wm)
+        self.ws_btn.setAcceptDrops(True); self._ws_drop = _DropFilter(TAB_MIME, self._drop_tab_on_ws, self.ws_btn)   # karta → przestrzeń
         sl.addWidget(self.ws_btn); sl.addSpacing(4)
         self.plus_btn = self.btn("plus", "Nowa karta (Ctrl+T) – prawy klik: w kontenerze", self.new_tab, 30)
         self.plus_btn.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -10017,6 +10162,55 @@ class Browser(QMainWindow):
             if old["view"] is not None:
                 old["view"].deleteLater()
 
+    # --- przeciąganie kart: na stronę (podział ekranu) albo na ikonę przestrzeni roboczej ---
+    def _drag_tab_out(self, i):
+        if not 0 <= i < self.stack.count():
+            return
+        from PyQt6.QtGui import QDrag
+        from PyQt6.QtCore import QMimeData
+        t = self.stack.widget(i); self._dragging = t
+        back = getattr(self, "_before_last", None)   # wciśnięcie aktywowało przeciąganą kartę – wracamy na poprzednią,
+        if back is not None and back is not t and back in self.all_tabs() and self.in_view(back):   # to ją dzielimy
+            self.activate(back)
+        md = QMimeData(); md.setData(TAB_MIME, str(id(t)).encode())   # identyfikator karty (nie indeks – ten się zmienia)
+        d = QDrag(self.bar); d.setMimeData(md)
+        th = getattr(t, "thumb", None)
+        pm = th.scaledToWidth(180, Qt.TransformationMode.SmoothTransformation) if th is not None and not th.isNull() \
+            else self.bar.grab(self.bar.tabRect(i))
+        d.setPixmap(pm); d.setHotSpot(QPoint(pm.width() // 2, 10))
+        d.exec(Qt.DropAction.MoveAction)
+        QTimer.singleShot(50, lambda: setattr(self, "_dragging", None))   # po obsłudze upuszczenia (singleShot 0)
+
+    def tab_from_mime(self, md):
+        try:
+            key = int(bytes(md.data(TAB_MIME) if hasattr(md, "data") else md).decode())
+        except (ValueError, TypeError):
+            return None
+        return next((t for t in self.all_tabs() if id(t) == key), None)
+
+    def drop_tab_on_view(self, view, t=None):
+        """Karta upuszczona na stronę: podział ekranu z tą stroną (przy podziale – na wskazaną stronę)."""
+        t, T = t or self._dragging, getattr(view, "owner", None)
+        if t is None or not T or T is t or T not in self.all_tabs() or t not in self.all_tabs():
+            return
+        if T.sides:
+            side = next((s for s in T.sides if s.view is view), T.sides[1])
+        else:
+            T.split_with(""); side = T.sides[1] if T.sides else None
+        if side is not None:
+            T.adopt_tab(side, t)
+
+    def _drop_tab_on_ws(self, data=b""):
+        t = self.tab_from_mime(data) or self._dragging
+        if t is None or t not in self.all_tabs():
+            return
+        m = QMenu(self); m.addAction("Przenieś kartę do przestrzeni:").setEnabled(False)
+        for w in self.workspaces():
+            if w != t.ws:
+                m.addAction(glyph("layers"), w, lambda w=w: self.move_to_ws(t, w))
+        m.addAction(glyph("plus"), "Nowa przestrzeń…", lambda: self._move_new_ws(t))
+        m.exec(QCursor.pos())
+
     def task_manager(self):
         TaskManager(self).exec()
 
@@ -10087,7 +10281,10 @@ class Browser(QMainWindow):
                 self._pause_background(prev)   # na baterii film w opuszczonej karcie się zatrzymuje
         if 0 <= i < self.stack.count():
             self.stack.setCurrentIndex(i)
-            t = self.stack.widget(i); self._prev_tab = t
+            t = self.stack.widget(i)
+            if t is not prev:
+                self._before_last = prev
+            self._prev_tab = t
             if t.asleep or t.pending:
                 t.wake(); self.decorate(t)
             t.last_active = time.time()
