@@ -6735,10 +6735,16 @@ class SuggestPopup(QFrame):
     activated = pyqtSignal(dict)
 
     def __init__(self):
-        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint
                          | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.WindowDoesNotAcceptFocus)
         self.owner = None
-        self.setObjectName("sugg_popup")
+        self.setObjectName("sugg_popup"); self.setWindowTitle("Luna")
+        if sys.platform == "win32":   # bez systemowej animacji pojawiania się (na Windows miga wtedy czarny prostokąt)
+            try:
+                import ctypes
+                ctypes.windll.dwmapi.DwmSetWindowAttribute(int(self.winId()), 3, ctypes.byref(ctypes.c_int(1)), 4)
+            except Exception:
+                pass
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating); self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         outer = QVBoxLayout(self); outer.setContentsMargins(12, 2, 12, 18)
         self.card = QFrame(); self.card.setObjectName("sugg_card")
@@ -6787,7 +6793,15 @@ class SuggestController(QObject):
         self.edit, self.br, self.store = edit, browser, browser.store
         self.net, self.seq, self.reply = [], 0, None
         self.timer = QTimer(self); self.timer.setSingleShot(True); self.timer.timeout.connect(self.fetch_net)
+        # chowanie z opóźnieniem: przy pisaniu lista bywa na chwilę pusta (zanim przyjdą podpowiedzi z sieci) –
+        # bez tego okienko znikało i wracało przy każdej literze (mignięcie)
+        self._hide_t = QTimer(self); self._hide_t.setSingleShot(True); self._hide_t.timeout.connect(self._hide_popup)
         edit.installEventFilter(self); edit.textEdited.connect(self.on_text)
+
+    def _hide_popup(self):
+        p = self.br._suggest
+        if p is not None and p.owner is self:
+            p.hide()
 
     @staticmethod
     def looks_like_url(t):
@@ -6798,10 +6812,7 @@ class SuggestController(QObject):
         return p is not None and p.isVisible() and p.owner is self
 
     def hide(self):
-        self.timer.stop(); self.abort()
-        p = self.br._suggest
-        if p is not None and p.owner is self:
-            p.hide()
+        self.timer.stop(); self._hide_t.stop(); self.abort(); self._hide_popup()
 
     def abort(self):
         self.seq += 1
@@ -6870,10 +6881,12 @@ class SuggestController(QObject):
     def rebuild(self):
         q = self.edit.text().strip(); es = self.entries(q) if q else []
         if len(es) < 2:
-            p = self.br._suggest
-            if p is not None and p.owner is self:
-                p.hide()
+            if self.visible() and q and not self._hide_t.isActive():
+                self._hide_t.start(400)   # podpowiedzi z sieci zwykle zdążą – okienko zostaje bez mrugania
+            elif not q:
+                self._hide_popup()
             return
+        self._hide_t.stop()
         p = self.br.suggest_popup(); p.owner = self; p.set_entries(es); p.show_below(self.edit)
 
     def choose(self, e):
