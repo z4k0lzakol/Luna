@@ -9661,7 +9661,8 @@ class Browser(QMainWindow):
 
     def on_download(self, name):
         if self.isActiveWindow():
-            self.notice.ask(f"Pobieranie: {name}", [("Pokaż pobrane", self.show_downloads, True), ("OK", None, False)])
+            self.notice.ask(f"Pobieranie: {name}", [("Pokaż pobrane", self.show_downloads, True), ("OK", None, False)],
+                            icon="download")
 
     def clear_data(self):
         ClearDataDialog(self).exec()
