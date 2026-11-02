@@ -1415,6 +1415,46 @@ def _dpapi(data: bytes, protect: bool) -> bytes:
         ctypes.windll.kernel32.LocalFree(ctypes.cast(out.pbData, ctypes.c_void_p))
 
 
+# --- kopia zapasowa: jeden plik zaszyfrowany hasłem (scrypt → klucze; strumień HMAC-SHA256 w trybie licznika; HMAC jako
+# znacznik integralności). Tylko biblioteka standardowa. Hasła z DPAPI są w kopii odszyfrowane i chronione hasłem kopii. ---
+BACKUP_MAGIC = b"LUNABAK1"
+FROZEN = [False]   # True po przywróceniu kopii, do ponownego uruchomienia
+
+
+def _backup_keys(password, salt):
+    k = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=2 ** 15, r=8, p=1, maxmem=64 * 2 ** 20, dklen=64)
+    return k[:32], k[32:]
+
+
+def _keystream_xor(key, nonce, data):
+    import hmac
+    out = bytearray(len(data)); n = 0
+    for i in range(0, len(data), 32):
+        block = hmac.new(key, nonce + n.to_bytes(8, "big"), hashlib.sha256).digest(); n += 1
+        chunk = data[i:i + 32]
+        out[i:i + len(chunk)] = (int.from_bytes(chunk, "big") ^ int.from_bytes(block[:len(chunk)], "big")).to_bytes(len(chunk), "big")
+    return bytes(out)
+
+
+def backup_encrypt(payload: dict, password: str) -> bytes:
+    import hmac, zlib
+    raw = zlib.compress(json.dumps(payload, ensure_ascii=False).encode("utf-8"), 9)
+    salt, nonce = secrets.token_bytes(16), secrets.token_bytes(16); ek, mk = _backup_keys(password, salt)
+    body = BACKUP_MAGIC + salt + nonce + _keystream_xor(ek, nonce, raw)
+    return body + hmac.new(mk, body, hashlib.sha256).digest()
+
+
+def backup_decrypt(blob: bytes, password: str) -> dict:
+    """ValueError z opisem po polsku: zły plik albo złe hasło."""
+    import hmac, zlib
+    if len(blob) < 8 + 32 + 32 or not blob.startswith(BACKUP_MAGIC):
+        raise ValueError("To nie jest plik kopii zapasowej Luny.")
+    body, tag = blob[:-32], blob[-32:]; salt, nonce = body[8:24], body[24:40]; ek, mk = _backup_keys(password, salt)
+    if not hmac.compare_digest(hmac.new(mk, body, hashlib.sha256).digest(), tag):
+        raise ValueError("Złe hasło albo uszkodzony plik kopii.")
+    return json.loads(zlib.decompress(_keystream_xor(ek, nonce, body[40:])).decode("utf-8"))
+
+
 class Vault(QObject):
     """Menedżer haseł: zaszyfrowany plik ~/.luna_hasla.bin (Windows DPAPI) albo pęk kluczy systemu (pakiet keyring).
     Odszyfrowany tylko w pamięci tego procesu. Zawiera też token DuckDuckGo do aliasów e-mail."""
@@ -1566,6 +1606,8 @@ class Store(QObject):
 
     @staticmethod
     def _write(path, data):
+        if FROZEN[0]:   # po przywróceniu kopii – zamykające się okna nie nadpisują przywróconych plików
+            return
         try:
             path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
         except OSError:
@@ -1578,6 +1620,8 @@ class Store(QObject):
         self.changed.emit()
 
     def save_settings(self):
+        if FROZEN[0]:
+            return
         if self._hist_dirty:
             self._write(HIST, self.history); self._hist_dirty = False
         self._write(SETTINGS, self.settings)
@@ -7400,6 +7444,121 @@ class PipWindow(QFrame):
         self.web.setUrl(QUrl("about:blank")); super().closeEvent(ev)
 
 
+class BackupDialog(QDialog):
+    """Kopia zapasowa: utworzenie pliku .lunabak (hasło) albo przywrócenie z niego (Luna uruchamia się ponownie)."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b = browser
+        self.setWindowTitle("Kopia zapasowa"); self.setObjectName("settings"); self.resize(fit_size(520, 330))
+        v = QVBoxLayout(self); v.setContentsMargins(20, 18, 20, 18); v.setSpacing(10)
+        v.addWidget(lbl("Kopia zapasowa", "h1"))
+        v.addWidget(lbl("Jeden plik z kafelkami, ustawieniami, widgetami, kartami, historią, ikonami stron i hasłami. "
+                        "Cały plik jest zaszyfrowany hasłem, które podasz – bez niego nikt go nie odczyta. "
+                        "Na drugim komputerze wybierz „Przywróć z kopii” i podaj to samo hasło.", "muted2", wrap=True))
+        v.addWidget(lbl("Konta Google, Spotify i Discord trzeba po przywróceniu połączyć ponownie (logowania stron "
+                        "zostają w profilu tamtego komputera).", "muted", wrap=True))
+        v.addStretch(1)
+        row = QHBoxLayout(); row.setSpacing(8)
+        a = QPushButton("Utwórz kopię…"); a.setObjectName("primary"); a.clicked.connect(self.create)
+        r = QPushButton("Przywróć z kopii…"); r.clicked.connect(self.restore)
+        row.addWidget(a); row.addWidget(r); row.addStretch(); v.addLayout(row)
+
+    def _password(self, title, confirm):
+        p, ok = QInputDialog.getText(self, title, "Hasło kopii (min. 8 znaków):", QLineEdit.EchoMode.Password)
+        if not ok:
+            return None
+        if len(p) < 8:
+            QMessageBox.warning(self, title, "Hasło musi mieć co najmniej 8 znaków."); return None
+        if confirm:
+            p2, ok = QInputDialog.getText(self, title, "Powtórz hasło:", QLineEdit.EchoMode.Password)
+            if not ok:
+                return None
+            if p2 != p:
+                QMessageBox.warning(self, title, "Hasła się różnią."); return None
+        return p
+
+    def create(self):
+        st = self.b.store
+        name = f"Luna-kopia-{date.today().isoformat()}.lunabak"
+        path, _ = QFileDialog.getSaveFileName(self, "Zapisz kopię zapasową", str(Path(DOWNLOADS[0].folder()) / name),
+                                              "Kopia Luny (*.lunabak)")
+        if not path:
+            return
+        pw = self._password("Utwórz kopię", True)
+        if pw is None:
+            return
+        if self.b.primary:
+            st.settings["session"] = self.b.session_data()
+        icons = {}
+        if ICONS.exists():
+            for f in ICONS.iterdir():
+                if f.is_file() and f.stat().st_size < 256 * 1024:
+                    icons[f.name] = base64.b64encode(f.read_bytes()).decode()
+        vault = VAULT[0].data if VAULT and VAULT[0].available() else None
+        payload = {"v": 1, "created": datetime.now().isoformat(timespec="seconds"), "items": st.items, "recent": st.recent,
+                   "history": st.history, "settings": st.settings, "vault": vault, "icons": icons}
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            Path(path).write_bytes(backup_encrypt(payload, pw))
+        except OSError as e:
+            QApplication.restoreOverrideCursor(); QMessageBox.warning(self, "Kopia zapasowa", f"Nie udało się zapisać pliku: {e}"); return
+        QApplication.restoreOverrideCursor()
+        n = len(vault["logins"]) if vault else 0
+        self.b.notice.ask(f"Kopia zapisana: {Path(path).name} (kafelki: {len(st.items)}, hasła: {n})",
+                          [("Pokaż w folderze", lambda: show_in_folder(path), True), ("OK", None, False)], icon="save")
+        self.accept()
+
+    def restore(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Przywróć z kopii", DOWNLOADS[0].folder(), "Kopia Luny (*.lunabak)")
+        if not path:
+            return
+        pw = self._password("Przywróć z kopii", False)
+        if pw is None:
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            data = backup_decrypt(Path(path).read_bytes(), pw)
+        except (ValueError, OSError) as e:
+            QApplication.restoreOverrideCursor(); QMessageBox.warning(self, "Przywróć z kopii", str(e)); return
+        QApplication.restoreOverrideCursor()
+        logins = len((data.get("vault") or {}).get("logins", []))
+        if QMessageBox.question(self, "Przywróć z kopii",
+                                f"Kopia z {data.get('created', '?').replace('T', ' ')}: kafelki {len(data.get('items', []))}, "
+                                f"hasła {logins}.\n\nObecne kafelki, ustawienia, karty, historia i hasła zostaną zastąpione. "
+                                "Luna uruchomi się ponownie. Kontynuować?") != QMessageBox.StandardButton.Yes:
+            return
+        apply_backup(data); self.accept(); restart_luna(self.b)
+
+
+def apply_backup(data):
+    """Zapis przywróconych danych na dysk; hasła szyfrowane od nowa kluczem tego komputera."""
+    Store._write(DATA, data.get("items", [])); Store._write(RECENT, data.get("recent", []))
+    Store._write(HIST, data.get("history", [])); Store._write(SETTINGS, data.get("settings", {}))
+    ICONS.mkdir(exist_ok=True)
+    for name, b64 in (data.get("icons") or {}).items():
+        if re.fullmatch(r"[\w.\-]+", name):   # tylko proste nazwy plików (bez ścieżek)
+            try:
+                (ICONS / name).write_bytes(base64.b64decode(b64))
+            except (OSError, ValueError):
+                pass
+    if VAULT and VAULT[0].available() and isinstance(data.get("vault"), dict):
+        VAULT[0].data = {"logins": [], "never": [], "ddg": ""}; VAULT[0].data.update(data["vault"]); VAULT[0].save()
+    FROZEN[0] = True
+
+
+def restart_luna(browser):
+    """Nowy proces Luny (bez okna konsoli) i zamknięcie bieżącego."""
+    from PyQt6.QtCore import QProcess
+    if getattr(sys, "frozen", False):
+        prog, args = sys.executable, sys.argv[1:]
+    else:
+        exe = Path(sys.executable); w = exe.with_name("pythonw.exe")
+        prog, args = (str(w) if w.exists() else str(exe)), [str(Path(sys.argv[0]).resolve())] + sys.argv[1:]
+    args = [a for a in args if not a.startswith("--luna-wait=")] + [f"--luna-wait={os.getpid()}"]   # poczeka na ten proces
+    QProcess.startDetached(prog, args)
+    browser.quit_all()
+
+
 class TaskManager(QDialog):
     """Menedżer zadań Luny: pamięć procesów stron i silnika, uśpij / zamknij / przejdź. Odświeża się tylko, gdy jest otwarty."""
 
@@ -9404,6 +9563,7 @@ class Browser(QMainWindow):
         self.act(sm, "copy", "Zrzut: zaznaczony fragment…", lambda: self.screenshot("region"), "Ctrl+Shift+S")
         tm = m.addMenu(glyph("tools"), "Więcej narzędzi")
         self.act(tm, "tools", "Menedżer zadań", self.task_manager, "Shift+Esc")
+        self.act(tm, "save", "Kopia zapasowa…", lambda: BackupDialog(self).exec())
         self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
         self.act(tm, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U", web is not None)
         self.act(tm, "tabs", "Karty i grupy", self.toggle_tab_popup, "Ctrl+Shift+A")
@@ -10569,7 +10729,29 @@ def load_local_fonts():
             QFontDatabase.addApplicationFont(str(f))
 
 
+def wait_for_previous():
+    """Po przywróceniu kopii nowa Luna czeka, aż poprzednia zamknie się i zwolni profil przeglądarki (maks. 15 s)."""
+    for a in list(sys.argv):
+        if a.startswith("--luna-wait="):
+            sys.argv.remove(a)
+            try:
+                pid = int(a.split("=", 1)[1])
+                if sys.platform == "win32":
+                    import ctypes
+                    k = ctypes.windll.kernel32; k.OpenProcess.restype = ctypes.c_void_p
+                    h = k.OpenProcess(0x00100000, False, pid)   # SYNCHRONIZE
+                    if h:
+                        k.WaitForSingleObject(ctypes.c_void_p(h), 15000); k.CloseHandle(ctypes.c_void_p(h))
+                else:
+                    end = time.time() + 15
+                    while time.time() < end and Path(f"/proc/{pid}").exists():
+                        time.sleep(0.2)
+            except (ValueError, OSError):
+                pass
+
+
 if __name__ == "__main__":
+    wait_for_previous()
     # rasteryzacja stron na GPU i przesyłanie bez kopiowania – płynniejsze przewijanie i animacje (można nadpisać zmienną)
     # --process-per-site: karty tej samej witryny dzielą jeden proces strony – wyraźnie mniej RAM przy wielu kartach
     os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-gpu-rasterization --enable-zero-copy --process-per-site")
