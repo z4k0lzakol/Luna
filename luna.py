@@ -7828,8 +7828,16 @@ class Tab(QStackedWidget):
 
     @property
     def web(self):
-        """Strona, na którą działają pasek adresu i przyciski: przy podziale ekranu – aktywna (ostatnio kliknięta)."""
-        return self.sides[self._act].view if self.sides else self._main
+        """Strona, na którą działają pasek adresu i przyciski: przy podziale ekranu – aktywna (ostatnio kliknięta);
+        gdy aktywna strona podziału jest jeszcze pusta, polecenia (drukuj, powiększ, czytanie…) działają na drugą."""
+        if not self.sides:
+            return self._main
+        v = self.sides[self._act].view
+        return v if v is not None else self.sides[1 - self._act].view
+
+    def side_empty(self):
+        """Aktywna strona podziału czeka na wybór (pasek adresu pokazuje wtedy puste pole)."""
+        return bool(self.sides) and self.sides[self._act].view is None
 
     def _web_widget(self):
         return self.split if self.split is not None else self._main
@@ -7854,7 +7862,7 @@ class Tab(QStackedWidget):
         self._side_refresh(v)
 
     def _view_url(self, v, u):
-        if v is self.web:
+        if v is self.web and not self.side_empty():
             self.browser.on_url(self, u)
         self._side_refresh(v)
 
@@ -8962,7 +8970,13 @@ class Browser(QMainWindow):
     def extensions_menu(self, m):
         m.clear(); mgr = get_profile().extensionManager()
         exts = list(mgr.extensions()) if mgr is not None else []
+        from PyQt6.QtCore import QLibraryInfo
+        res = Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.DataPath)) / "resources"
         for e in exts:
+            # wbudowane w silnik (czytnik PDF, usługi Hangouts) leżą w zasobach Qt – ich przełączenie wywraca Qt
+            if not e.isInstalled() and (not e.path() or Path(e.path()).parent.resolve() == res.resolve()):
+                m.addAction(glyph("puzzle"), f"{e.name() or e.id()} (wbudowane)").setEnabled(False)
+                continue
             sm = m.addMenu(glyph("puzzle"), e.name() or e.id())
             a = sm.addAction("Włączone"); a.setCheckable(True); a.setChecked(e.isEnabled())
             a.toggled.connect(lambda on, e=e: mgr.setExtensionEnabled(e, on))
@@ -9686,7 +9700,7 @@ class Browser(QMainWindow):
         t = self.cur()
         if hasattr(self, "shield_btn"):
             self.update_shield()
-        self.address.setText("" if not t or t.on_home() or not t.web else t.web.url().toString())
+        self.address.setText("" if not t or t.on_home() or not t.web or t.side_empty() else t.web.url().toString())
         self.update_star()
         if hasattr(self, "reader_btn"):
             self.update_reader_btn()
