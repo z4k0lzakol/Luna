@@ -6447,7 +6447,7 @@ def page_keys(dlg):
     w, l = page_box("Skróty klawiszowe i gesty", "Można je wyłączyć w Funkcje → Skróty klawiszowe i gesty myszy.")
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
-                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"), ("Shift + Esc", "Menedżer zadań"), ("Ctrl + Shift + S", "Zrzut fragmentu strony"),
+                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"), ("Shift + Esc", "Menedżer zadań"), ("Ctrl + Shift + S", "Zrzut fragmentu strony"), ("Ctrl + Shift + P", "Obraz w obrazie"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
@@ -7288,6 +7288,116 @@ SHOT_FIXED_JS = r"""(function(on){ // ukrycie pływających nagłówków przy sk
       if (p === 'fixed' || p === 'sticky') { window.__lunaFixed.push([e, e.style.visibility]); e.style.visibility = 'hidden'; } } }
   else { for (const [e, v] of (window.__lunaFixed || [])) e.style.visibility = v; window.__lunaFixed = []; }
 })(%ON%)"""
+
+
+PIP_FIND_JS = r"""(function(){ // największy film na stronie: pauza w karcie, zaznaczenie (do wznowienia), czas i adres
+  const vs = [...document.querySelectorAll('video')].filter(v => v.readyState > 0 || v.currentSrc)
+    .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight);
+  const v = vs[0]; if (!v) return null;
+  const t = v.currentTime || 0; v.pause(); v.setAttribute('data-luna-pip', '1');
+  return JSON.stringify({t: t, url: location.href, title: document.title});
+})()"""
+
+PIP_FIT_JS = r"""(function(t){ // okienko: sam film na czarnym tle, od zadanego momentu
+  let n = 0;
+  const go = () => {
+    const v = [...document.querySelectorAll('video')].sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0];
+    if (!v) { if (++n < 40) setTimeout(go, 400); return; }
+    for (let e = v.parentElement; e; e = e.parentElement)
+      for (const p of ['transform', 'filter', 'contain', 'perspective']) e.style.setProperty(p, 'none', 'important');
+    v.style.cssText += ';position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;' +
+      'max-width:none!important;max-height:none!important;z-index:2147483647!important;background:#000!important;object-fit:contain!important';
+    const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:#000;z-index:2147483646';
+    document.body.appendChild(ov); document.documentElement.style.overflow = 'hidden';
+    if (t > 0 && Math.abs(v.currentTime - t) > 2) v.currentTime = t;
+    v.play().catch(() => {}); window.__lunaV = v;
+  };
+  go();
+})(%T%)"""
+
+PIP_YT_HTML = """<!doctype html><html><body style="margin:0;background:#000;overflow:hidden">
+<iframe id="f" src="https://www.youtube.com/embed/%ID%?start=%T%&autoplay=1&enablejsapi=1&origin=https://luna.local"
+ style="border:0;width:100vw;height:100vh" allow="autoplay; encrypted-media; fullscreen"></iframe>
+<script>window.__t = -1;
+addEventListener('message', e => { try { const d = JSON.parse(e.data); if (d.info && typeof d.info.currentTime === 'number') window.__t = d.info.currentTime; } catch (_) {} });
+const f = document.getElementById('f');
+f.addEventListener('load', () => { const s = () => f.contentWindow.postMessage(JSON.stringify({event: 'listening', id: 1, channel: 'widget'}), '*'); s(); setInterval(s, 2000); });
+</script></body></html>"""
+
+
+def youtube_id(url):
+    m = re.search(r"(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/)|youtu\.be/)([\w-]{11})", url or "")
+    return m.group(1) if m else ""
+
+
+class PipWindow(QFrame):
+    """Obraz w obrazie: małe okno zawsze na wierzchu z samym filmem; zamknięcie wznawia film w karcie od tego miejsca."""
+
+    def __init__(self, browser, src, info):
+        super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        self.b, self.src, self.yt, self._closing = browser, src, youtube_id(info.get("url", "")), False
+        self.setObjectName("pip"); self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        self.setStyleSheet("QFrame#pip{background:#000;border:1px solid #2c2c2c} QWidget#piphead{background:#111}")
+        self.setWindowTitle("Luna – obraz w obrazie"); self.setWindowIcon(app_icon())
+        v = QVBoxLayout(self); v.setContentsMargins(1, 1, 1, 1); v.setSpacing(0)
+        head = QWidget(); head.setObjectName("piphead"); head.setFixedHeight(28); head.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        h = QHBoxLayout(head); h.setContentsMargins(10, 0, 4, 0); h.setSpacing(2)
+        t = QLabel(); t.setObjectName("splittitle"); t.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        t.setText(info.get("title") or "Film"); h.addWidget(t, 1)
+        for kind, tip, fn in (("external", "Wróć do karty z filmem", self.back), ("close", "Zamknij (film wróci do karty)", self.finish)):
+            bt = QToolButton(); bt.setObjectName("splitbtn"); bt.setIcon(glyph(kind, "#9a9a9a")); bt.setIconSize(QSize(15, 15))
+            bt.setFixedSize(24, 24); bt.setToolTip(tip); bt.clicked.connect(lambda _=False, f=fn: f()); h.addWidget(bt)
+        head.mousePressEvent = lambda ev: self.windowHandle().startSystemMove() if ev.button() == Qt.MouseButton.LeftButton else None
+        v.addWidget(head)
+        self.web = WebView(container=src.container)
+        A = QWebEngineSettings.WebAttribute
+        self.web.settings().setAttribute(A.PlaybackRequiresUserGesture, False)
+        v.addWidget(self.web, 1)
+        from PyQt6.QtWidgets import QSizeGrip
+        self.grip = QSizeGrip(self); self.grip.setFixedSize(16, 16)
+        t0 = max(0, int(info.get("t") or 0))
+        if self.yt:
+            self.web.setHtml(PIP_YT_HTML.replace("%ID%", self.yt).replace("%T%", str(t0)), QUrl("https://luna.local/"))
+        else:
+            self.web.loadFinished.connect(lambda ok: self.web.page().runJavaScript(
+                PIP_FIT_JS.replace("%T%", str(info.get("t") or 0)), QWebEngineScript.ScriptWorldId.ApplicationWorld))
+            self.web.setUrl(QUrl(info["url"]))
+        a = cur_screen().availableGeometry(); self.resize(480, 298)
+        self.move(a.right() - self.width() - 24, a.bottom() - self.height() - 24)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev); self.grip.move(self.width() - 17, self.height() - 17); self.grip.raise_()
+
+    def _time(self, cb):
+        js = "window.__t" if self.yt else "(window.__lunaV || document.querySelector('video') || {currentTime: -1}).currentTime"
+        self.web.page().runJavaScript(js, QWebEngineScript.ScriptWorldId.MainWorld if self.yt else
+                                      QWebEngineScript.ScriptWorldId.ApplicationWorld, cb)
+
+    def finish(self, show_tab=False):
+        if self._closing:
+            return
+        self._closing = True
+        QTimer.singleShot(1500, self.close)   # zabezpieczenie, gdyby strona nie odpowiedziała
+
+        def got(t):
+            try:
+                self.b.pip_closed(self.src, t if isinstance(t, (int, float)) else -1, show_tab)
+            except RuntimeError:
+                pass
+            self.close()
+        self._time(got)
+
+    def back(self):
+        self.finish(True)
+
+    def closeEvent(self, ev):
+        if not self._closing:   # zamknięcie z systemu (np. Alt+F4) – też wznów film w karcie
+            self._closing = True
+            try:
+                self.b.pip_closed(self.src, -1, False)
+            except RuntimeError:
+                pass
+        self.web.setUrl(QUrl("about:blank")); super().closeEvent(ev)
 
 
 class TaskManager(QDialog):
@@ -8900,7 +9010,7 @@ class Browser(QMainWindow):
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
                 ("Ctrl+Shift+Space", self.search_tabs), ("Shift+Esc", self.task_manager),
-                ("Ctrl+Shift+S", lambda: self.screenshot("region")),
+                ("Ctrl+Shift+S", lambda: self.screenshot("region")), ("Ctrl+Shift+P", self.pip),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
                 ("Ctrl+N", self.new_window), ("Ctrl+Shift+E", self.open_market), ("Ctrl+H", self.show_history), ("Ctrl+Shift+D", self.toggle_dark), ("Ctrl+Shift+N", lambda: self.new_window(True)),
                 ("Ctrl+Shift+Y", self.show_downloads), ("Ctrl+Shift+Del", self.clear_data), ("Ctrl+P", self.print_page),
@@ -9261,6 +9371,7 @@ class Browser(QMainWindow):
         menu_row_action(m, zr)
         rd = self.act(m, "book", "Tryb czytania", self.toggle_reader, "F9", web is not None)
         rd.setCheckable(True); rd.setChecked(bool(web is not None and getattr(web, "reader_on", False)))
+        self.act(m, "external", "Obraz w obrazie (film w okienku)", self.pip, "Ctrl+Shift+P", web is not None)
         dk = self.act(m, "moon", "Ciemny tryb stron", self.toggle_dark, "Ctrl+Shift+D")
         dk.setCheckable(True); dk.setChecked(self.store.feature("dark_pages"))
         if web is not None and self.store.feature("dark_pages"):
@@ -9409,6 +9520,48 @@ class Browser(QMainWindow):
 
     def show_downloads(self):
         DownloadsDialog(self).exec()
+
+    # --- obraz w obrazie (własne okienko – silnik Qt nie ma wbudowanego PiP) ---
+    def pip(self):
+        web = self.web()
+        if web is None:
+            return
+
+        def got(res):
+            try:
+                info = json.loads(res) if res else None
+            except ValueError:
+                info = None
+            if not info:
+                self.notice.info("Na tej stronie nie ma filmu do obrazu w obrazie.", icon="app"); return
+            old = getattr(self, "_pip", None)
+            if old is not None:
+                try:
+                    old.finish()
+                except RuntimeError:
+                    pass
+            self._pip = PipWindow(self, web, info); self._pip.destroyed.connect(lambda *_: setattr(self, "_pip", None))
+            self._pip.show()
+        web.page().runJavaScript(PIP_FIND_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld, got)
+
+    def pip_closed(self, view, t, show_tab=False):
+        """Film wraca do karty: od momentu, w którym skończył się w okienku, i gra dalej."""
+        try:
+            # wznowienie przychodzi z okienka, nie z kliknięcia na tej stronie – na chwilę zdejmujemy wymóg gestu
+            A = QWebEngineSettings.WebAttribute; s = view.page().settings()
+            s.setAttribute(A.PlaybackRequiresUserGesture, False)
+            QTimer.singleShot(3000, lambda: s.setAttribute(A.PlaybackRequiresUserGesture, True))
+            js = ("(function(t){ const v = document.querySelector('video[data-luna-pip]'); if (!v) return;"
+                  " v.removeAttribute('data-luna-pip'); const yt = document.getElementById('movie_player');"
+                  " if (yt && yt.seekTo && yt.playVideo) { if (t >= 0) yt.seekTo(t, true); yt.playVideo(); return; }"   # odtwarzacz YouTube
+                  " if (t >= 0) v.currentTime = t; v.play().catch(() => {}); })(%s)" % float(t))
+            view.page().runJavaScript(js, QWebEngineScript.ScriptWorldId.MainWorld)
+            if show_tab:
+                tab = view.owner
+                if tab in self.all_tabs():
+                    self.activate(tab); self.raise_(); self.activateWindow()
+        except (RuntimeError, AttributeError):
+            pass
 
     # --- zrzut strony: widoczna część / cała strona (przewijanie i sklejanie) / fragment; schowek + PNG w Obrazy\Luna ---
     def screenshot(self, mode="visible"):
