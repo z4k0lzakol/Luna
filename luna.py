@@ -50,6 +50,7 @@ try:   # systemowe sterowanie multimediami Windows (SMTC): pip install winrt-Win
     from winrt.windows.storage.streams import DataReader as _DataReader
 except Exception:
     _SMTC = _SMTC_STATUS = _DataReader = None
+import adblock   # wbudowana blokada reklam (adblock/); rejestruje własny schemat – musi być przed QApplication
 
 HOME = Path.home()
 DATA = HOME / ".luna.json"
@@ -1168,7 +1169,7 @@ def _setup_profile(prof, base):
     # zwykły Chromium zamiast „QtWebEngine” w User-Agent – logowanie (np. Google) rzadziej jest blokowane
     prof.setHttpUserAgent(re.sub(r"\s*QtWebEngine/\S+", "", prof.httpUserAgent()))
     if SHIELD:
-        prof.setUrlRequestInterceptor(SHIELD[0])
+        SHIELD[0].install(prof)   # osobny interceptor profilu, schemat zasobów zastępczych, kosmetyka
     for name, src, world, point in ((("luna-hasla", PW_JS.replace("%K%", PW_KEY), QWebEngineScript.ScriptWorldId.ApplicationWorld,
                                        QWebEngineScript.InjectionPoint.DocumentReady)),
                                      ("luna-ddg", DDG_JS.replace("%K%", PW_KEY), QWebEngineScript.ScriptWorldId.MainWorld,
@@ -1190,7 +1191,6 @@ gemius.pl hit.gemius.pl adocean.pl adform.net adform.com yandex.ru/metrika mc.ya
 analytics.tiktok.com ads-twitter.com static.ads-twitter.com ads.yahoo.com adroll.com doubleverify.com
 adsafeprotected.com media.net yieldmo.com sharethrough.com indexww.com lijit.com sovrn.com""".split())
 BLOCKLIST = HOME / ".luna_blokady.txt"
-BLOCKLIST_URL = "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0&mimetype=plaintext"
 _SLD = {"co", "com", "org", "net", "gov", "edu", "ac", "gob"}
 
 
@@ -1200,66 +1200,9 @@ def base_domain(host):
     return ".".join(p[-3:] if len(p) >= 3 and p[-2] in _SLD else p[-2:])
 
 
-class Shield(QWebEngineUrlRequestInterceptor):
-    """Blokuje zapytania do domen reklamowych i śledzących, ale tylko z cudzych domen (third-party) – strona sama
-    w sobie działa. Wywoływane w wątku sieci Chromium, więc tylko szybkie sprawdzenie w zbiorze domen."""
-
-    def __init__(self, store):
-        super().__init__(QApplication.instance())
-        self.store, self.domains = store, set(TRACKERS)
-        self.blocked = {}    # domena strony → liczba zablokowanych zapytań od ostatniego wczytania
-        self.total = int(store.settings.get("shield_total", 0))
-        self.reload()
-
-    def reload(self):
-        self.on = self.store.feature("adblock")
-        self.allow = set(self.store.settings.get("shield_allow", []))
-        try:
-            self.domains = TRACKERS | {x.strip().lower() for x in BLOCKLIST.read_text(encoding="utf-8").split()
-                                       if "." in x and not x.startswith("#")}
-        except OSError:
-            self.domains = set(TRACKERS)
-
-    def update_list(self, done=None):
-        """Lista Petera Lowe'a (ok. 3500 domen) – pobierana raz na tydzień, działa też bez niej (lista wbudowana)."""
-        def got(data, err, status):
-            ok = bool(data) and status == 200 and b"." in data
-            if ok:
-                try:
-                    BLOCKLIST.write_bytes(data); self.reload()
-                except OSError:
-                    ok = False
-            if done:
-                done(ok)
-        self.store.http(BLOCKLIST_URL, got, raw=True, timeout=20000)
-
-    def maybe_update(self):
-        try:
-            old = time.time() - BLOCKLIST.stat().st_mtime > 7 * 86400
-        except OSError:
-            old = True
-        if old and self.on:
-            self.update_list()
-
-    def interceptRequest(self, info):
-        if not self.on:
-            return
-        h = info.requestUrl().host().lower()
-        fp = info.firstPartyUrl().host().lower()
-        if not h or not fp or base_domain(h) == base_domain(fp) or base_domain(fp) in self.allow:
-            return
-        parts = h.split(".")
-        for i in range(len(parts) - 1):
-            if ".".join(parts[i:]) in self.domains:
-                info.block(True)
-                self.blocked[fp] = self.blocked.get(fp, 0) + 1; self.total += 1
-                return
-
-    def count(self, url):
-        return self.blocked.get(QUrl(url).host().lower(), 0)
-
-    def reset(self, url):
-        self.blocked.pop(QUrl(url).host().lower(), None)
+# Shield (dawna blokada samych domen) zastąpiona przez adblock.AdBlock: listy uBlock Origin / EasyList / polskie filtry
+# kompilowane w podprocesie, dopasowanie sieciowe z zasobami zastępczymi, kosmetyka i scriptlety. Bez skompilowanych
+# list (pierwsze uruchomienie, brak sieci) działa jak dawniej: TRACKERS + .luna_blokady.txt, tylko cudze domeny.
 
 
 SHIELD = []
@@ -1357,6 +1300,8 @@ class LunaPage(QWebEnginePage):
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
         if is_main_frame:
             self.apply_dark(url.toString())
+        if SHIELD:   # skrypty blokady dla hosta – przed załadowaniem dokumentu (też nawigacje z service workera)
+            SHIELD[0].prepare(self, url, is_main_frame)
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
     def javaScriptConsoleMessage(self, level, msg, line, src):
@@ -1570,6 +1515,13 @@ class WebView(QWebEngineView):
             pop = WebView(container=self.container); pop.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
             pop.resize(520, 720); pop.setWindowTitle("Luna – logowanie"); pop.setWindowIcon(app_icon())
             pop.page().windowCloseRequested.connect(pop.close)
+            opener = self.url()
+
+            def first_url(u, p=pop):   # wyskakujące okno reklamowe ($popup) – zamykamy przy pierwszym adresie
+                safe_disconnect(p.page().urlChanged, first_url)
+                if SHIELD and SHIELD[0].popup_blocked(u, opener):
+                    p.close()
+            pop.page().urlChanged.connect(first_url)
             POPUPS.append(pop)
             pop.destroyed.connect(lambda _=None, p=pop: POPUPS.remove(p) if p in POPUPS else None)
             pop.show()
@@ -1581,7 +1533,10 @@ class WebView(QWebEngineView):
     def _grab(self, url, tmp):
         u = url.toString()
         if u and u != "about:blank":
-            tmp.stop(); tmp.deleteLater(); self.link_requested.emit(u)
+            tmp.stop(); tmp.deleteLater()
+            if SHIELD and SHIELD[0].popup_blocked(url, self.url()):   # filtr $popup: nie otwieramy karty
+                return
+            self.link_requested.emit(u)
 
 
 class Store(QObject):
@@ -1614,7 +1569,8 @@ class Store(QObject):
         self.weather = {}
         GLASS_ALPHA[0] = int(self.settings.get("glass", 168)); BG.store = self
         self.bump_day(emit=False)  # samo uruchomienie przeglądarki liczy się do serii
-        SHIELD.append(Shield(self)); VAULT.append(Vault()); DOWNLOADS.append(DownloadManager())   # przed pierwszym profilem
+        SHIELD.append(adblock.AdBlock(self, home=HOME, legacy_domains=TRACKERS, legacy_file=BLOCKLIST))
+        VAULT.append(Vault()); DOWNLOADS.append(DownloadManager())   # przed pierwszym profilem
         self.session = SessionBridge(self)  # logowania z kart Luny dostępne dla widgetów i kafelków
 
     @staticmethod
@@ -2166,7 +2122,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                    "(nie dotyczy kart odtwarzających dźwięk).", True),
     "battery_saver": ("Oszczędzanie baterii", "Gdy laptop działa na baterii: nieużywane karty usypiają się po 5 minutach, "
                       "a filmy w kartach w tle zatrzymują się. Na komputerze bez baterii opcja jest ukryta.", True),
-    "adblock": ("Blokada reklam i śledzenia", "Blokuje skrypty śledzące i reklamy z cudzych domen na poziomie sieci – bez wtyczek.", True),
+    "adblock": ("Blokada reklam i śledzenia", "Wbudowany bloker (bez wtyczek): listy uBlock Origin, EasyList i polskie filtry – "
+                "reklamy, śledzenie, wyskakujące okna i komunikaty „wyłącz AdBlocka”. Działa niewidocznie dla stron.", True),
     "passwords": ("Menedżer haseł", "Proponuje zapis haseł po zalogowaniu i sam wypełnia formularze. Hasła są szyfrowane "
                   "na tym komputerze.", True),
     "discord_watch": ("Licznik Discorda w tle", "Ukryty Discord Web (wyciszony) liczy wzmianki dla widgetu i kafelka – ok. 200–300 MB RAM. "
@@ -6688,19 +6645,66 @@ def page_privacy(dlg):
     l.addWidget(switch_row(name, desc, st.feature("adblock"), lambda v: st.set_feature("adblock", v)))
     sh = SHIELD[0] if SHIELD else None
     stat = lbl("", "muted2", wrap=True); l.addWidget(stat)
+    last = {"ok": None}
+
+    def when(ts):
+        return datetime.fromtimestamp(ts).strftime("%d.%m.%Y %H:%M") if ts else "jeszcze nie pobrano"
 
     def show_stat(ok=None):
+        if ok is not None:
+            last["ok"] = ok
         if sh is None:
             stat.setText("Blokada niedostępna."); return
-        try:
-            when = datetime.fromtimestamp(BLOCKLIST.stat().st_mtime).strftime("%d.%m.%Y")
-        except OSError:
-            when = "nigdy (działa lista wbudowana)"
-        stat.setText(f"Domen na liście: {len(sh.domains)} · lista z sieci: {when} · zablokowano łącznie: {sh.total}"
-                     + ("" if ok is None else ("  ·  zaktualizowano" if ok else "  ·  nie udało się pobrać")))
+        if sh.net is None:
+            head = (f"Listy filtrów nie są jeszcze gotowe – działa podstawowa blokada ({len(sh.domains)} domen). "
+                    "Pobranie i przygotowanie list trwa kilka sekund.")
+        else:
+            head = f"Aktywnych reguł: {sh.rules_total():,}".replace(",", " ") + f" · ostatnia aktualizacja: {when(sh.last_update())}"
+        st_ = sh.status_text()
+        ok_ = last["ok"]
+        stat.setText(head + f" · zablokowano łącznie: {sh.total}" + (f"  ·  {st_}" if st_ else "")
+                     + ("" if ok_ is None or st_ else ("  ·  zaktualizowano" if ok_ else "  ·  nie udało się zaktualizować")))
     show_stat()
-    up = QPushButton("Zaktualizuj listę teraz"); up.clicked.connect(lambda: sh and sh.update_list(show_stat))
+    up = QPushButton("Zaktualizuj teraz"); up.clicked.connect(lambda: sh and sh.update_list(show_stat))
     l.addWidget(up, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(8)
+    if sh is not None:
+        l.addWidget(lbl("Listy filtrów", "h3"))
+        l.addWidget(lbl("Listy pobierają się automatycznie (zapytania warunkowe – tylko gdy się zmieniły) i są przygotowywane "
+                        "w tle. Należą do ich autorów; Luna jedynie je stosuje.", "muted", wrap=True))
+        rows = []
+
+        def list_desc(x):
+            n = sh.list_count(x["id"]); m = sh.meta.get(x["id"]) or {}
+            return (f"{x['desc']} Licencja: {x['license']} · {x['homepage']} · reguł: " + f"{n:,}".replace(",", " ")
+                    + f" · aktualizacja: {when(m.get('fetched'))}" + ("" if m.get("ok", True) else " (ostatnio bez połączenia)"))
+        for x in adblock.catalog.filter_lists():
+            on = x["id"] in sh.enabled_ids()
+            row = switch_row(x["title"], list_desc(x), on, lambda v, i=x["id"]: sh.set_list_enabled(i, v))
+            rows.append((row, x)); l.addWidget(row)
+        psl = adblock.catalog.get("psl")
+        l.addWidget(lbl(f"Rozpoznawanie domen: {psl['title']} ({psl['license']}, {psl['homepage']}).", "muted", wrap=True))
+        l.addSpacing(10)
+        l.addWidget(lbl("Moje filtry", "h3"))
+        l.addWidget(lbl("Własne reguły w składni uBlock Origin / Adblock Plus, np. ||reklamy.example.com^ albo "
+                        "example.com##.baner. Jedna reguła w wierszu, „!” zaczyna komentarz.", "muted", wrap=True))
+        ed = QPlainTextEdit(); ed.setPlainText(sh.user_filters()); ed.setMinimumHeight(110); ed.setMaximumHeight(180)
+        ed.setPlaceholderText("! moje reguły\n||reklamy.example.com^\nexample.com##.baner")
+        l.addWidget(ed)
+        sv = QPushButton("Zapisz i zastosuj")
+        sv.clicked.connect(lambda: sh.set_user_filters(ed.toPlainText()))
+        l.addWidget(sv, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(8)
+
+        def refresh():
+            try:
+                show_stat()
+                for row, x in rows:
+                    labels = row.findChildren(QLabel)
+                    if len(labels) >= 2:
+                        labels[1].setText(list_desc(x))
+            except RuntimeError:   # strona ustawień już zamknięta
+                safe_disconnect(sh.status_changed, refresh)
+        sh.status_changed.connect(refresh)
+        w.destroyed.connect(lambda _=None: safe_disconnect(sh.status_changed, refresh))
     l.addWidget(lbl("Strony z wyłączoną blokadą", "h3"))
     al = QListWidget(); al.setObjectName("wlist"); al.setMaximumHeight(110); al.viewport().setAutoFillBackground(False)
     al.addItems(st.settings.get("shield_allow", [])); l.addWidget(al)
@@ -10705,6 +10709,10 @@ class Browser(QMainWindow):
         else:
             m.addAction(f"Zablokowano na tej stronie: {sh.count(url)}").setEnabled(False)
             m.addAction(f"Łącznie od początku: {sh.total}").setEnabled(False)
+            if sh.net is not None:
+                m.addAction(f"Aktywnych reguł: {sh.rules_total():,}".replace(",", " ")).setEnabled(False)
+            elif sh.status_text():
+                m.addAction(sh.status_text()).setEnabled(False)
             if url:
                 dom = base_domain(QUrl(url).host())
                 a = m.addAction(f"Blokuj na {dom}"); a.setCheckable(True); a.setChecked(dom not in sh.allow)
@@ -10950,6 +10958,9 @@ def wait_for_previous():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 2 and sys.argv[1] == "--luna-adblock-compile":   # podproces kompilatora list (Luna.exe)
+        from adblock import compiler
+        compiler.main(sys.argv[2:])
     wait_for_previous()
     # rasteryzacja stron na GPU i przesyłanie bez kopiowania – płynniejsze przewijanie i animacje (można nadpisać zmienną)
     # --process-per-site: karty tej samej witryny dzielą jeden proces strony – wyraźnie mniej RAM przy wielu kartach

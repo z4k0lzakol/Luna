@@ -1,0 +1,6 @@
+(function () {
+    'use strict';
+    window.eval = new Proxy(window.eval, {
+        apply: function () { return undefined; }
+    });
+})();
