@@ -229,6 +229,28 @@ def main():
     check("blocked no-cors fetch of an ad script (detection probe) resolves", str(R.get("fetchjs", "")).startswith("ok"), R)
     check("blocked no-cors fetch to a tracker endpoint fails like a real block", R.get("fetch") == "err", R)
     check("real ad script never ran", js("window.__realAd===undefined") is True)
+
+    # --- panel tarczy: co zablokowano (domeny) + wyjątek dla jednej domeny tylko na tej stronie
+    site_url = f"http://site-a.localhost:{PORT}/"
+    bd = dict(ab.breakdown(site_url))
+    check("breakdown lists blocked domains with counts", bd.get("ads.localhost", 0) >= 4, ab.breakdown(site_url))
+    ab.set_site_exception(site_url, "ads.localhost", True)
+    check("exception stored for this site", ab.site_exceptions(site_url) == ["ads.localhost"],
+          ab.store.settings.get("shield_exc"))
+    SEEN.clear()
+    load(site_url)
+    wait(1200)
+    check("exception: requests to that domain go through on this site (no rebuild)",
+          any(h == "ads.localhost" for h, _ in SEEN), SEEN)
+    check("exception: domain no longer counted as blocked", "ads.localhost" not in dict(ab.breakdown(site_url)),
+          ab.breakdown(site_url))
+    check("exception does not apply to other sites", ab.site_exceptions(f"http://other.localhost:{PORT}/") == [])
+    ab.set_site_exception(site_url, "ads.localhost", False)
+    SEEN.clear()
+    load(site_url)
+    wait(1200)
+    check("exception removed: domain blocked again", not any(h == "ads.localhost" for h, _ in SEEN)
+          and ab.store.settings.get("shield_exc") == {}, (SEEN, ab.store.settings.get("shield_exc")))
     check("scriptlet set-constant applied", js("window.lunaGlueConst") is True)
     check("scriptlet leaves no userscript: in stack", "userscript" not in (js("new Error().stack") or ""))
     until(lambda: js("getComputedStyle(document.getElementById('spec')).display") == "none", 3000)

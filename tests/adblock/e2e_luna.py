@@ -34,6 +34,7 @@ ap.add_argument("--timeout", type=float, default=420)
 ap.add_argument("--probe", default="", help="phase 2: JS expression evaluated on each --real page (result printed)")
 ap.add_argument("--settle", type=int, default=8000, help="phase 2: ms to wait on each --real page before measuring")
 ap.add_argument("--pre", default="", help="phase 2: JS run on each --real page right after load (e.g. start a video)")
+ap.add_argument("--menu", action="store_true", help="phase 2: record (and screenshot with --shots) the shield menu per page")
 args = ap.parse_args()
 HOMEDIR = args.home or tempfile.mkdtemp(prefix="luna_e2e_")
 os.makedirs(HOMEDIR, exist_ok=True)
@@ -261,6 +262,16 @@ if args.phase == "2":
                             "title": t.web.title()[:60] if t.web else "", "interceptor": icpt_stats()}
         if args.probe and t.web:
             OUT["real"][url]["probe"] = runjs(t.web, args.probe)
+        if args.menu:
+            w.shield_menu()
+            mm = w.shield_btn.menu()
+            OUT["real"][url]["menu"] = [a.text() for a in mm.actions() if a.text()]
+            if args.shots:
+                mm.popup(w.shield_btn.mapToGlobal(w.shield_btn.rect().bottomLeft()))
+                wait(400)
+                os.makedirs(args.shots, exist_ok=True)
+                mm.grab().save(os.path.join(args.shots, "menu_%d.png" % len(OUT["real"])))
+                mm.hide()
         print("real", url, OUT["real"][url], flush=True)
         if args.shots:
             os.makedirs(args.shots, exist_ok=True)

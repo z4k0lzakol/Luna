@@ -6710,7 +6710,23 @@ def page_privacy(dlg):
     al.addItems(st.settings.get("shield_allow", [])); l.addWidget(al)
     rm = QPushButton("Usuń zaznaczoną (włącz blokadę)")
     rm.clicked.connect(lambda: al.currentItem() and (b.shield_allow(al.currentItem().text(), False), al.takeItem(al.currentRow())))
-    l.addWidget(rm, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(14)
+    l.addWidget(rm, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(10)
+    l.addWidget(lbl("Domeny odblokowane na wybranych stronach", "h3"))
+    l.addWidget(lbl("Dodajesz je z menu tarczy obok paska adresu: lista zablokowanych domen na bieżącej stronie.", "muted", wrap=True))
+    el = QListWidget(); el.setObjectName("wlist"); el.setMaximumHeight(110); el.viewport().setAutoFillBackground(False)
+    for site, doms in sorted((st.settings.get("shield_exc") or {}).items()):
+        for d in doms:
+            it = QListWidgetItem(f"{d}  na  {site}"); it.setData(Qt.ItemDataRole.UserRole, (site, d)); el.addItem(it)
+    l.addWidget(el)
+    erm = QPushButton("Usuń zaznaczony wyjątek (blokuj znowu)")
+
+    def drop_exc():
+        it = el.currentItem()
+        if it and sh is not None:
+            site, d = it.data(Qt.ItemDataRole.UserRole)
+            sh.set_site_exception("https://" + site + "/", d, False); el.takeItem(el.currentRow())
+    erm.clicked.connect(drop_exc)
+    l.addWidget(erm, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(14)
     l.addWidget(lbl("Kontenery", "h3"))
     l.addWidget(lbl("Karta w kontenerze ma osobne ciasteczka i logowania – np. trzy konta w tym samym serwisie jednocześnie, "
                     "a serwisy z innych kontenerów nie widzą Twoich wizyt. Nową kartę w kontenerze otworzysz prawym "
@@ -10717,7 +10733,35 @@ class Browser(QMainWindow):
                 dom = base_domain(QUrl(url).host())
                 a = m.addAction(f"Blokuj na {dom}"); a.setCheckable(True); a.setChecked(dom not in sh.allow)
                 a.toggled.connect(lambda on, d=dom: self.shield_allow(d, not on))
+                self.shield_details(m, sh, url, dom)
         m.addSeparator(); m.addAction("Prywatność…", lambda: self.open_settings("privacy"))
+
+    def shield_details(self, m, sh, url, dom):
+        """Co zablokowano na tej stronie (domeny i liczby) + odblokowanie jednej domeny tylko na tej stronie."""
+        if dom in sh.allow:
+            return
+        rows = sh.breakdown(url)
+        if rows:
+            m.addSeparator()
+            m.addAction("Zablokowane domeny (kliknij, by odblokować tylko tutaj):").setEnabled(False)
+            for d, n in rows[:12]:
+                sub = m.addMenu(f"{d}  ·  {n}")
+                sub.addAction(f"Odblokuj {d} na {dom}", lambda d=d: self.shield_exception(url, d, True))
+                sub.addAction("Kopiuj nazwę domeny", lambda d=d: QApplication.clipboard().setText(d))
+            if len(rows) > 12:
+                rest = sum(n for _, n in rows[12:])
+                m.addAction(f"…i jeszcze {len(rows) - 12} domen ({rest} zapytań)").setEnabled(False)
+        exc = sh.site_exceptions(url)
+        if exc:
+            m.addSeparator()
+            m.addAction(f"Odblokowane na {dom}:").setEnabled(False)
+            for d in exc:
+                m.addAction(f"Przywróć blokadę: {d}", lambda d=d: self.shield_exception(url, d, False))
+
+    def shield_exception(self, url, domain, allowed):
+        if SHIELD:
+            SHIELD[0].set_site_exception(url, domain, allowed)
+        self.nav("reload")
 
     def shield_allow(self, dom, allow):
         lst = [d for d in self.store.settings.get("shield_allow", []) if d != dom] + ([dom] if allow else [])

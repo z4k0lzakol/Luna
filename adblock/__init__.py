@@ -266,6 +266,8 @@ class AdBlock(QObject):
         self.legacy_file = legacy_file
         self.domains = set(self.legacy)
         self.blocked = {}
+        self.by_domain = {}          # host strony -> {domena zapytania: liczba} (panel „co zablokowano”)
+        self.exc = {}                # wyjątki per strona: domena strony -> {domeny przepuszczane}
         self.total = int(store.settings.get("shield_total", 0) or 0)
         self.on, self.allow = True, set()
         self.net = None              # NetEngine z bieżącego buildu (None = tryb awaryjny: TRACKERS + lista PGL)
@@ -331,6 +333,7 @@ class AdBlock(QObject):
         allow = set(self.store.settings.get("shield_allow", []) or [])
         changed = (on != self.on) or (allow != self.allow)
         self.on, self.allow = on, allow
+        self._load_exc()
         if not initial:
             self._load_legacy()
             if on and not getattr(self, "_loaded", True):
@@ -340,6 +343,52 @@ class AdBlock(QObject):
             if changed:
                 self._refresh_scripts()
                 self.status_changed.emit()
+
+    # ---------------------------------------------------------------- wyjątki per strona (panel tarczy)
+    def _load_exc(self):
+        raw = self.store.settings.get("shield_exc") or {}
+        out = {}
+        if isinstance(raw, dict):
+            for site, doms in raw.items():
+                if isinstance(site, str) and isinstance(doms, list):
+                    s = {d for d in doms if isinstance(d, str) and d}
+                    if s:
+                        out[site] = s
+        self.exc = out
+
+    def site_exceptions(self, url):
+        """Domeny odblokowane na stronie url (posortowane)."""
+        return sorted(self.exc.get(base_domain(QUrl(str(url)).host(_ENC)), ()))
+
+    def set_site_exception(self, url, domain, allowed):
+        """Przepuszcza (allowed=True) albo znów blokuje zapytania do domain na stronie url. Działa od razu,
+        bez przebudowy filtrów; zapisywane w ustawieniach („shield_exc”)."""
+        site = base_domain(QUrl(str(url)).host(_ENC))
+        domain = base_domain(domain)
+        if not site or not domain:
+            return
+        raw = {k: list(v) for k, v in self.exc.items()}
+        cur = set(raw.get(site, []))
+        cur = (cur | {domain}) if allowed else (cur - {domain})
+        if cur:
+            raw[site] = sorted(cur)
+        else:
+            raw.pop(site, None)
+        self.store.settings["shield_exc"] = raw
+        try:
+            self.store.save_soon()
+        except Exception:
+            pass
+        self._load_exc()
+        if allowed:
+            d = self.by_domain.get(QUrl(str(url)).host(_ENC).lower().rstrip("."), {})
+            d.pop(domain, None)
+        self.status_changed.emit()
+
+    def breakdown(self, url):
+        """[(domena, liczba)] zablokowane na stronie url od ostatniego wczytania, najczęstsze najpierw."""
+        d = self.by_domain.get(QUrl(str(url)).host(_ENC).lower().rstrip("."), {})
+        return sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))
 
     def enabled_ids(self):
         return catalog.enabled_ids(self.store.settings.get("adblock_lists") or {})
@@ -585,8 +634,13 @@ class AdBlock(QObject):
             return None
 
     # ---------------------------------------------------------------- przechwytywanie zapytań
-    def _count(self, fp_host):
+    def _count(self, fp_host, host=""):
         self.blocked[fp_host] = self.blocked.get(fp_host, 0) + 1
+        if host:
+            d = self.by_domain.setdefault(fp_host, {})
+            b = base_domain(host)
+            if b in d or len(d) < 500:
+                d[b] = d.get(b, 0) + 1
         self.total += 1
         try:
             self.store.settings["shield_total"] = self.total
@@ -607,16 +661,21 @@ class AdBlock(QObject):
             fp_host = host
         else:
             fp_host = info.firstPartyUrl().host(_ENC).lower().rstrip(".") or host
-        if base_domain(fp_host) in self.allow:
+        fp_base = base_domain(fp_host)
+        if fp_base in self.allow:
             return
+        if self.exc:
+            ex = self.exc.get(fp_base)
+            if ex and base_domain(host) in ex:   # domena odblokowana na tej stronie (panel tarczy)
+                return
         net = self.net
         if net is None:   # tryb awaryjny (brak skompilowanych list): stara blokada domen z cudzych stron
-            if host and fp_host and base_domain(host) != base_domain(fp_host):
+            if host and fp_host and base_domain(host) != fp_base:
                 parts = host.split(".")
                 for i in range(len(parts) - 1):
                     if ".".join(parts[i:]) in self.domains:
                         info.block(True)
-                        self._count(fp_host)
+                        self._count(fp_host, host)
                         return
             return
         if rt == RT.DOCUMENT or rt == RT.SUBDOCUMENT:
@@ -638,7 +697,7 @@ class AdBlock(QObject):
         if rt == RT.DOCUMENT:
             if host in self._doc_ok or info.isDownload():
                 return
-            self._count(fp_host)
+            self._count(fp_host, host)
             if SCHEME_OK:
                 info.redirect(QUrl.fromEncoded((SR + "blocked?u=" + quote(url, safe="") + "&f=" +
                                                 quote(res[-1][:500], safe="")).encode("ascii")))
@@ -650,7 +709,7 @@ class AdBlock(QObject):
             # sonda HEAD do znanej biblioteki (np. adsbygoogle.js): XHR w trybie CORS nie da się w Qt podmienić,
             # a błąd zdradza bloker – przepuszczamy (HEAD nie zwraca treści, nic nie jest wykonywane)
             return
-        self._count(fp_host)
+        self._count(fp_host, host)
         if SCHEME_OK and rt in _REDIRECTABLE and rti not in _WORKERS:
             name = None
             if kind == "redirect":
@@ -689,7 +748,7 @@ class AdBlock(QObject):
                 return False
             host = q.host(_ENC).lower()
             if self.net.popup(bytes(q.toEncoded()).decode("ascii", "replace"), host, oh or host):
-                self._count(oh or host)
+                self._count(oh or host, host)
                 return True
         except Exception:
             pass
@@ -699,7 +758,9 @@ class AdBlock(QObject):
         return self.blocked.get(QUrl(url).host(_ENC).lower(), 0)
 
     def reset(self, url):
-        self.blocked.pop(QUrl(url).host(_ENC).lower(), None)
+        h = QUrl(url).host(_ENC).lower()
+        self.blocked.pop(h, None)
+        self.by_domain.pop(h, None)
 
     # ---------------------------------------------------------------- buildy
     def _builds(self):
