@@ -359,7 +359,10 @@ def test_catalog():
        "https://raw.githubusercontent.com/MajkiIT/polish-ads-filter/master/polish-adblock-filters/adblock_ublock.txt",
        "include url")
     eq(catalog.include_url(catalog.get("pol0"), "../x.txt"), None, "include traversal")
-    eq(catalog.enabled_ids({"pgl": False}), [i for i in ids if i not in ("pgl", "psl")], "enabled ids")
+    off_by_default = [l["id"] for l in catalog.LISTS if not l["default_on"]]
+    eq(off_by_default, ["easylist-social"], "social widgets list is opt-in")
+    eq(catalog.enabled_ids({"pgl": False}), [i for i in ids if i not in ("pgl", "psl", *off_by_default)], "enabled ids")
+    check(catalog.get("ubo-cookies")["trusted"], "cookie list is trusted (uses trusted-click-element)")
     home = tempfile.mkdtemp()
     try:
         os.makedirs(catalog.lists_dir(home))

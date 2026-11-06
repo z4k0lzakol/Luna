@@ -43,6 +43,10 @@ except ImportError:
     QSvgRenderer = None
 from PyQt6.QtWebEngineCore import (QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor, QWebEngineScript,
                                    QWebEngineDownloadRequest, QWebEngineSettings)
+try:   # Qt 6.8+: uprawnienia stron (kamera, mikrofon, powiadomienia…) i wybór ekranu do udostępnienia
+    from PyQt6.QtWebEngineCore import QWebEnginePermission
+except ImportError:
+    QWebEnginePermission = None
 try:   # systemowe sterowanie multimediami Windows (SMTC): pip install winrt-Windows.Media.Control winrt-Windows.Storage.Streams
     import asyncio, threading
     from winrt.windows.media.control import (GlobalSystemMediaTransportControlsSessionManager as _SMTC,
@@ -54,6 +58,14 @@ import adblock   # wbudowana blokada reklam (adblock/); rejestruje własny schem
 
 HOME = Path.home()
 DATA = HOME / ".luna.json"
+# słowniki sprawdzania pisowni (format Chromium .bdic, pobierane przy pierwszym uruchomieniu – nie w repozytorium);
+# ścieżka musi być ustawiona przed utworzeniem QApplication
+DICT_DIR = HOME / ".luna_slowniki"
+try:   # katalog musi istnieć przy starcie silnika, inaczej Qt nie użyje słowników w tej sesji
+    DICT_DIR.mkdir(exist_ok=True)
+except OSError:
+    pass
+os.environ.setdefault("QTWEBENGINE_DICTIONARIES_PATH", str(DICT_DIR))
 RECENT = HOME / ".luna_ostatnie.json"
 HIST = HOME / ".luna_historia.json"
 SETTINGS = HOME / ".luna_ustawienia.json"
@@ -1161,11 +1173,20 @@ def _setup_profile(prof, base):
     # płynność i szybkość: płynne przewijanie (jak w Chrome), wcześniejsze DNS, akcelerowany canvas,
     # natychmiastowe Wstecz / Dalej z pamięci (back-forward cache), większa pamięć podręczna stron
     A = QWebEngineSettings.WebAttribute
-    for name in ("ScrollAnimatorEnabled", "DnsPrefetchEnabled", "Accelerated2dCanvasEnabled", "BackForwardCacheEnabled"):
+    # + pełny ekran na prośbę strony (przycisk w odtwarzaczach filmów) i przechwytywanie ekranu (udostępnianie w rozmowach)
+    for name in ("ScrollAnimatorEnabled", "DnsPrefetchEnabled", "Accelerated2dCanvasEnabled", "BackForwardCacheEnabled",
+                 "FullScreenSupportEnabled", "ScreenCaptureEnabled"):
         if hasattr(A, name):
             prof.settings().setAttribute(getattr(A, name), True)
     if base is not None:
         prof.setHttpCacheMaximumSize(300 * 1024 * 1024)
+    apply_spellcheck(prof)
+    try:   # decyzje o uprawnieniach zapamiętane na dysku (okno prywatne: tylko w pamięci); powiadomienia stron
+        P = QWebEngineProfile.PersistentPermissionsPolicy
+        prof.setPersistentPermissionsPolicy(P.StoreOnDisk if base is not None else P.StoreInMemory)
+        prof.setNotificationPresenter(SiteNotifications.present)
+    except Exception:
+        pass
     # zwykły Chromium zamiast „QtWebEngine” w User-Agent – logowanie (np. Google) rzadziej jest blokowane
     prof.setHttpUserAgent(re.sub(r"\s*QtWebEngine/\S+", "", prof.httpUserAgent()))
     if SHIELD:
@@ -1179,6 +1200,55 @@ def _setup_profile(prof, base):
 
 
 _CONTAINER_PROFILES = {}
+
+# --- sprawdzanie pisowni (polski + angielski): czerwone podkreślenia i podpowiedzi pod prawym przyciskiem myszy ---
+DICTS = {"pl-PL": "pl-pl-3-0.bdic", "en-US": "en-us-10-1.bdic"}
+DICT_URL = "https://redirector.gvt1.com/edgedl/chrome/dict/"
+SPELL = {"on": True, "busy": False}
+
+
+def spell_langs():
+    return [lang for lang in DICTS if (DICT_DIR / f"{lang}.bdic").is_file()]
+
+
+def all_profiles():
+    return _PROFILE + list(_CONTAINER_PROFILES.values())
+
+
+def apply_spellcheck(prof):
+    langs = spell_langs() if SPELL["on"] else []
+    try:
+        prof.setSpellCheckLanguages(langs); prof.setSpellCheckEnabled(bool(langs))
+    except Exception:
+        pass
+
+
+def ensure_dictionaries(store, done=None):
+    """Pobiera brakujące słowniki (raz; ok. 3,7 MB) i włącza je we wszystkich profilach."""
+    missing = [lang for lang in DICTS if not (DICT_DIR / f"{lang}.bdic").is_file()]
+    if not missing or SPELL["busy"] or not SPELL["on"]:
+        return
+    SPELL["busy"] = True
+    left = {"n": len(missing)}
+
+    def got(lang, data, err, status):
+        if status == 200 and data[:4] == b"BDic" and len(data) < 30 * 1024 * 1024:
+            try:
+                DICT_DIR.mkdir(parents=True, exist_ok=True)
+                tmp = DICT_DIR / f"{lang}.tmp"; tmp.write_bytes(data); tmp.replace(DICT_DIR / f"{lang}.bdic")
+            except OSError:
+                pass
+        left["n"] -= 1
+        if left["n"] == 0:
+            SPELL["busy"] = False
+            for p in all_profiles():
+                apply_spellcheck(p)
+            if done:
+                done()
+    for lang in missing:
+        store.http(DICT_URL + DICTS[lang], lambda d, e, s, l=lang: got(l, d, e, s), timeout=60000, raw=True)
+
+
 CONTAINER_COLORS = ["#5b9bff", "#3ddc84", "#f0b232", "#ff5c5c", "#c77dff", "#2ec4b6"]
 
 # --- blokada śledzenia i reklam (na poziomie sieci, bez wtyczek) ---
@@ -1291,6 +1361,29 @@ class LunaPage(QWebEnginePage):
 
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent); LUNA_PAGES.add(self)
+        self.fullScreenRequested.connect(self._fullscreen)
+        if QWebEnginePermission is not None:
+            self.permissionRequested.connect(lambda p: ask_permission(self, p))
+            self.desktopMediaRequested.connect(lambda r: choose_screen(self, r))
+
+    def _fullscreen(self, req):
+        """Pełny ekran na prośbę strony (np. przycisk w odtwarzaczu YouTube) – osobne okno na całym ekranie."""
+        try:
+            fs = PAGE_FULLSCREEN.get(self)
+            if req.toggleOn():
+                view = QWebEngineView.forPage(self)
+                if fs is not None or view is None:
+                    req.reject() if view is None else req.accept(); return
+                req.accept(); PAGE_FULLSCREEN[self] = FullScreenWindow(self, view)
+            else:
+                req.accept()
+                if fs is not None:
+                    fs.restore()
+        except Exception:
+            try:
+                req.reject()
+            except Exception:
+                pass
 
     def apply_dark(self, url=None):
         A = QWebEngineSettings.WebAttribute
@@ -1326,6 +1419,175 @@ class LunaPage(QWebEnginePage):
             return
         if isinstance(d, dict):
             d["origin"] = origin_of(self.url().toString()); self.pw_captured.emit(d)
+
+
+PAGE_FULLSCREEN = {}   # strona -> FullScreenWindow
+
+
+class FullScreenWindow(QWidget):
+    """Strona (np. film) na całym ekranie: druga, pełnoekranowa kopia widoku przejmuje tę samą stronę, a po wyjściu
+    strona wraca do karty (tak robi przykład Qt – bez przenoszenia widoku między układami okna)."""
+
+    def __init__(self, page, old_view):
+        super().__init__(None, Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
+        self.page_, self.old = page, old_view
+        self.setWindowTitle(page.title() or "Luna"); self.setWindowIcon(app_icon())
+        self.setStyleSheet("background:#000000;")
+        lay = QVBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0)
+        self.view = QWebEngineView(self); lay.addWidget(self.view)
+        self.view.setPage(page)
+        self.hint = QLabel("Naciśnij Esc, aby wyjść z pełnego ekranu", self)
+        self.hint.setStyleSheet("background:rgba(20,20,20,220);color:#ececec;border-radius:10px;padding:10px 18px;"
+                                "font-size:14px;")
+        self.hint.adjustSize()
+        for key in ("Esc", "F11"):
+            QShortcut(QKeySequence(key), self, activated=lambda: self.page_.triggerAction(QWebEnginePage.WebAction.ExitFullScreen))
+        page.destroyed.connect(self._gone)
+        scr = (old_view.window().screen() if old_view.window() else None) or cur_screen()
+        self.setGeometry(scr.geometry()); self.showFullScreen(); self.activateWindow(); self.view.setFocus()
+        self._place_hint(); self.hint.show(); self.hint.raise_()
+        self._ht = QTimer(self); self._ht.setSingleShot(True); self._ht.timeout.connect(self.hint.hide)
+        self._ht.start(3000)   # timer należy do okna – znika razem z nim (szybkie Esc nie wywoła błędu)
+
+    def _place_hint(self):
+        self.hint.move((self.width() - self.hint.width()) // 2, 40)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev); self._place_hint()
+
+    def restore(self):
+        """Wraca stronę do karty i zamyka okno."""
+        PAGE_FULLSCREEN.pop(self.page_, None)
+        try:
+            if self.old is not None and self.page_ is not None:
+                self.old.setPage(self.page_)
+                self.old.window().activateWindow(); self.old.setFocus()
+        except RuntimeError:
+            pass
+        self.page_ = None; self.hide(); self.deleteLater()
+
+    def _gone(self, *_):
+        for k, v in list(PAGE_FULLSCREEN.items()):
+            if v is self:
+                PAGE_FULLSCREEN.pop(k, None)
+        self.page_ = None; self.hide(); self.deleteLater()
+
+    def closeEvent(self, ev):   # Alt+F4 w trybie pełnoekranowym: wyjście z pełnego ekranu zamiast zamknięcia strony
+        if self.page_ is not None:
+            ev.ignore(); self.page_.triggerAction(QWebEnginePage.WebAction.ExitFullScreen)
+        else:
+            super().closeEvent(ev)
+
+
+PERM_TEXT = {   # „prosi o dostęp do …”
+    "MediaAudioCapture": "mikrofonu", "MediaVideoCapture": "kamery", "MediaAudioVideoCapture": "kamery i mikrofonu",
+    "DesktopVideoCapture": "udostępniania ekranu", "DesktopAudioVideoCapture": "udostępniania ekranu z dźwiękiem",
+    "Notifications": "wysyłania powiadomień", "Geolocation": "Twojej lokalizacji", "ClipboardReadWrite": "schowka",
+    "MouseLock": "przechwycenia kursora myszy", "LocalFontsAccess": "czcionek zainstalowanych w systemie"}
+
+
+def perm_name(ptype):
+    return PERM_TEXT.get(getattr(ptype, "name", str(ptype)), "dodatkowych uprawnień")
+
+
+def ask_permission(page, perm):
+    """Prośba strony o uprawnienie: pasek „Zezwolić?” w oknie Luny (albo okienko, gdy to wyskakujące okno).
+    Decyzja zapamiętywana przez silnik dla tej witryny (profil na dysku); lista i cofanie w Ustawienia → Prywatność."""
+    try:
+        perm = QWebEnginePermission(perm)   # kopia: obiekt z sygnału żyje tylko do końca tego wywołania
+        if perm.permissionType() == QWebEnginePermission.PermissionType.Unsupported:
+            perm.deny(); return
+        host = perm.origin().host() or perm.origin().toString()
+        text = f"{host} prosi o dostęp do {perm_name(perm.permissionType())}."
+        view = QWebEngineView.forPage(page)
+        win = view.window() if view is not None else None
+        notice = getattr(win, "notice", None)
+        if notice is not None:
+            win.raise_()
+            notice.ask(text, [("Zezwól", perm.grant, True), ("Blokuj", perm.deny, False)], icon="shield")
+            return
+        mb = QMessageBox(win); mb.setWindowTitle("Luna – uprawnienia"); mb.setText(text)
+        ok = mb.addButton("Zezwól", QMessageBox.ButtonRole.AcceptRole); mb.addButton("Blokuj", QMessageBox.ButtonRole.RejectRole)
+        mb.exec()
+        perm.grant() if mb.clickedButton() is ok else perm.deny()
+    except Exception:
+        try:
+            perm.deny()
+        except Exception:
+            pass
+
+
+def choose_screen(page, req):
+    """Udostępnianie ekranu (np. w Google Meet): wybór całego ekranu albo jednego okna."""
+    try:
+        view = QWebEngineView.forPage(page)
+        dlg = QDialog(view.window() if view is not None else None); dlg.setWindowTitle("Udostępnij ekran")
+        dlg.setMinimumWidth(420)
+        lay = QVBoxLayout(dlg)
+        host = page.url().host()
+        lay.addWidget(lbl(f"{host} chce zobaczyć Twój ekran. Wybierz, co udostępnić:", "h3", wrap=True))
+        lst = QListWidget(); lst.setObjectName("wlist"); lay.addWidget(lst)
+        for kind, model in (("screen", req.screensModel()), ("window", req.windowsModel())):
+            if model is None:
+                continue
+            for r in range(model.rowCount()):
+                idx = model.index(r, 0)
+                name = model.data(idx, Qt.ItemDataRole.DisplayRole) or ""
+                it = QListWidgetItem(("Cały ekran: " if kind == "screen" else "Okno: ") + str(name))
+                it.setData(Qt.ItemDataRole.UserRole, (kind, r)); lst.addItem(it)
+        if lst.count():
+            lst.setCurrentRow(0)
+        bb = QDialogButtonBox(); share = bb.addButton("Udostępnij", QDialogButtonBox.ButtonRole.AcceptRole)
+        share.setObjectName("primary"); bb.addButton("Anuluj", QDialogButtonBox.ButtonRole.RejectRole)
+        bb.accepted.connect(dlg.accept); bb.rejected.connect(dlg.reject); lay.addWidget(bb)
+        lst.itemDoubleClicked.connect(lambda _: dlg.accept())
+        if dlg.exec() == QDialog.DialogCode.Accepted and lst.currentItem() is not None:
+            kind, r = lst.currentItem().data(Qt.ItemDataRole.UserRole)
+            if kind == "screen":
+                req.selectScreen(req.screensModel().index(r, 0))
+            else:
+                req.selectWindow(req.windowsModel().index(r, 0))
+        else:
+            req.cancel()
+    except Exception:
+        try:
+            req.cancel()
+        except Exception:
+            pass
+
+
+class SiteNotifications(QObject):
+    """Powiadomienia stron (Notification API) jako dymki systemu Windows; kliknięcie pokazuje kartę strony."""
+    _inst = None
+
+    def __init__(self):
+        super().__init__(QApplication.instance())
+        from PyQt6.QtWidgets import QSystemTrayIcon
+        self.tray = QSystemTrayIcon(app_icon(), self); self.tray.setToolTip("Luna")
+        self.last = None
+        self.tray.messageClicked.connect(self._clicked)
+
+    @classmethod
+    def present(cls, n):
+        try:
+            if cls._inst is None:
+                cls._inst = SiteNotifications()
+            s = cls._inst; s.last = n
+            if not s.tray.isVisible():
+                s.tray.show()
+            host = n.origin().host()
+            s.tray.showMessage(n.title() or host, (n.message() or "") + (f"\n{host}" if host else ""),
+                               app_icon(), 8000)
+            n.show()
+        except Exception:
+            pass
+
+    def _clicked(self):
+        try:
+            if self.last is not None:
+                self.last.click()
+        except Exception:
+            pass
 
 
 def origin_of(url):
@@ -2130,6 +2392,12 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                       "Wyłączony: licznik tylko z otwartych kart Discorda.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
+    "translate_offer": ("Propozycja tłumaczenia stron", "Gdy strona jest w obcym języku, Luna proponuje przetłumaczenie jej "
+                        "na polski (Ctrl+Shift+L). Tekst strony trafia do Tłumacza Google dopiero po kliknięciu.", True),
+    "updates": ("Sprawdzanie aktualizacji", "Po starcie i co 12 godzin Luna sprawdza w tle, czy na GitHubie jest nowa wersja, "
+                "i proponuje aktualizację jednym kliknięciem.", True),
+    "spellcheck": ("Sprawdzanie pisowni", "Podkreśla błędy w polach tekstowych (polski i angielski); podpowiedzi pod prawym "
+                   "przyciskiem myszy. Słowniki (ok. 4 MB) pobierają się raz przy pierwszym uruchomieniu.", True),
 }
 GLASS_ALPHA = [168]
 
@@ -6547,7 +6815,8 @@ def page_keys(dlg):
     w, l = page_box("Skróty klawiszowe i gesty", "Można je wyłączyć w Funkcje → Skróty klawiszowe i gesty myszy.")
     for k, d in (("Ctrl + T", "Nowa karta"), ("Ctrl + W", "Zamknij kartę"), ("F5 / Ctrl + R", "Odśwież kartę lub widgety"),
                  ("Ctrl + Tab / Ctrl + Shift + Tab", "Następna / poprzednia karta"), ("Ctrl + L", "Pasek adresu"),
-                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"), ("Shift + Esc", "Menedżer zadań"), ("Ctrl + Shift + S", "Zrzut fragmentu strony"), ("Ctrl + Shift + P", "Obraz w obrazie"),
+                 ("Ctrl + J", "Asystent AI"), ("Ctrl + ,", "Ustawienia"), ("Ctrl + \\", "Podział ekranu"), ("F9", "Tryb czytania"), ("Ctrl + Shift + L", "Przetłumacz stronę / pokaż oryginał"),
+                 ("Ctrl + K", "Paleta poleceń: polecenia, karty, historia, ustawienia"), ("Ctrl + Shift + O", "Dodaj do „Do przeczytania”"), ("Ctrl + Shift + T", "Przywróć zamkniętą kartę"), ("Ctrl + Shift + Spacja", "Szukaj w kartach"), ("Shift + Esc", "Menedżer zadań"), ("Ctrl + Shift + S", "Zrzut fragmentu strony"), ("Ctrl + Shift + P", "Obraz w obrazie"),
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
@@ -6727,6 +6996,39 @@ def page_privacy(dlg):
             sh.set_site_exception("https://" + site + "/", d, False); el.takeItem(el.currentRow())
     erm.clicked.connect(drop_exc)
     l.addWidget(erm, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(14)
+    if QWebEnginePermission is not None:
+        l.addWidget(lbl("Uprawnienia stron", "h3"))
+        l.addWidget(lbl("Kamera, mikrofon, udostępnianie ekranu, powiadomienia i lokalizacja – strona pyta raz, a Luna "
+                        "pamięta decyzję. Usuń wpis, by strona zapytała ponownie.", "muted", wrap=True))
+        pl = QListWidget(); pl.setObjectName("wlist"); pl.setMaximumHeight(140); pl.viewport().setAutoFillBackground(False)
+        S = QWebEnginePermission.State
+
+        def fill_perms():
+            pl.clear()
+            profs = [get_profile("")] + [p for k, p in _CONTAINER_PROFILES.items() if k != PRIVATE]
+            for prof in profs:
+                try:
+                    perms = prof.listAllPermissions()
+                except Exception:
+                    perms = []
+                for p in perms:
+                    st_ = p.state()
+                    if st_ not in (S.Granted, S.Denied):
+                        continue
+                    it = QListWidgetItem(f"{p.origin().host()}  ·  {perm_name(p.permissionType())}  ·  "
+                                         + ("zezwolono" if st_ == S.Granted else "zablokowano"))
+                    it.setData(Qt.ItemDataRole.UserRole, p); pl.addItem(it)
+            if not pl.count():
+                pl.addItem("Żadna strona jeszcze nie prosiła o uprawnienia.")
+        fill_perms(); l.addWidget(pl)
+        prm = QPushButton("Usuń zaznaczone (strona zapyta ponownie)")
+
+        def drop_perm():
+            it = pl.currentItem(); p = it.data(Qt.ItemDataRole.UserRole) if it else None
+            if p is not None:
+                p.reset(); fill_perms()
+        prm.clicked.connect(drop_perm)
+        l.addWidget(prm, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(14)
     l.addWidget(lbl("Kontenery", "h3"))
     l.addWidget(lbl("Karta w kontenerze ma osobne ciasteczka i logowania – np. trzy konta w tym samym serwisie jednocześnie, "
                     "a serwisy z innych kontenerów nie widzą Twoich wizyt. Nową kartę w kontenerze otworzysz prawym "
@@ -6856,7 +7158,62 @@ def page_passwords(dlg):
     return scroll_page(w)
 
 
-_ORDER = ["features", "tabs", "accounts", "privacy", "passwords", "look", "keys", "dev"]
+@settings_page("updates", "Aktualizacje")
+def page_updates(dlg):
+    w, l = page_box("Aktualizacje", "Luna aktualizuje się z repozytorium na GitHubie: pobiera nowe zmiany i uruchamia się "
+                                    "ponownie z tymi samymi kartami.")
+    st, up = dlg.store, updater()
+    name, desc, _ = FEATURES["updates"]
+    l.addWidget(switch_row(name, desc, st.feature("updates"), lambda v: st.set_feature("updates", v)))
+    if not up.available():
+        l.addWidget(lbl("Ta kopia Luny nie jest uruchomiona z repozytorium git (albo nie znaleziono programu git), "
+                        "więc nie może się sama aktualizować.", "muted2", wrap=True))
+        l.addStretch(1)
+        return scroll_page(w)
+    ver = up.version()
+    l.addWidget(lbl("Bieżąca wersja: " + (ver or "nieznana"), "h3"))
+    stat = lbl("", "muted2", wrap=True); l.addWidget(stat)
+    row = QHBoxLayout(); row.setSpacing(6)
+    chk = QPushButton("Sprawdź teraz"); upd = QPushButton("Zaktualizuj i uruchom ponownie"); upd.setObjectName("primary")
+    login = QPushButton("Zaloguj do GitHuba")
+    row.addWidget(chk); row.addWidget(upd); row.addWidget(login); row.addStretch(1); l.addLayout(row)
+    l.addWidget(lbl("Repozytorium Luny jest prywatne, więc sprawdzanie wymaga jednorazowego logowania do GitHuba. "
+                    "„Zaloguj do GitHuba” otwiera bezpieczne logowanie Git Credential Manager w przeglądarce; dane "
+                    "logowania przechowuje Windows (Menedżer poświadczeń), nie Luna.", "muted", wrap=True))
+
+    def show(s=None):
+        s = s or up.state
+        try:
+            upd.setVisible(bool(s.get("behind")) and not s.get("dirty"))
+            login.setVisible(s.get("auth") is False)
+            chk.setEnabled(not up.busy)
+            if up.busy:
+                stat.setText("Sprawdzanie…")
+            elif not s:
+                stat.setText("Jeszcze nie sprawdzano w tej sesji.")
+            elif s.get("error"):
+                stat.setText("Nie udało się sprawdzić: " + s["error"] + ".")
+            elif s.get("behind"):
+                ch = "".join("\n• " + c for c in s.get("changes", [])[:5])
+                stat.setText(f"Dostępna nowa wersja: {s['behind']} zm.{ch}"
+                             + ("\nW folderze Luny są niezapisane zmiany – zaktualizuj przez GitHub Desktop." if s.get("dirty") else ""))
+            else:
+                stat.setText("Masz najnowszą wersję (sprawdzono " + datetime.fromtimestamp(s["checked"]).strftime("%H:%M") + ").")
+        except RuntimeError:
+            safe_disconnect(up.result, show)
+
+    def run(interactive=False):
+        up.check(interactive=interactive); show()
+    chk.clicked.connect(lambda: run(False)); login.clicked.connect(lambda: run(True))
+    upd.clicked.connect(lambda: (dlg.accept(), dlg.browser.apply_update()))
+    up.result.connect(show)
+    w.destroyed.connect(lambda _=None: safe_disconnect(up.result, show))
+    show()
+    l.addStretch(1)
+    return scroll_page(w)
+
+
+_ORDER = ["features", "tabs", "accounts", "privacy", "passwords", "look", "keys", "updates", "dev"]
 SETTINGS_PAGES.sort(key=lambda p: _ORDER.index(p[0]))
 
 
@@ -7353,6 +7710,13 @@ class DownloadManager(QObject):
         return QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation) or str(HOME)
 
     def on_request(self, req):
+        try:   # kopia offline „Do przeczytania” – zapis do własnego folderu, bez listy pobranych
+            if req.isSavePageDownload() and Path(req.downloadDirectory()).resolve() == OFFLINE_DIR.resolve():
+                if req.state() == QWebEngineDownloadRequest.DownloadState.DownloadRequested:
+                    req.accept()
+                return
+        except Exception:
+            pass
         if req.state() != QWebEngineDownloadRequest.DownloadState.DownloadRequested:
             return
         req.setDownloadDirectory(self.folder())
@@ -7663,6 +8027,231 @@ def apply_backup(data):
     if VAULT and VAULT[0].available() and isinstance(data.get("vault"), dict):
         VAULT[0].data = {"logins": [], "never": [], "ddg": ""}; VAULT[0].data.update(data["vault"]); VAULT[0].save()
     FROZEN[0] = True
+
+
+# --- tłumaczenie całej strony na polski: tekst zbiera skrypt w świecie aplikacji (niewidoczny dla strony, bez CSP),
+# tłumaczy Luna przez sieć Qt, wynik wraca do tych samych węzłów tekstu; oryginał można przywrócić ---
+TR_COLLECT = r"""(function(){
+var S=window.__ltr||(window.__ltr={nodes:[],orig:[]});
+var skip={SCRIPT:1,STYLE:1,NOSCRIPT:1,CODE:1,PRE:1,TEXTAREA:1,KBD:1,SAMP:1,VAR:1,svg:1,SVG:1,MATH:1,IFRAME:1,INPUT:1,SELECT:1,OPTION:1};
+var out=[],start=S.nodes.length,root=document.body;if(!root)return JSON.stringify({start:start,texts:[]});
+var tw=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){
+ var v=n.nodeValue;if(n.__lt||!v||v.length>4000||!/[A-Za-zÀ-ɏͰ-ӿ぀-ヿ一-鿿가-힯]/.test(v))return 2;
+ for(var p=n.parentElement;p;p=p.parentElement){if(skip[p.tagName]||p.isContentEditable||p.getAttribute('translate')==='no'||(p.classList&&p.classList.contains('notranslate')))return 2;}
+ return 1;}});
+var n;while((n=tw.nextNode())&&out.length<2500){n.__lt=1;S.nodes.push(n);S.orig.push(n.nodeValue);out.push(n.nodeValue);}
+return JSON.stringify({start:start,texts:out});})()"""
+TR_APPLY = "(function(d){var S=window.__ltr;if(!S)return;for(var i=0;i<d.t.length;i++){var n=S.nodes[d.s+i];" \
+           "if(n&&typeof d.t[i]==='string'&&n.nodeValue===S.orig[d.s+i])n.nodeValue=d.t[i];}})(%s)"
+TR_RESTORE = "(function(){var S=window.__ltr;if(!S)return;for(var i=0;i<S.nodes.length;i++){var n=S.nodes[i];" \
+             "if(n){n.nodeValue=S.orig[i];n.__lt=0;}}window.__ltr=null;})()"
+TR_URL = "https://translate.googleapis.com/translate_a/t?client=gtx&sl=auto&tl=pl"
+LANG_PO = {"en": "angielsku", "de": "niemiecku", "fr": "francusku", "es": "hiszpańsku", "it": "włosku", "ru": "rosyjsku",
+           "uk": "ukraińsku", "cs": "czesku", "sk": "słowacku", "nl": "niderlandzku", "pt": "portugalsku",
+           "ja": "japońsku", "zh": "chińsku", "ko": "koreańsku", "sv": "szwedzku", "no": "norwesku", "nb": "norwesku",
+           "da": "duńsku", "fi": "fińsku", "hu": "węgiersku", "tr": "turecku", "lt": "litewsku", "lv": "łotewsku",
+           "et": "estońsku", "ro": "rumuńsku", "el": "grecku", "he": "hebrajsku", "ar": "arabsku", "be": "białorusku"}
+
+
+class PageTranslator(QObject):
+    """Tłumaczy jedną stronę (widok) na polski; doczytuje nowe treści co 2,5 s, dopóki tłumaczenie jest włączone."""
+    status = pyqtSignal(str)
+
+    def __init__(self, store, web):
+        super().__init__(web)
+        self.store, self.web = store, web
+        self.active, self.queue, self.busy, self.done_items, self.failed = False, [], False, 0, False
+        self._t = QTimer(self); self._t.setInterval(2500); self._t.timeout.connect(self._collect)
+        web.urlChanged.connect(self._navigated)
+        self._url = web.url().toString(QUrl.UrlFormattingOption.RemoveFragment)
+
+    def _navigated(self, u):
+        if u.toString(QUrl.UrlFormattingOption.RemoveFragment) != self._url:   # nowa strona: tłumaczenie od nowa (na prośbę)
+            self.active = False; self._t.stop(); self.queue.clear()
+
+    def start(self):
+        self.active, self.failed, self.done_items = True, False, 0
+        self._url = self.web.url().toString(QUrl.UrlFormattingOption.RemoveFragment)
+        self._collect(); self._t.start()
+
+    def restore(self):
+        self.active = False; self._t.stop(); self.queue.clear()
+        self.web.page().runJavaScript(TR_RESTORE, QWebEngineScript.ScriptWorldId.ApplicationWorld)
+
+    def _collect(self):
+        if not self.active:
+            return
+        try:
+            self.web.page().runJavaScript(TR_COLLECT, QWebEngineScript.ScriptWorldId.ApplicationWorld, self._got)
+        except RuntimeError:
+            self._t.stop()
+
+    def _got(self, res):
+        try:
+            d = json.loads(res) if isinstance(res, str) else None
+        except ValueError:
+            d = None
+        if not d or not d.get("texts") or not self.active:
+            return
+        start, texts = int(d["start"]), d["texts"]
+        batch, size, i0 = [], 0, 0
+        for i, t in enumerate(texts):
+            core = t.strip()
+            if batch and (size + len(core) > 3500 or len(batch) >= 120):
+                self.queue.append((start + i0, texts[i0:i])); batch, size, i0 = [], 0, i
+            batch.append(core); size += len(core) + 3
+        if batch:
+            self.queue.append((start + i0, texts[i0:]))
+        self._next()
+
+    def _next(self):
+        if self.busy or not self.queue or not self.active:
+            if not self.queue and not self.busy and self.active:
+                self.status.emit("done")
+            return
+        self.busy = True
+        s, texts = self.queue.pop(0)
+        cores = [t.strip() for t in texts]
+        body = "&".join("q=" + quote(c, safe="") for c in cores).encode("ascii")
+        req = QNetworkRequest(QUrl(TR_URL))
+        req.setHeader(QNetworkRequest.KnownHeaders.ContentTypeHeader, "application/x-www-form-urlencoded;charset=utf-8")
+        req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "Mozilla/5.0")
+        req.setTransferTimeout(20000)
+        r = self.store.nam.post(req, body)
+        r.finished.connect(lambda r=r, s=s, texts=texts: self._reply(r, s, texts))
+
+    def _reply(self, r, s, texts):
+        self.busy = False
+        data = bytes(r.readAll()); ok = r.error() == QNetworkReply.NetworkError.NoError; r.deleteLater()
+        out = None
+        if ok:
+            try:
+                j = json.loads(data.decode("utf-8"))
+                if isinstance(j, list) and len(texts) == 1 and j and isinstance(j[0], str):
+                    j = [j]   # pojedynczy tekst: ["tłumaczenie", "en"]
+                out = []
+                for item, orig in zip(j, texts):
+                    tr = item[0] if isinstance(item, list) and item else (item if isinstance(item, str) else None)
+                    if tr is None:
+                        out.append(None); continue
+                    lead = orig[:len(orig) - len(orig.lstrip())]; trail = orig[len(orig.rstrip()):]
+                    out.append(lead + html.unescape(tr) + trail)
+            except (ValueError, UnicodeDecodeError):
+                out = None
+        if out is None:
+            self.failed = True; self.queue.clear(); self.status.emit("error"); return
+        try:
+            self.web.page().runJavaScript(TR_APPLY % json.dumps({"s": s, "t": out}, ensure_ascii=False),
+                                          QWebEngineScript.ScriptWorldId.ApplicationWorld)
+        except RuntimeError:
+            return
+        self.done_items += len(out)
+        self._next()
+
+
+def translator_for(store, web):
+    tr = getattr(web, "_translator", None)
+    if tr is None:
+        tr = PageTranslator(store, web); web._translator = tr
+    return tr
+
+
+class Updater(QObject):
+    """Aktualizacje Luny uruchamianej z repozytorium git (python luna.py): w tle `git fetch` (bez okienek logowania),
+    a gdy na GitHubie są nowe zmiany – pasek „Dostępna nowa wersja” i aktualizacja jednym kliknięciem (git pull
+    --ff-only + ponowne uruchomienie). Logowanie do prywatnego repozytorium: jednorazowo przez Git Credential Manager
+    (przycisk w Ustawienia → Aktualizacje), dane logowania przechowuje Windows – Luna ich nie widzi."""
+    result = pyqtSignal(dict)
+    EVERY_H = 12
+
+    def __init__(self):
+        super().__init__(QApplication.instance())
+        self.repo = Path(__file__).resolve().parent
+        self.git = self._find_git()
+        self.state = {}
+        self.busy = False
+        self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(lambda: self.check())
+
+    def available(self):
+        return (not getattr(sys, "frozen", False)) and (self.repo / ".git").exists() and bool(self.git)
+
+    @staticmethod
+    def _find_git():
+        import shutil, glob
+        g = shutil.which("git")
+        if g:
+            return g
+        cands = sorted(glob.glob(os.path.join(os.environ.get("LOCALAPPDATA", ""), "GitHubDesktop", "app-*",
+                                              "resources", "app", "git", "cmd", "git.exe")))
+        return cands[-1] if cands else None
+
+    def _run(self, args, interactive=False, timeout=60):
+        import subprocess
+        env = dict(os.environ)
+        if not interactive:
+            env.update(GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never")
+        flags = 0x08000000 if (sys.platform == "win32" and not interactive) else 0   # CREATE_NO_WINDOW
+        p = subprocess.run([self.git, "-C", str(self.repo)] + args, capture_output=True, text=True, env=env,
+                           timeout=timeout, creationflags=flags, stdin=subprocess.DEVNULL)
+        return p.returncode, (p.stdout or "").strip(), (p.stderr or "").strip()
+
+    def version(self):
+        """„a91ed8e z 06.11.2026” – bieżąca wersja (bez sieci)."""
+        if not self.available():
+            return ""
+        try:
+            rc, out, _ = self._run(["log", "-1", "--format=%h %cd", "--date=format:%d.%m.%Y"], timeout=10)
+            return out.replace(" ", " z ", 1) if rc == 0 else ""
+        except Exception:
+            return ""
+
+    def check(self, interactive=False):
+        """W wątku: fetch + porównanie z gałęzią na GitHubie. Wynik w sygnale result (wątek GUI)."""
+        if self.busy or not self.available():
+            return
+        self.busy = True
+        import threading
+
+        def work():
+            st = {"checked": time.time(), "behind": 0, "dirty": False, "error": "", "auth": True}
+            try:
+                rc, _, err = self._run(["fetch", "--quiet", "origin"], interactive=interactive, timeout=180 if interactive else 60)
+                if rc != 0:
+                    st["auth"] = not re.search(r"could not read Username|Authentication failed|interactivity|403|401", err, re.I)
+                    st["error"] = "brak logowania do GitHuba" if not st["auth"] else (err.splitlines() or ["błąd git"])[-1][:160]
+                else:
+                    rc, out, _ = self._run(["rev-list", "--count", "HEAD..@{u}"], timeout=20)
+                    st["behind"] = int(out) if rc == 0 and out.isdigit() else 0
+                    rc, out, _ = self._run(["status", "--porcelain", "--untracked-files=no"], timeout=20)
+                    st["dirty"] = rc == 0 and bool([ln for ln in out.splitlines() if not ln.endswith(".pyc")])
+                    if st["behind"]:
+                        rc, out, _ = self._run(["log", "--format=%s", "HEAD..@{u}", "-n", "5"], timeout=20)
+                        st["changes"] = out.splitlines() if rc == 0 else []
+            except Exception as e:
+                st["error"] = str(e)[:160]
+            self.result.emit(st)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _done(self, st):
+        self.busy = False; self.state = st
+        self._t.start(self.EVERY_H * 3600 * 1000)
+
+    def pull(self):
+        """git pull --ff-only; (ok, komunikat)."""
+        try:
+            rc, out, err = self._run(["pull", "--ff-only", "--quiet"], timeout=120)
+            return rc == 0, (err or out)[-200:]
+        except Exception as e:
+            return False, str(e)[:200]
+
+
+UPDATER = []
+
+
+def updater():
+    if not UPDATER:
+        u = Updater(); u.result.connect(u._done); UPDATER.append(u)
+    return UPDATER[0]
 
 
 def restart_luna(browser):
@@ -8615,6 +9204,210 @@ class TabSearch(QFrame):
                 self.b.activate(t)
 
 
+def fold(s):
+    """Do wyszukiwania: małe litery bez polskich znaków („Tłumacz” ~ „tlumacz”)."""
+    import unicodedata
+    s = (s or "").lower().replace("ł", "l")
+    return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+
+
+class CommandPalette(QFrame):
+    """Paleta poleceń (Ctrl+K): jedno pole do szukania poleceń Luny, otwartych kart, historii, kafelków
+    i ustawień. Enter wykonuje; tekst bez dopasowań → otwórz adres albo szukaj w sieci."""
+
+    def __init__(self, browser):
+        super().__init__(browser, Qt.WindowType.Popup); self.b = browser
+        self.setObjectName("tabpop"); self.setFixedWidth(620)
+        v = QVBoxLayout(self); v.setContentsMargins(10, 10, 10, 10); v.setSpacing(8)
+        self.edit = QLineEdit(); self.edit.setObjectName("splitaddr")
+        self.edit.setPlaceholderText("Polecenie, karta, strona z historii albo ustawienie…")
+        self.edit.addAction(glyph("search"), QLineEdit.ActionPosition.LeadingPosition)
+        self.edit.textChanged.connect(self.fill); self.edit.installEventFilter(self)
+        self.list = QListWidget(); self.list.setObjectName("splitlist"); self.list.setIconSize(QSize(16, 16))
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.list.setTextElideMode(Qt.TextElideMode.ElideRight)
+        self.list.itemActivated.connect(self.choose); self.list.itemClicked.connect(self.choose)
+        v.addWidget(self.edit); v.addWidget(self.list)
+        self.entries, self.shown = [], []
+
+    def open(self):
+        self.entries = self.b.palette_entries()
+        self.edit.clear(); self.fill("")
+        g = self.b.geometry(); self.move(g.x() + (g.width() - self.width()) // 2, g.y() + 80)
+        self.show(); self.edit.setFocus()
+
+    def fill(self, q):
+        words = fold(q).split(); self.list.clear(); self.shown = []
+        scored = []
+        for i, e in enumerate(self.entries):
+            hay = e["hay"]
+            if words and not all(w in hay for w in words):
+                continue
+            # wyżej: dopasowanie od początku tytułu, polecenia przed kartami przed historią
+            title = fold(e["title"])
+            score = (0 if words and title.startswith(words[0]) else 1, e["rank"], i)
+            scored.append((score, e))
+        if not words:
+            scored = [s for s in scored if s[1]["kind"] in ("cmd", "tab")]
+        scored.sort(key=lambda x: x[0])
+        for _, e in scored[:40]:
+            text = e["title"] + (f"      {e['sub']}" if e.get("sub") else "")
+            it = QListWidgetItem(e["icon"], text); it.setToolTip(e.get("tip") or e["title"])
+            self.list.addItem(it); self.shown.append(e)
+        if q.strip():
+            u = q.strip()
+            is_url = ("." in u and " " not in u) or u.startswith(("http://", "https://"))
+            it = QListWidgetItem(glyph("external" if is_url else "search"),
+                                 ("Otwórz: " if is_url else "Szukaj w sieci: ") + u)
+            self.list.addItem(it)
+            self.shown.append({"kind": "go", "title": u, "fn": lambda u=u: self.b.palette_go(u)})
+        self.list.setCurrentRow(0 if self.shown else -1)
+        rows = min(12, max(1, self.list.count()))
+        self.list.setFixedHeight(rows * 34 + 6); self.adjustSize()
+
+    def eventFilter(self, obj, ev):
+        if obj is self.edit and ev.type() == QEvent.Type.KeyPress:
+            k = ev.key(); n = self.list.count()
+            if k in (Qt.Key.Key_Down, Qt.Key.Key_Up) and n:
+                self.list.setCurrentRow((self.list.currentRow() + (1 if k == Qt.Key.Key_Down else -1)) % n); return True
+            if k in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                it = self.list.currentItem()
+                if it is not None:
+                    self.choose(it)
+                return True
+        return super().eventFilter(obj, ev)
+
+    def choose(self, it):
+        i = self.list.row(it)
+        if 0 <= i < len(self.shown):
+            e = self.shown[i]; self.hide()
+            QTimer.singleShot(0, e["fn"])
+
+
+# --- „Do przeczytania”: lista stron na później z kopią offline (jeden plik MHTML, otwierany bez internetu) ---
+READLATER = HOME / ".luna_do_przeczytania.json"
+OFFLINE_DIR = HOME / ".luna_offline"
+
+
+class ReadLater(QObject):
+    changed = pyqtSignal()
+    _inst = None
+
+    @classmethod
+    def get(cls):
+        if cls._inst is None:
+            cls._inst = ReadLater()
+        return cls._inst
+
+    def __init__(self):
+        super().__init__(QApplication.instance())
+        try:
+            d = json.loads(READLATER.read_text(encoding="utf-8"))
+            self.items = d if isinstance(d, list) else []
+        except (OSError, ValueError):
+            self.items = []
+
+    def save(self):
+        try:
+            tmp = READLATER.with_suffix(".tmp"); tmp.write_text(json.dumps(self.items, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(READLATER)
+        except OSError:
+            pass
+        self.changed.emit()
+
+    def find(self, url):
+        return next((x for x in self.items if x["url"] == url), None)
+
+    def offline_path(self, it):
+        return OFFLINE_DIR / f"{it['id']}.mhtml"
+
+    def add(self, web):
+        """Dodaje stronę widoku i zapisuje jej kopię offline. Zwraca wpis."""
+        url = web.url().toString(QUrl.UrlFormattingOption.RemoveFragment)
+        it = self.find(url)
+        if it is None:
+            it = {"id": secrets.token_hex(6), "url": url, "title": (web.title() or host_of(url))[:200],
+                  "t": int(time.time()), "read": False}
+            self.items.insert(0, it)
+        else:
+            it["read"] = False
+        try:
+            OFFLINE_DIR.mkdir(exist_ok=True)
+            web.page().save(str(self.offline_path(it)), QWebEngineDownloadRequest.SavePageFormat.MimeHtmlSaveFormat)
+        except Exception:
+            pass
+        self.save()
+        return it
+
+    def set_read(self, it, read=True):
+        it["read"] = bool(read); self.save()
+
+    def remove(self, it):
+        self.items = [x for x in self.items if x["id"] != it["id"]]
+        try:
+            self.offline_path(it).unlink()
+        except OSError:
+            pass
+        self.save()
+
+    def unread(self):
+        return [x for x in self.items if not x.get("read")]
+
+
+class ReadLaterDialog(QDialog):
+    """Lista „Do przeczytania”: otwórz (online albo kopię offline), oznacz jako przeczytane, usuń."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b = browser; self.rl = ReadLater.get()
+        self.setWindowTitle("Do przeczytania"); self.resize(fit_size(640, 520))
+        v = QVBoxLayout(self)
+        v.addWidget(lbl("Do przeczytania", "h3"))
+        v.addWidget(lbl("Strony odłożone na później. Kopia offline (tekst i obrazki, bez skryptów strony) otwiera się "
+                        "bez internetu, np. w podróży. Skrót dodawania: Ctrl+Shift+O.", "muted", wrap=True))
+        self.list = QListWidget(); self.list.setObjectName("wlist"); v.addWidget(self.list, 1)
+        self.list.itemDoubleClicked.connect(lambda _: self.open_sel(False))
+        row = QHBoxLayout(); row.setSpacing(6)
+        for text, fn in (("Otwórz", lambda: self.open_sel(False)), ("Otwórz offline", lambda: self.open_sel(True)),
+                         ("Przeczytane / nieprzeczytane", self.toggle_read), ("Usuń", self.remove_sel)):
+            bt = QPushButton(text); bt.clicked.connect(fn); row.addWidget(bt)
+        row.addStretch(1); v.addLayout(row)
+        self.fill()
+
+    def fill(self):
+        self.list.clear()
+        for it in sorted(self.rl.items, key=lambda x: (bool(x.get("read")), -x.get("t", 0))):
+            when = datetime.fromtimestamp(it.get("t", 0)).strftime("%d.%m %H:%M")
+            off = "  ·  offline" if self.rl.offline_path(it).exists() else ""
+            li = QListWidgetItem(mini_icon(it["title"], it["url"]),
+                                 f"{it['title']}      {host_of(it['url'])}  ·  {when}{off}" + ("  ·  przeczytane" if it.get("read") else ""))
+            li.setData(Qt.ItemDataRole.UserRole, it["id"]); li.setToolTip(it["url"])
+            if not it.get("read"):
+                f = li.font(); f.setBold(True); li.setFont(f)
+            self.list.addItem(li)
+        if not self.rl.items:
+            self.list.addItem("Lista jest pusta – dodaj stronę skrótem Ctrl+Shift+O albo z menu.")
+
+    def _sel(self):
+        li = self.list.currentItem(); iid = li.data(Qt.ItemDataRole.UserRole) if li else None
+        return next((x for x in self.rl.items if x["id"] == iid), None)
+
+    def open_sel(self, offline):
+        it = self._sel()
+        if it is None:
+            return
+        self.b.open_read_later(it, offline); self.fill()
+
+    def toggle_read(self):
+        it = self._sel()
+        if it is not None:
+            self.rl.set_read(it, not it.get("read")); self.fill()
+
+    def remove_sel(self):
+        it = self._sel()
+        if it is not None:
+            self.rl.remove(it); self.fill()
+
+
 class Tab(QStackedWidget):
     """Karta: ekran główny, a po wejściu na stronę – widok WWW (tworzony leniwie). Należy do przestrzeni roboczej,
     opcjonalnie do grupy i kontenera; może mieć podział ekranu (druga strona obok) i może zostać uśpiona."""
@@ -9274,6 +10067,10 @@ class Browser(QMainWindow):
         self.apply_features(); self.host.sync()
         if SHIELD:
             QTimer.singleShot(8000, SHIELD[0].maybe_update)   # lista domen raz w tygodniu, po starcie
+        up = updater()
+        up.result.connect(self.on_update_result)
+        if len(WINDOWS) <= 1 and self.store.feature("updates") and up.available() and not up.state:
+            QTimer.singleShot(20000, lambda: self.store.feature("updates") and up.check())   # po starcie, w tle
         self.store.ensure_fonts()
 
     # --- położenie okna między uruchomieniami (dopasowane do aktualnych monitorów) ---
@@ -9334,6 +10131,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
+                ("Ctrl+Shift+L", self.translate_page), ("Ctrl+K", self.palette), ("Ctrl+Shift+O", self.read_later_add),
                 ("Ctrl+Shift+Space", self.search_tabs), ("Shift+Esc", self.task_manager),
                 ("Ctrl+Shift+S", lambda: self.screenshot("region")), ("Ctrl+Shift+P", self.pip),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
@@ -9361,6 +10159,13 @@ class Browser(QMainWindow):
         self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.apply_pins()
         if SHIELD:
             SHIELD[0].reload()
+        sp = self.store.feature("spellcheck")
+        if sp != SPELL["on"] or not getattr(self, "_spell_init", False):
+            self._spell_init = True; SPELL["on"] = sp
+            for p in all_profiles():
+                apply_spellcheck(p)
+            if sp and len(spell_langs()) < len(DICTS):   # pierwsze uruchomienie: pobierz słowniki w tle, po starcie
+                QTimer.singleShot(6000, lambda: ensure_dictionaries(self.store))
         self.update_shield(); self.tabs_changed()
         self.update_sidebars()
 
@@ -9680,6 +10485,7 @@ class Browser(QMainWindow):
         for it in self.store.items[:20]:
             bm.addAction(mini_icon(it["name"], it["url"]), it["name"]).triggered.connect(
                 lambda _=False, u=it["url"]: self.open_url_new_tab(u))
+        rl = m.addMenu(glyph("book"), "Do przeczytania"); rl.aboutToShow.connect(lambda: self.read_later_menu(rl))
         self.act(m, "download", "Pobrane pliki", self.show_downloads, "Ctrl+Shift+Y")
         em = m.addMenu(glyph("puzzle"), "Rozszerzenia"); em.aboutToShow.connect(lambda: self.extensions_menu(em))
         self.act(m, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
@@ -9696,6 +10502,9 @@ class Browser(QMainWindow):
         menu_row_action(m, zr)
         rd = self.act(m, "book", "Tryb czytania", self.toggle_reader, "F9", web is not None)
         rd.setCheckable(True); rd.setChecked(bool(web is not None and getattr(web, "reader_on", False)))
+        tr_on = bool(web is not None and getattr(getattr(web, "_translator", None), "active", False))
+        self.act(m, "swap", "Pokaż oryginał strony" if tr_on else "Przetłumacz stronę na polski", self.translate_page,
+                 "Ctrl+Shift+L", web is not None)
         self.act(m, "external", "Obraz w obrazie (film w okienku)", self.pip, "Ctrl+Shift+P", web is not None)
         dk = self.act(m, "moon", "Ciemny tryb stron", self.toggle_dark, "Ctrl+Shift+D")
         dk.setCheckable(True); dk.setChecked(self.store.feature("dark_pages"))
@@ -9770,6 +10579,55 @@ class Browser(QMainWindow):
     def toggle_dark(self):
         self.store.set_feature("dark_pages", not self.store.feature("dark_pages"))
 
+    # --- tłumaczenie strony (Ctrl+Shift+L; ponowne wywołanie przywraca oryginał) ---
+    def translate_page(self):
+        web = self.web()
+        if web is None or not web.url().scheme().startswith("http"):
+            return
+        tr = translator_for(self.store, web)
+        if tr.active:
+            tr.restore(); self.notice.info("Przywrócono oryginalny tekst strony.", 3000, "swap"); return
+        safe_disconnect(tr.status, self._translate_status)
+        tr.status.connect(self._translate_status)
+        self.notice.info("Tłumaczę stronę na polski…", 15000, "swap")
+        tr.start()
+
+    def _translate_status(self, st):
+        if st == "error":
+            self.notice.info("Nie udało się przetłumaczyć strony (brak połączenia z Tłumaczem Google).", 6000, "swap")
+        elif st == "done" and self.notice.isVisible() and self.notice.text.text().startswith("Tłumaczę"):
+            self.notice.ask("Strona przetłumaczona na polski.", [("Pokaż oryginał", self.translate_page, False),
+                                                                 ("OK", None, False)], icon="swap")
+
+    def offer_translation(self, web):
+        """Po wczytaniu: strona deklaruje obcy język (atrybut lang) → pytanie, czy przetłumaczyć."""
+        if not self.store.feature("translate_offer") or web is None or not web.url().scheme().startswith("http"):
+            return
+        host = base_domain(web.url().host())
+        if host in self.store.settings.get("translate_never", []):
+            return
+
+        def got(lang):
+            code = str(lang or "").strip().lower().split("-")[0].split("_")[0]
+            if not code or code == "pl" or code not in LANG_PO or web is not self.web():
+                return
+            if getattr(getattr(web, "_translator", None), "active", False):
+                return
+            if self.notice.isVisible() and self.notice.btns.count():   # inne pytanie (np. zapis hasła) ma pierwszeństwo
+                return
+            self.notice.ask(f"Ta strona jest po {LANG_PO[code]}. Przetłumaczyć ją na polski?",
+                            [("Przetłumacz", self.translate_page, True),
+                             ("Nigdy na tej stronie", lambda: self._translate_never(host), False), ("Nie", None, False)],
+                            icon="swap")
+        try:
+            web.page().runJavaScript("document.documentElement.lang", QWebEngineScript.ScriptWorldId.ApplicationWorld, got)
+        except RuntimeError:
+            pass
+
+    def _translate_never(self, host):
+        lst = [h for h in self.store.settings.get("translate_never", []) if h != host] + [host]
+        self.store.settings["translate_never"] = lst; self.store.save_soon()
+
     # --- tryb czytania (nakładka na stronę; ponowne wywołanie zamyka) ---
     def toggle_reader(self):
         web = self.web()
@@ -9802,6 +10660,29 @@ class Browser(QMainWindow):
 
     def open_market(self, tab="cat"):
         dlg = WidgetMarket(self); dlg.show_tab(tab); dlg.exec()
+
+    # --- aktualizacje Luny (git) ---
+    def on_update_result(self, st):
+        if not WINDOWS or WINDOWS[0] is not self or not st.get("behind"):
+            return
+        n = st["behind"]
+        if st.get("dirty"):
+            self.notice.ask(f"Dostępna nowa wersja Luny ({n} zm.), ale w folderze Luny są niezapisane zmiany – "
+                            "zaktualizuj przez GitHub Desktop.", [("OK", None, False)], icon="app")
+            return
+        self.notice.ask(f"Dostępna nowa wersja Luny ({n} {'zmiana' if n == 1 else 'zmian'}).",
+                        [("Zaktualizuj i uruchom ponownie", self.apply_update, True), ("Później", None, False)], icon="app")
+
+    def apply_update(self):
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            ok, msg = updater().pull()
+        finally:
+            QApplication.restoreOverrideCursor()
+        if ok:
+            restart_luna(self)
+        else:
+            self.notice.ask("Nie udało się zaktualizować Luny: " + (msg or "błąd git"), [("OK", None, False)], icon="app")
 
     def quit_all(self):
         for w in list(WINDOWS):
@@ -10235,6 +11116,127 @@ class Browser(QMainWindow):
 
     def task_manager(self):
         TaskManager(self).exec()
+
+    # --- paleta poleceń (Ctrl+K) ---
+    def palette(self):
+        if getattr(self, "_palette", None) is None:
+            self._palette = CommandPalette(self)
+        self._palette.open()
+
+    def palette_commands(self):
+        """(ikona, nazwa, skrót, funkcja) – polecenia Luny dostępne z palety."""
+        web = self.web()
+        cmds = [("plus", "Nowa karta", "Ctrl+T", self.new_tab), ("window", "Nowe okno", "Ctrl+N", self.new_window),
+                ("private", "Nowe okno prywatne", "Ctrl+Shift+N", lambda: self.new_window(True)),
+                ("search", "Szukaj w kartach", "Ctrl+Shift+Space", self.search_tabs),
+                ("reload", "Przywróć zamkniętą kartę", "Ctrl+Shift+T", self.restore_closed),
+                ("tabs", "Karty i grupy", "Ctrl+Shift+A", self.toggle_tab_popup),
+                ("history", "Historia", "Ctrl+H", self.show_history),
+                ("download", "Pobrane pliki", "Ctrl+Shift+Y", self.show_downloads),
+                ("book", "Do przeczytania – lista", "", self.show_read_later),
+                ("grid", "Rynek Widgetów", "Ctrl+Shift+E", self.open_market),
+                ("moon", "Ciemny tryb stron – przełącz", "Ctrl+Shift+D", self.toggle_dark),
+                ("tools", "Menedżer zadań", "Shift+Esc", self.task_manager),
+                ("trash", "Usuń dane przeglądania", "Ctrl+Shift+Del", self.clear_data),
+                ("save", "Kopia zapasowa", "", lambda: BackupDialog(self).exec()),
+                ("gear", "Ustawienia", "Ctrl+,", self.open_settings),
+                ("exit", "Zakończ Lunę", "", self.quit_all)]
+        if self.store.feature("assistant"):
+            cmds.append(("assistant", "Asystent AI", "Ctrl+J", self.toggle_assistant))
+        if web is not None:
+            cmds += [("book", "Tryb czytania", "F9", self.toggle_reader),
+                     ("swap", "Przetłumacz stronę na polski / pokaż oryginał", "Ctrl+Shift+L", self.translate_page),
+                     ("book", "Do przeczytania – dodaj tę stronę", "Ctrl+Shift+O", self.read_later_add),
+                     ("split", "Podziel ekran", "Ctrl+\\", self.split_current),
+                     ("external", "Obraz w obrazie", "Ctrl+Shift+P", self.pip),
+                     ("search", "Znajdź na stronie", "Ctrl+F", self.find_bar.open),
+                     ("star", "Dodaj stronę do ekranu głównego", "Ctrl+D", self.pin_current),
+                     ("print", "Drukuj", "Ctrl+P", self.print_page), ("print", "Zapisz jako PDF", "", self.save_pdf),
+                     ("save", "Zapisz stronę jako", "Ctrl+S", self.save_page),
+                     ("copy", "Kopiuj link do strony", "", lambda: QGuiApplication.clipboard().setText(web.url().toString())),
+                     ("copy", "Zrzut: widoczna część", "", lambda: self.screenshot("visible")),
+                     ("copy", "Zrzut: cała strona", "", lambda: self.screenshot("full")),
+                     ("copy", "Zrzut: zaznaczony fragment", "Ctrl+Shift+S", lambda: self.screenshot("region")),
+                     ("zoom", "Powiększ", "Ctrl++", lambda: self.zoom(1)), ("zoom", "Pomniejsz", "Ctrl+-", lambda: self.zoom(-1)),
+                     ("zoom", "Powiększenie 100%", "Ctrl+0", lambda: self.zoom(0)),
+                     ("tools", "Narzędzia deweloperskie", "F12", self.devtools),
+                     ("app", "Źródło strony", "Ctrl+U", self.view_source)]
+        cmds.append(("window", "Pełny ekran", "F11", self.toggle_fullscreen))
+        for pid, title, _ in SETTINGS_PAGES:
+            cmds.append(("gear", f"Ustawienia: {title}", "", lambda p=pid: self.open_settings(p)))
+        return cmds
+
+    def palette_entries(self):
+        out = []
+
+        def add(kind, rank, icon, title, sub, fn, extra=""):
+            out.append({"kind": kind, "rank": rank, "icon": icon, "title": title, "sub": sub, "fn": fn,
+                        "hay": fold(f"{title} {sub} {extra}")})
+        for ic, name, sc, fn in self.palette_commands():
+            add("cmd", 0, glyph(ic), name, sc, fn, "polecenie")
+        for t in self.all_tabs():
+            url = t.pending or (t.main.url().toString() if t.main is not None and not t.on_home() else "")
+            title = t.title_text or ("Ekran główny" if not url else url)
+
+            def go_tab(t=t):
+                if t in self.all_tabs():
+                    if t.ws != self.ws and self.store.feature("workspaces"):
+                        self.switch_ws(t.ws)
+                    self.activate(t)
+            add("tab", 1, tab_icon(t.icon, self.container_color(t.container), t.asleep or bool(t.pending)),
+                title, "karta  ·  " + host_of(url) if url else "karta", go_tab, url)
+        for it in self.store.items[:60]:
+            add("tile", 2, mini_icon(it["name"], it["url"]), it["name"], "ekran główny  ·  " + host_of(it["url"]),
+                lambda u=it["url"]: self.open_url_new_tab(u), it["url"])
+        for it in ReadLater.get().unread()[:30]:
+            add("later", 2, glyph("book"), it["title"], "do przeczytania  ·  " + host_of(it["url"]),
+                lambda it=it: self.open_read_later(it, False), it["url"])
+        seen = set()
+        for h in self.store.history[:300]:
+            if h["url"] in seen:
+                continue
+            seen.add(h["url"])
+            add("hist", 3, mini_icon(h.get("name") or h["url"], h["url"]), h.get("name") or h["url"],
+                "historia  ·  " + host_of(h["url"]), lambda u=h["url"]: self.open_url_new_tab(u), h["url"])
+        return out
+
+    def palette_go(self, text):
+        t = self.cur()
+        if t is None or not t.on_home():
+            t = self.new_tab()
+        t.go(text)
+
+    # --- do przeczytania ---
+    def read_later_add(self):
+        web = self.web()
+        if web is None or not web.url().scheme().startswith("http"):
+            self.notice.info("Do listy można dodać tylko stronę internetową.", 4000, "book"); return
+        it = ReadLater.get().add(web)
+        self.notice.ask(f"Dodano do „Do przeczytania” (z kopią offline): {it['title'][:60]}",
+                        [("Pokaż listę", self.show_read_later, False), ("OK", None, False)], icon="book")
+
+    def show_read_later(self):
+        ReadLaterDialog(self).exec()
+
+    def open_read_later(self, it, offline=False):
+        rl = ReadLater.get(); p = rl.offline_path(it)
+        if offline and p.exists():
+            self.open_url_new_tab(QUrl.fromLocalFile(str(p)).toString())
+        else:
+            self.open_url_new_tab(it["url"])
+        rl.set_read(it, True)
+
+    def read_later_menu(self, m):
+        m.clear(); web = self.web(); rl = ReadLater.get()
+        self.act(m, "plus", "Dodaj tę stronę", self.read_later_add, "Ctrl+Shift+O",
+                 web is not None and web.url().scheme().startswith("http"))
+        self.act(m, "book", "Cała lista…", self.show_read_later)
+        un = rl.unread()
+        if un:
+            m.addSeparator()
+            for it in un[:12]:
+                m.addAction(mini_icon(it["title"], it["url"]), it["title"][:56]).triggered.connect(
+                    lambda _=False, it=it: self.open_read_later(it, False))
 
     def search_tabs(self):
         if getattr(self, "_tab_search", None) is None:
@@ -10947,6 +11949,8 @@ class Browser(QMainWindow):
         view = view or tab.main
         if tab is self.cur() and view is tab.web:
             self.update_shield(); self.update_page_bg()
+            if ok:
+                self.offer_translation(view)
         if ok and view is not None:
             self.autofill(view)
             url = view.url().toString()

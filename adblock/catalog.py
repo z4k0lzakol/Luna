@@ -17,6 +17,15 @@ def _ubo(id_, name, title, desc, expires_h=120):
                 license="GPL-3.0", expires_h=expires_h, trusted=True, default_on=True, includes=[], kind="filters")
 
 
+def _tp(id_, name, title, desc, default_on=True, expires_h=120):
+    """Lista EasyList z serwera uBlock Origin (thirdparties)."""
+    return dict(id=id_, title=title, desc=desc,
+                url="https://ublockorigin.github.io/uAssetsCDN/thirdparties/%s.txt" % name,
+                fallback="https://ublockorigin.pages.dev/thirdparties/%s.txt" % name,
+                homepage="https://easylist.to/", license="GPL-3.0 / CC BY-SA 3.0", expires_h=expires_h,
+                trusted=False, default_on=default_on, includes=[], kind="filters")
+
+
 LISTS = [
     _ubo("ubo-filters", "filters", "uBlock filters – Reklamy", "Główna lista uBlock Origin: reklamy, anty-adblock."),
     _ubo("ubo-badware", "badware", "uBlock filters – Zagrożenia", "Strony ze złośliwym oprogramowaniem i oszustwa."),
@@ -43,6 +52,29 @@ LISTS = [
          fallback=None, homepage="https://github.com/MajkiIT/polish-ads-filter", license="CC BY-NC-SA 4.0",
          expires_h=24, trusted=False, default_on=True,
          includes=["adblock_suplement.txt", "adblock_ublock.txt"], kind="filters"),
+    # banery cookies (uBO klika „Odrzuć” – reguły trusted-click-element, dlatego lista zaufana) i natrętne elementy
+    dict(id="ubo-cookies", title="uBlock filters – Banery cookies",
+         desc="Zamyka banery zgody na cookies, wybierając „Odrzuć”, gdzie się da (także polskie serwisy).",
+         url="https://ublockorigin.github.io/uAssetsCDN/filters/annoyances-cookies.txt",
+         fallback="https://ublockorigin.pages.dev/filters/annoyances-cookies.txt", homepage=_UBO_HOME,
+         license="GPL-3.0", expires_h=48, trusted=True, default_on=True, includes=[], kind="filters"),
+    _tp("easylist-cookies", "easylist-cookies", "EasyList – Banery cookies",
+        "Ukrywa pozostałe komunikaty o cookies."),
+    dict(id="ubo-annoyances", title="uBlock filters – Natrętne elementy",
+         desc="Wyskakujące okna, nakładki i inne irytujące elementy stron.",
+         url="https://ublockorigin.github.io/uAssetsCDN/filters/annoyances-others.txt",
+         fallback="https://ublockorigin.pages.dev/filters/annoyances-others.txt", homepage=_UBO_HOME,
+         license="GPL-3.0", expires_h=120, trusted=True, default_on=True, includes=[], kind="filters"),
+    _tp("easylist-newsletters", "easylist-newsletters", "EasyList – Newslettery",
+        "Okienka z zapisem na newsletter."),
+    _tp("easylist-notifications", "easylist-notifications", "EasyList – Prośby o powiadomienia",
+        "Nakładki namawiające do włączenia powiadomień."),
+    _tp("easylist-chat", "easylist-chat", "EasyList – Czaty na stronach",
+        "Pływające okienka czatu i botów obsługi klienta."),
+    _tp("easylist-annoyances", "easylist-annoyances", "EasyList – Inne natręctwa",
+        "Paski „Pobierz naszą aplikację”, prośby o ocenę i podobne."),
+    _tp("easylist-social", "easylist-social", "EasyList – Przyciski społecznościowe",
+        "Przyciski „Udostępnij” i widżety Facebooka, X itp.", default_on=False),
     # lista domen w stylu DNS: telemetria telefonów/aplikacji/systemów (Xiaomi, Oppo, Huawei, Apple, Samsung…),
     # której listy przeglądarkowe nie obejmują; działa niezależnie od DNS w danej sieci (ok. 220 tys. domen,
     # w silniku ~1,5 MB pamięci). Wyjątki z ubo-unbreak ($badfilter) nadal ją poprawiają
