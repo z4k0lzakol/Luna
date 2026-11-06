@@ -61,14 +61,43 @@ EN_PAGE = """<!doctype html><html lang="en"><head><meta charset=utf-8><title>Eng
 </body></html>"""
 
 
+PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+       b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
+       b"4 0 obj<</Length 44>>stream\nBT /F1 18 Tf 20 100 Td (Luna PDF test) Tj ET\nendstream endobj\n"
+       b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n")
+YT_PAGE = """<!doctype html><html><head><meta charset=utf-8><title>yt</title></head><body>
+<video id=v muted loop src="/v.mp4" style="width:320px;height:180px"></video></body></html>"""
+ADDR_PAGE = """<!doctype html><html lang=pl><head><meta charset=utf-8><title>Dostawa</title></head><body><form id=f>
+<label for=a1>Imię</label><input id=a1 name="firstName">
+<label for=a2>Nazwisko</label><input id=a2 name="lastName">
+<input id=a3 autocomplete="street-address" placeholder="Ulica">
+<input id=a4 name="zip" placeholder="Kod pocztowy">
+<input id=a5 name="miasto" placeholder="Miejscowość">
+<input id=a6 type=email name="email">
+<input id=a7 type=tel name="telefon">
+<input id=pw type=password name="pass"></form>
+<script>window.EV=0;document.querySelectorAll('input').forEach(function(i){i.addEventListener('input',function(){window.EV++})})</script>
+</body></html>"""
+
+
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
     def do_GET(self):
-        b = (EN_PAGE if self.path.startswith("/en") else PAGE).encode()
+        ctype = "text/html; charset=utf-8"
+        if self.path.startswith("/doc.pdf"):
+            b, ctype = PDF, "application/pdf"
+        elif self.path.startswith("/v.mp4"):
+            b, ctype = open(os.path.join(REPO, "adblock", "res", "noop-1s.mp4"), "rb").read(), "video/mp4"
+        elif self.path.startswith("/watch"):
+            b = YT_PAGE.encode()
+        elif self.path.startswith("/addr"):
+            b = ADDR_PAGE.encode()
+        else:
+            b = (EN_PAGE if self.path.startswith("/en") else PAGE).encode()
         self.send_response(200)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(b)))
         self.end_headers()
         self.wfile.write(b)
@@ -208,6 +237,221 @@ def EXTRA(t):
     translation()
     palette()
     read_later()
+    error_guard()
+    pdf_viewer()
+    context_menu()
+    site_zoom()
+    browser_import()
+    sponsorblock()
+    highlights()
+    leak_check()
+    address_fill()
+
+
+def menu_texts(fn):
+    """Uruchamia fn (która otwiera QMenu.popup) i zwraca teksty akcji widocznego menu."""
+    from PyQt6.QtWidgets import QMenu
+    fn()
+    wait(500)
+    for m in app.topLevelWidgets():
+        if isinstance(m, QMenu) and m.isVisible():
+            t = [a.text() for a in m.actions() if a.text()]
+            subs = {a.text(): [x.text() for x in a.menu().actions()] for a in m.actions() if a.menu()}
+            m.hide()
+            return t, subs
+    return [], {}
+
+
+def error_guard():
+    luna.install_error_guard()
+    QTimer.singleShot(0, lambda: 1 / 0)   # nieobsłużony wyjątek w slocie Qt
+    wait(400)
+    log = luna.ERROR_LOG.read_text(encoding="utf-8") if luna.ERROR_LOG.exists() else ""
+    check("unhandled error in a Qt slot is logged, Luna keeps running", "ZeroDivisionError" in log and w.isVisible())
+    check("running marker set (crash detection)", w.store.settings.get("running") is True)
+
+
+def pdf_viewer():
+    n0 = len(luna.DOWNLOADS[0].items)
+    t = open_tab(f"http://site-a.localhost:{PORT}/doc.pdf")
+    wait(1500)
+    check("PDF opens in the tab (not downloaded)", len(luna.DOWNLOADS[0].items) == n0 and t.web is not None
+          and t.web.url().toString().endswith("doc.pdf"), (len(luna.DOWNLOADS[0].items), t.web and t.web.url().toString()))
+
+
+def context_menu():
+    t = open_tab(f"http://site-a.localhost:{PORT}/")
+    v = t.web
+    base = {"link": "", "link_text": "", "media": None, "media_url": "", "sel": "", "edit": False, "miss": "",
+            "sugg": [], "image": False, "video": False}
+    pos = w.mapToGlobal(QPoint(200, 200))
+    txt, _ = menu_texts(lambda: QTest.mouseClick(v.focusProxy() or v, Qt.MouseButton.RightButton,
+                                                 Qt.KeyboardModifier.NoModifier, QPoint(700, 400)))
+    check("real right-click shows Luna's Polish menu", "Odśwież" in txt and "Zbadaj element" in txt, txt)
+    txt, _ = menu_texts(lambda: w.page_context_menu(v, dict(base), "", pos))
+    check("page menu is Polish with Luna actions", "Wstecz" in txt and "Odśwież" in txt and any(x.startswith("Przetłumacz stronę na") for x in txt)
+          and "Zbadaj element" in txt, txt)
+    link = "https://example.com/a?utm_source=x&id=7&fbclid=abc"
+    txt, subs = menu_texts(lambda: w.page_context_menu(v, dict(base, link=link), "", pos))
+    check("link menu: new tab, split, container, clean link, QR", all(x in txt for x in (
+        "Otwórz link w nowej karcie", "Otwórz link w podziale ekranu", "Otwórz link w kontenerze",
+        "Kopiuj czysty link (bez śledzenia)", "Kod QR linku")), txt)
+    check("clean_url strips trackers, keeps real params", luna.clean_url(link) == "https://example.com/a?id=7", luna.clean_url(link))
+    txt, subs = menu_texts(lambda: w.page_context_menu(v, dict(base, sel="Bonjour tout le monde"), "", pos))
+    check("selection menu: search, translate, highlight", any(x.startswith("Szukaj „Bonjour") for x in txt)
+          and any(x.startswith("Przetłumacz „Bonjour") for x in txt) and "Zakreśl" in subs, (txt, list(subs)))
+    txt, _ = menu_texts(lambda: w.page_context_menu(v, dict(base, edit=True, miss="chrzaszcz", sugg=["chrząszcz"]), "", pos))
+    check("editable field menu: spelling first, edit actions", txt[:1] == ["chrząszcz"] and "Wklej jako zwykły tekst" in txt, txt)
+    # tłumaczenie zaznaczenia z dowolnego języka, wybór języka docelowego
+    p = luna.TranslatePopup(w, "日本語のテキストを翻訳します", pos)
+    until(lambda: p.out.toPlainText() not in ("Tłumaczę…", ""), 10000)
+    check("selection translation: Japanese -> Polish, source detected", "japoński" in p.src.text()
+          and p.out.toPlainText() and p.out.toPlainText() != "Tłumaczę…", (p.src.text(), p.out.toPlainText()))
+    p.combo.setCurrentIndex(p.combo.findData("de"))
+    until(lambda: p.out.toPlainText() not in ("Tłumaczę…", "") and p.combo.currentData() == "de", 10000)
+    wait(1500)
+    check("target language selectable (all languages)", p.combo.count() >= 100 and luna.translate_target(w.store) == "de",
+          (p.combo.count(), luna.translate_target(w.store)))
+    w.store.settings["translate_target"] = "pl"
+    p.hide()
+    check("lang_code maps page tags", luna.lang_code("en-GB") == "en" and luna.lang_code("he") == "iw" and luna.lang_code("zh-Hant") == "zh-TW"
+          and luna.lang_code("xx") == "", [luna.lang_code(x) for x in ("en-GB", "he", "zh-Hant", "xx")])
+
+
+def site_zoom():
+    t = open_tab(f"http://zoom-site.localhost:{PORT}/")
+    w.zoom(1); w.zoom(1)
+    z = t.web.zoomFactor()
+    check("zoom remembered for the site", abs(w.store.settings.get("zoom_sites", {}).get("zoom-site.localhost", 0) - z) < 0.01 and z > 1, z)
+    t2 = open_tab(f"http://zoom-site.localhost:{PORT}/en")
+    check("same site opens with remembered zoom", abs(t2.web.zoomFactor() - z) < 0.01, t2.web.zoomFactor())
+    t3 = open_tab(f"http://site-a.localhost:{PORT}/")
+    check("other sites stay at 100%", abs(t3.web.zoomFactor() - 1.0) < 0.01, t3.web.zoomFactor())
+    w.zoom(0)
+
+
+def browser_import():
+    import sqlite3, base64 as b64
+    # wektor testowy NIST (AES-256-GCM, klucz/IV zerowe, 16 B zer)
+    ct = luna.aes_gcm(bytes(32), bytes(12), bytes(16), decrypt=False)
+    check("AES-GCM (Windows CNG) matches NIST vector", ct[0].hex() == "cea7403d4d606b6e074ec5d3baf39d18"
+          and ct[1].hex() == "d0d1c8a799996bf0265b98b5d48ab919", (ct[0].hex(), ct[1].hex()))
+    # syntetyczny profil Brave
+    local = tempfile.mkdtemp(prefix="luna_fakeapp_")
+    os.environ["LOCALAPPDATA"] = local
+    root = os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data"); prof = os.path.join(root, "Default")
+    os.makedirs(prof)
+    key = os.urandom(32)
+    json.dump({"os_crypt": {"encrypted_key": b64.b64encode(b"DPAPI" + luna._dpapi(key, True)).decode()},
+               "profile": {"info_cache": {"Default": {"name": "Kasper"}}}}, open(os.path.join(root, "Local State"), "w"))
+    json.dump({"roots": {"bookmark_bar": {"type": "folder", "name": "Pasek", "children": [
+        {"type": "url", "name": "Wikipedia", "url": "https://pl.wikipedia.org/"},
+        {"type": "folder", "name": "Praca", "children": [{"type": "url", "name": "GitHub", "url": "https://github.com/"}]}]}}},
+              open(os.path.join(prof, "Bookmarks"), "w"))
+    db = sqlite3.connect(os.path.join(prof, "History"))
+    db.execute("CREATE TABLE urls(id INTEGER PRIMARY KEY, url TEXT, title TEXT, visit_count INT, typed_count INT, last_visit_time INT, hidden INT)")
+    db.execute("INSERT INTO urls(url,title,visit_count,typed_count,last_visit_time,hidden) VALUES(?,?,?,?,?,0)",
+               ("https://imported.example.org/page", "Zaimportowana strona", 3, 0, (int(time.time()) + 11644473600) * 1000000))
+    db.commit(); db.close()
+    nonce = os.urandom(12); enc, tag = luna.aes_gcm(key, nonce, "Tajne-Haslo-123".encode(), decrypt=False)
+    db = sqlite3.connect(os.path.join(prof, "Login Data"))
+    db.execute("CREATE TABLE logins(origin_url TEXT, username_value TEXT, password_value BLOB, blacklisted_by_user INT)")
+    db.execute("INSERT INTO logins VALUES(?,?,?,0)", ("https://login.example.org/signin", "kasper", b"v10" + nonce + enc + tag))
+    db.execute("INSERT INTO logins VALUES(?,?,?,0)", ("https://new.example.org/", "x", b"v20" + os.urandom(40)))
+    db.commit(); db.close()
+    profs = luna.chromium_profiles()
+    check("Brave profile found by name", any(p[0] == "Brave – Kasper" for p in profs), [p[0] for p in profs])
+    d = luna.ImportDialog(w)
+    d.combo.setCurrentIndex([p[0] for p in d.profiles].index("Brave – Kasper"))
+    d.run()
+    check("bookmarks imported with folders", any(b["url"] == "https://github.com/" and b["folder"] == "Pasek zakładek / Praca"
+                                                 for b in luna.Bookmarks.items()), luna.Bookmarks.items())
+    check("history imported", any(h["url"] == "https://imported.example.org/page" for h in w.store.history))
+    got = luna.VAULT[0].find("https://login.example.org", "kasper")
+    check("v10 password decrypted into Luna's vault", got is not None and got["pw"] == "Tajne-Haslo-123", got)
+    check("v20 (app-bound) password reported, CSV hint shown", "CSV" in d.out.text() and "1 haseł" in d.out.text(), d.out.text())
+    csvp = os.path.join(local, "p.csv")
+    open(csvp, "w", encoding="utf-8").write("name,url,username,password\nnew,https://new.example.org/,x,Z-csv-pass\n")
+    check("CSV password import", luna.import_passwords_csv(csvp) == [{"origin": "https://new.example.org", "user": "x", "pw": "Z-csv-pass"}])
+    d.close()
+
+
+def sponsorblock():
+    check("youtube_id parses watch/shorts/youtu.be", luna.youtube_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=3") == "dQw4w9WgXcQ"
+          and luna.youtube_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+          and luna.youtube_id("https://www.youtube.com/shorts/abcdefghijk") == "abcdefghijk"
+          and luna.youtube_id("https://example.com/watch?v=dQw4w9WgXcQ") == "")
+    got = {}
+    luna.SponsorBlock.segments(w.store, "dQw4w9WgXcQ", lambda s: got.__setitem__("s", s))
+    until(lambda: "s" in got, 15000)
+    check("SponsorBlock API answers (hash-prefix query)", isinstance(got.get("s"), list), got)
+    # pomijanie: lokalny film 1 s, segment 0,1–0,8 s
+    t = open_tab(f"http://site-a.localhost:{PORT}/watch?v=abcdefghijk")
+    w.notice.hide()
+    luna._safe_js(t.web, luna.SB_JS % (json.dumps([[0.1, 0.8, "sponsor"]]), json.dumps("abcdefghijk"), json.dumps(luna.PW_KEY)))
+    wait(300)
+    runjs(t.web, "var v=document.getElementById('v');v.currentTime=0;v.play();1")
+    until(lambda: w.notice.isVisible() and "Pominięto" in w.notice.text.text(), 6000)
+    check("sponsored segment skipped + notice", w.notice.isVisible() and "Pominięto fragment sponsorowany" in w.notice.text.text(),
+          w.notice.text.text())
+
+
+def highlights():
+    t = open_tab(f"http://site-hl.localhost:{PORT}/en")
+    v = t.web
+    runjs(v, "var r=document.createRange();var p=document.getElementById('p').firstChild;r.setStart(p,4);r.setEnd(p,11);"
+             "getSelection().removeAllRanges();getSelection().addRange(r);1")
+    w.highlight_selection(v, "#fff176")
+    until(lambda: luna.Highlights.for_url(v.url().toString()), 4000)
+    items = luna.Highlights.for_url(v.url().toString())
+    check("highlight saved with text and context", items and items[0]["text"] == "weather" and items[0]["prefix"].endswith("The "), items)
+    check("highlight drawn on page", runjs(v, "document.querySelectorAll('mark[data-lhl]').length") == 1)
+    t2 = open_tab(f"http://site-hl.localhost:{PORT}/en")
+    until(lambda: runjs(t2.web, "document.querySelectorAll('mark[data-lhl]').length") == 1, 5000)
+    check("highlight restored on next visit", runjs(t2.web, "document.querySelector('mark[data-lhl]')&&document.querySelector('mark[data-lhl]').textContent") == "weather")
+    w.highlight_remove(t2.web, items[0]["id"])
+    wait(200)
+    check("highlight removed (page and storage)", runjs(t2.web, "document.querySelectorAll('mark[data-lhl]').length") == 0
+          and not luna.Highlights.for_url(t2.web.url().toString()))
+
+
+def leak_check():
+    from PyQt6.QtWidgets import QPushButton as B, QLabel as L, QListWidget as LW
+    v = luna.VAULT[0]
+    v.put("https://weak.example.org", "a", "password")
+    v.put("https://strong.example.org", "b", "Xq7#" + os.urandom(12).hex())
+    dlg = luna.SettingsDialog(w.store, w.host, w)
+    dlg.show_page("passwords"); dlg.show(); wait(500)
+    bt = next((b for b in dlg.findChildren(B) if b.text() == "Sprawdź wycieki haseł"), None)
+    check("leak check button present", bt is not None)
+    if bt is None:
+        return
+    bt.click()
+    lab = lambda: next((x.text() for x in dlg.findChildren(L) if x.text().startswith(("Hasła z wycieków", "Żadne", "Nie udało"))), "")
+    until(lambda: lab(), 20000)
+    lists = [x for x in dlg.findChildren(LW) if x.isVisible() and x.count() and "w wyciekach" in x.item(0).text()]
+    check("breached password found, strong one not", lab().startswith("Hasła z wycieków") and lists
+          and any("weak.example.org" in lists[0].item(i).text() for i in range(lists[0].count()))
+          and not any("strong.example.org" in lists[0].item(i).text() for i in range(lists[0].count())), (lab(), lists and lists[0].item(0).text()))
+    dlg.close()
+
+
+def address_fill():
+    luna.addresses().append({"label": "Dom", "first": "Jan", "last": "Kowalski", "street": "Polna 1", "postal": "00-001",
+                             "city": "Warszawa", "country": "Polska", "tel": "500600700", "email": "jan@example.org"})
+    luna.VAULT[0].save()
+    w.notice.hide()
+    t = open_tab(f"http://site-addr.localhost:{PORT}/addr")
+    until(lambda: w.notice.isVisible() and "formularz adresu" in w.notice.text.text(), 6000)
+    check("address form detected, fill offered", w.notice.isVisible() and "formularz adresu" in w.notice.text.text(), w.notice.text.text())
+    btn = next((b for b in w.notice.findChildren(QPushButton) if b.text().startswith("Wypełnij")), None)
+    if btn is not None:
+        btn.click()
+    wait(500)
+    vals = json.loads(runjs(t.web, "JSON.stringify(Array.prototype.map.call(document.querySelectorAll('input'),function(i){return i.value}))") or "[]")
+    check("fields filled from saved address", vals[:7] == ["Jan", "Kowalski", "Polna 1", "00-001", "Warszawa", "jan@example.org", "500600700"], vals)
+    check("password field untouched", vals[7:] == [""], vals)
+    check("page sees input events (works with React/Vue forms)", (runjs(t.web, "window.EV") or 0) >= 7, runjs(t.web, "window.EV"))
 
 
 def palette():
@@ -219,7 +463,7 @@ def palette():
     def first(q):
         p.edit.setText(q)
         return p.list.item(0).text() if p.list.count() else ""
-    check("finds translation without diacritics", first("tlumacz").startswith("Przetłumacz"), first("tlumacz"))
+    check("finds translation without diacritics", first("przetlumacz").startswith("Przetłumacz"), first("przetlumacz"))
     check("finds a settings page", first("ustawienia pryw").startswith("Ustawienia: Prywatność"), first("ustawienia pryw"))
     check("finds an open tab by title", first("English").startswith("English"), first("English"))
     txt = first("example.org")
@@ -263,8 +507,8 @@ def translation():
     w.notice.hide()
     t = open_tab(f"http://site-en.localhost:{PORT}/en")
     web = t.web
-    until(lambda: w.notice.isVisible() and "po angielsku" in w.notice.text.text(), 5000)
-    check("offer shown for an English page", w.notice.isVisible() and "po angielsku" in w.notice.text.text(), w.notice.text.text())
+    until(lambda: w.notice.isVisible() and "angielski" in w.notice.text.text(), 5000)
+    check("offer shown for an English page", w.notice.isVisible() and "Język strony: angielski" in w.notice.text.text(), w.notice.text.text())
     btn = next((b for b in w.notice.findChildren(QPushButton) if b.text() == "Przetłumacz"), None)
     check("offer has Przetłumacz / Nigdy / Nie", btn is not None)
     if btn is None:

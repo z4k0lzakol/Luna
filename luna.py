@@ -1174,8 +1174,9 @@ def _setup_profile(prof, base):
     # natychmiastowe Wstecz / Dalej z pamięci (back-forward cache), większa pamięć podręczna stron
     A = QWebEngineSettings.WebAttribute
     # + pełny ekran na prośbę strony (przycisk w odtwarzaczach filmów) i przechwytywanie ekranu (udostępnianie w rozmowach)
+    # + PluginsEnabled: wbudowana przeglądarka PDF silnika (bez tego pliki PDF tylko się pobierają)
     for name in ("ScrollAnimatorEnabled", "DnsPrefetchEnabled", "Accelerated2dCanvasEnabled", "BackForwardCacheEnabled",
-                 "FullScreenSupportEnabled", "ScreenCaptureEnabled"):
+                 "FullScreenSupportEnabled", "ScreenCaptureEnabled", "PluginsEnabled", "PdfViewerEnabled"):
         if hasattr(A, name):
             prof.settings().setAttribute(getattr(A, name), True)
     if base is not None:
@@ -1358,6 +1359,7 @@ class LunaPage(QWebEnginePage):
     Pilnuje też ciemnego trybu: włączony w silniku przed wczytaniem strony (wyjątki dla wybranych domen)."""
     pw_captured = pyqtSignal(dict)
     reader_state = pyqtSignal(dict)   # tryb czytania: {"state": "on"|"off"|"none", "prefs": {...}}
+    sb_skipped = pyqtSignal(dict)     # YouTube: pominięty fragment sponsorowany {"c": kategoria, "d": sekundy}
 
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent); LUNA_PAGES.add(self)
@@ -1408,6 +1410,14 @@ class LunaPage(QWebEnginePage):
                 return
             if isinstance(d, dict):
                 self.reader_state.emit(d)
+            return
+        if body.startswith("sb:"):
+            try:
+                d = json.loads(body[3:])
+            except ValueError:
+                return
+            if isinstance(d, dict):
+                self.sb_skipped.emit(d)
             return
         if body.startswith("ddg:"):
             if self.url().host().endswith("duckduckgo.com") and VAULT:
@@ -1770,6 +1780,21 @@ class WebView(QWebEngineView):
                 QTimer.singleShot(0, lambda: b.drop_tab_on_view(self, tab))
             return True
         return super().eventFilter(obj, ev)
+
+    def contextMenuEvent(self, ev):
+        """Polskie menu prawego przycisku z akcjami Luny (karty widoku Luny); wyskakujące okna – menu silnika."""
+        b = getattr(getattr(self, "owner", None), "browser", None)
+        req = self.lastContextMenuRequest()
+        if b is None or req is None:
+            return super().contextMenuEvent(ev)
+        M = req.mediaType().__class__
+        d = {"link": req.linkUrl().toString() if req.linkUrl().isValid() else "", "link_text": req.linkText(),
+             "media": req.mediaType(), "media_url": req.mediaUrl().toString() if req.mediaUrl().isValid() else "",
+             "sel": req.selectedText(), "edit": req.isContentEditable(), "miss": req.misspelledWord(),
+             "sugg": list(req.spellCheckerSuggestions()), "image": req.mediaType() == M.MediaTypeImage,
+             "video": req.mediaType() in (M.MediaTypeVideo, M.MediaTypeAudio)}
+        pos = ev.globalPos()
+        _safe_js(self, HL_HOVER, lambda hid, d=d: b.page_context_menu(self, d, hid or "", pos))
 
     def createWindow(self, wtype):
         W = QWebEnginePage.WebWindowType
@@ -2392,8 +2417,12 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                       "Wyłączony: licznik tylko z otwartych kart Discorda.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
-    "translate_offer": ("Propozycja tłumaczenia stron", "Gdy strona jest w obcym języku, Luna proponuje przetłumaczenie jej "
-                        "na polski (Ctrl+Shift+L). Tekst strony trafia do Tłumacza Google dopiero po kliknięciu.", True),
+    "translate_offer": ("Propozycja tłumaczenia stron", "Gdy strona jest w innym języku (dowolnym), Luna proponuje "
+                        "tłumaczenie na wybrany język – domyślnie polski (Ctrl+Shift+L). Tekst strony trafia do Tłumacza "
+                        "Google dopiero po kliknięciu.", True),
+    "sponsorblock": ("YouTube: pomijanie sponsorowanych wstawek", "Automatycznie przeskakuje fragmenty sponsorowane, "
+                     "autopromocję i prośby o subskrypcję – według otwartej bazy SponsorBlock (sponsor.ajay.app, licencja "
+                     "CC BY-NC-SA 4.0). Wysyłane są tylko 4 znaki skrótu identyfikatora filmu.", True),
     "updates": ("Sprawdzanie aktualizacji", "Po starcie i co 12 godzin Luna sprawdza w tle, czy na GitHubie jest nowa wersja, "
                 "i proponuje aktualizację jednym kliknięciem.", True),
     "spellcheck": ("Sprawdzanie pisowni", "Podkreśla błędy w polach tekstowych (polski i angielski); podpowiedzi pod prawym "
@@ -6611,6 +6640,15 @@ def page_features(dlg):
             continue
         l.addWidget(switch_row(name, desc, dlg.store.feature(fid), lambda v, f=fid: dlg.store.set_feature(f, v)))
         sep = QFrame(); sep.setObjectName("sep"); l.addWidget(sep)
+    l.addWidget(lbl("Język tłumaczenia", "h3"))
+    l.addWidget(lbl("Na ten język Luna tłumaczy strony i zaznaczony tekst (z dowolnego języka).", "muted", wrap=True))
+    lc = QComboBox()
+    for code, name in sorted(LANGS.items(), key=lambda kv: fold(kv[1])):
+        lc.addItem(name, code)
+    lc.setCurrentIndex(max(0, lc.findData(translate_target(dlg.store))))
+    lc.currentIndexChanged.connect(lambda _: (dlg.store.settings.__setitem__("translate_target", lc.currentData()),
+                                              dlg.store.save_soon()))
+    l.addWidget(lc, 0, Qt.AlignmentFlag.AlignLeft); l.addSpacing(10)
     clr = QPushButton("Wyczyść historię przeglądania"); clr.clicked.connect(lambda: dlg.store.clear_history())
     l.addSpacing(6); l.addWidget(clr, 0, Qt.AlignmentFlag.AlignLeft)
     l.addStretch(1)
@@ -7154,8 +7192,110 @@ def page_passwords(dlg):
     base.setPlaceholderText("Adres do aliasów z plusem (np. ty@gmail.com)")
     base.editingFinished.connect(lambda: (st.settings.__setitem__("alias_base", base.text().strip()), st.save_soon()))
     row2.addWidget(base, 1); l.addLayout(row2)
+    if VAULT and VAULT[0].available():
+        imp = QPushButton("Importuj hasła, zakładki i historię z innej przeglądarki…")
+        imp.clicked.connect(lambda: ImportDialog(dlg.browser).exec()); l.addSpacing(8); l.addWidget(imp, 0, Qt.AlignmentFlag.AlignLeft)
+        l.addSpacing(14); leak_section(l, dlg)
+        l.addSpacing(14); address_section(l, dlg)
     l.addStretch(1)
     return scroll_page(w)
+
+
+def leak_section(l, dlg):
+    """Sprawdzanie wycieków haseł (Have I Been Pwned, k-anonimowość: wysyłane jest 5 znaków skrótu SHA-1)."""
+    l.addWidget(lbl("Wycieki haseł", "h3"))
+    l.addWidget(lbl("Sprawdza, czy zapisane hasła pojawiły się w znanych wyciekach danych. Do serwisu Have I Been Pwned "
+                    "trafia tylko 5 pierwszych znaków skrótu SHA-1 każdego hasła – nigdy samo hasło ani jego pełny skrót "
+                    "(tak samo działa to w Firefoksie i Chrome).", "muted", wrap=True))
+    out = lbl("", "muted2", wrap=True); l.addWidget(out)
+    lst = QListWidget(); lst.setObjectName("wlist"); lst.setMaximumHeight(130); lst.viewport().setAutoFillBackground(False)
+    lst.hide(); l.addWidget(lst)
+    bt = QPushButton("Sprawdź wycieki haseł"); l.addWidget(bt, 0, Qt.AlignmentFlag.AlignLeft)
+
+    def run():
+        logins = [x for x in VAULT[0].logins() if x.get("pw")]
+        if not logins:
+            out.setText("Nie ma zapisanych haseł."); return
+        bt.setEnabled(False); out.setText(f"Sprawdzam {len(logins)} haseł…"); lst.clear(); lst.hide()
+        hashes = {}
+        for x in logins:
+            hashes.setdefault(hashlib.sha1(x["pw"].encode("utf-8")).hexdigest().upper(), []).append(x)
+        prefixes = sorted({h[:5] for h in hashes})
+        state = {"left": len(prefixes), "bad": [], "err": 0}
+
+        def done_one():
+            state["left"] -= 1
+            if state["left"] > 0:
+                return
+            try:
+                bt.setEnabled(True)
+                if state["err"] and not state["bad"]:
+                    out.setText("Nie udało się połączyć z Have I Been Pwned."); return
+                if not state["bad"]:
+                    out.setText(f"Żadne z {len(logins)} haseł nie występuje w znanych wyciekach."); return
+                out.setText(f"Hasła z wycieków: {len(state['bad'])} – zmień je jak najszybciej:")
+                for x, n in sorted(state["bad"], key=lambda t: -t[1]):
+                    lst.addItem(f"{host_of(x['origin']) or x['origin']}  ·  {x['user']}  ·  w wyciekach {n:,} razy".replace(",", " "))
+                lst.show()
+            except RuntimeError:
+                pass
+
+        for pre in prefixes:
+            def got(data, err, status, pre=pre):
+                if status != 200 or not data:
+                    state["err"] += 1
+                else:
+                    seen = {}
+                    for ln in data.decode("ascii", "ignore").splitlines():
+                        suf, _, cnt = ln.strip().partition(":")
+                        if cnt.isdigit() and int(cnt) > 0:
+                            seen[pre + suf.upper()] = int(cnt)
+                    for h, xs in hashes.items():
+                        if h.startswith(pre) and h in seen:
+                            state["bad"] += [(x, seen[h]) for x in xs]
+                done_one()
+            dlg.store.http(f"https://api.pwnedpasswords.com/range/{pre}", got, headers={"Add-Padding": "true"},
+                           timeout=20000, raw=True)
+    bt.clicked.connect(run)
+
+
+def address_section(l, dlg):
+    """Adresy do autouzupełniania formularzy (zaszyfrowane razem z hasłami)."""
+    l.addWidget(lbl("Adresy do formularzy", "h3"))
+    l.addWidget(lbl("Luna zaproponuje wypełnienie formularza adresu (zakupy, dostawy); także z prawego przycisku w polu "
+                    "tekstowym → Wypełnij adres. Dane są szyfrowane na tym komputerze jak hasła.", "muted", wrap=True))
+    lst = QListWidget(); lst.setObjectName("wlist"); lst.setMaximumHeight(110); lst.viewport().setAutoFillBackground(False)
+    l.addWidget(lst)
+
+    def fill():
+        lst.clear()
+        for a in addresses():
+            lst.addItem(f"{a.get('label') or 'Adres'}  ·  {a.get('first', '')} {a.get('last', '')}, {a.get('street', '')}, "
+                        f"{a.get('postal', '')} {a.get('city', '')}")
+    fill()
+    row = QHBoxLayout(); row.setSpacing(6)
+
+    def edit(i=None):
+        cur = dict(addresses()[i]) if i is not None else {"country": "Polska"}
+        d = QDialog(dlg); d.setWindowTitle("Adres"); f = QVBoxLayout(d); edits = {}
+        for key, name in [("label", "Nazwa (np. Dom, Praca)")] + ADDR_FIELDS:
+            f.addWidget(lbl(name, "muted2")); e = QLineEdit(cur.get(key, "")); f.addWidget(e); edits[key] = e
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        bb.button(QDialogButtonBox.StandardButton.Save).setText("Zapisz"); bb.button(QDialogButtonBox.StandardButton.Cancel).setText("Anuluj")
+        bb.accepted.connect(d.accept); bb.rejected.connect(d.reject); f.addWidget(bb)
+        if d.exec() == QDialog.DialogCode.Accepted:
+            new = {k: e.text().strip() for k, e in edits.items()}
+            lst_ = addresses()
+            if i is None:
+                lst_.append(new)
+            else:
+                lst_[i] = new
+            VAULT[0].save(); fill()
+    for text, fn in (("Dodaj adres", lambda: edit()),
+                     ("Edytuj", lambda: lst.currentRow() >= 0 and edit(lst.currentRow())),
+                     ("Usuń", lambda: lst.currentRow() >= 0 and (addresses().pop(lst.currentRow()), VAULT[0].save(), fill()))):
+        b = QPushButton(text); b.clicked.connect(fn); row.addWidget(b)
+    row.addStretch(1); l.addLayout(row)
 
 
 @settings_page("updates", "Aktualizacje")
@@ -8045,12 +8185,85 @@ TR_APPLY = "(function(d){var S=window.__ltr;if(!S)return;for(var i=0;i<d.t.lengt
            "if(n&&typeof d.t[i]==='string'&&n.nodeValue===S.orig[d.s+i])n.nodeValue=d.t[i];}})(%s)"
 TR_RESTORE = "(function(){var S=window.__ltr;if(!S)return;for(var i=0;i<S.nodes.length;i++){var n=S.nodes[i];" \
              "if(n){n.nodeValue=S.orig[i];n.__lt=0;}}window.__ltr=null;})()"
-TR_URL = "https://translate.googleapis.com/translate_a/t?client=gtx&sl=auto&tl=pl"
-LANG_PO = {"en": "angielsku", "de": "niemiecku", "fr": "francusku", "es": "hiszpańsku", "it": "włosku", "ru": "rosyjsku",
-           "uk": "ukraińsku", "cs": "czesku", "sk": "słowacku", "nl": "niderlandzku", "pt": "portugalsku",
-           "ja": "japońsku", "zh": "chińsku", "ko": "koreańsku", "sv": "szwedzku", "no": "norwesku", "nb": "norwesku",
-           "da": "duńsku", "fi": "fińsku", "hu": "węgiersku", "tr": "turecku", "lt": "litewsku", "lv": "łotewsku",
-           "et": "estońsku", "ro": "rumuńsku", "el": "grecku", "he": "hebrajsku", "ar": "arabsku", "be": "białorusku"}
+TR_URL = "https://translate.googleapis.com/translate_a/t?client=gtx&sl=auto&tl=%s"
+# wszystkie języki Tłumacza Google (kod → nazwa po polsku); język docelowy wybiera użytkownik (domyślnie polski)
+LANGS = {
+    "af": "afrikaans", "sq": "albański", "am": "amharski", "en": "angielski", "ar": "arabski", "az": "azerski",
+    "eu": "baskijski", "be": "białoruski", "bn": "bengalski", "my": "birmański", "bs": "bośniacki", "bg": "bułgarski",
+    "ceb": "cebuański", "zh-CN": "chiński (uproszczony)", "zh-TW": "chiński (tradycyjny)", "hr": "chorwacki",
+    "cs": "czeski", "da": "duński", "eo": "esperanto", "et": "estoński", "tl": "filipiński", "fi": "fiński",
+    "fr": "francuski", "fy": "fryzyjski", "gl": "galicyjski", "el": "grecki", "ka": "gruziński", "gu": "gudżarati",
+    "ha": "hausa", "haw": "hawajski", "iw": "hebrajski", "hi": "hindi", "es": "hiszpański", "hmn": "hmong",
+    "ig": "igbo", "id": "indonezyjski", "ga": "irlandzki", "is": "islandzki", "ja": "japoński", "jv": "jawajski",
+    "yi": "jidysz", "yo": "joruba", "kn": "kannada", "ca": "kataloński", "kk": "kazachski", "km": "khmerski",
+    "rw": "kinyarwanda", "ky": "kirgiski", "ko": "koreański", "co": "korsykański", "ht": "kreolski haitański",
+    "ku": "kurdyjski", "lo": "laotański", "la": "łaciński", "lt": "litewski", "lb": "luksemburski", "lv": "łotewski",
+    "mk": "macedoński", "mg": "malgaski", "ml": "malajalam", "ms": "malajski", "mt": "maltański", "mi": "maoryski",
+    "mr": "marathi", "mn": "mongolski", "ne": "nepalski", "nl": "niderlandzki", "de": "niemiecki", "ny": "njandża",
+    "no": "norweski", "or": "orija", "hy": "ormiański", "ps": "paszto", "pa": "pendżabski", "fa": "perski",
+    "pl": "polski", "pt": "portugalski", "ru": "rosyjski", "ro": "rumuński", "sm": "samoański", "sr": "serbski",
+    "sn": "shona", "sd": "sindhi", "sk": "słowacki", "sl": "słoweński", "so": "somalijski", "st": "sotho",
+    "sw": "suahili", "su": "sundajski", "si": "syngaleski", "gd": "szkocki gaelicki", "sv": "szwedzki",
+    "tg": "tadżycki", "th": "tajski", "ta": "tamilski", "tt": "tatarski", "te": "telugu", "tr": "turecki",
+    "tk": "turkmeński", "ug": "ujgurski", "uk": "ukraiński", "ur": "urdu", "uz": "uzbecki", "cy": "walijski",
+    "hu": "węgierski", "vi": "wietnamski", "it": "włoski", "xh": "xhosa", "zu": "zulu"}
+_LANG_ALIAS = {"he": "iw", "zh": "zh-CN", "zh-hans": "zh-CN", "zh-hant": "zh-TW", "zh-hk": "zh-TW", "nb": "no",
+               "nn": "no", "fil": "tl", "jw": "jv", "mni": "", "zh-cn": "zh-CN", "zh-tw": "zh-TW"}
+
+
+def lang_code(tag):
+    """Atrybut lang strony / kod z tłumacza → kod z LANGS albo "" (nieznany)."""
+    t = str(tag or "").strip().replace("_", "-")
+    if not t:
+        return ""
+    low = t.lower()
+    if low in _LANG_ALIAS:
+        return _LANG_ALIAS[low]
+    if t in LANGS:
+        return t
+    base = low.split("-")[0]
+    return _LANG_ALIAS.get(base, base if base in LANGS else "")
+
+
+def lang_name(code):
+    return LANGS.get(lang_code(code) or code, code or "nieznany")
+
+
+def translate_target(store):
+    c = store.settings.get("translate_target", "pl")
+    return c if c in LANGS else "pl"
+
+
+def translate_texts(store, texts, target, cb):
+    """Tłumaczy listę tekstów (dowolny język źródłowy) → cb(lista|None, wykryty_kod)."""
+    body = "&".join("q=" + quote(t, safe="") for t in texts).encode("ascii")
+    req = QNetworkRequest(QUrl(TR_URL % quote(target, safe="")))
+    req.setHeader(QNetworkRequest.KnownHeaders.ContentTypeHeader, "application/x-www-form-urlencoded;charset=utf-8")
+    req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "Mozilla/5.0")
+    req.setTransferTimeout(20000)
+    r = store.nam.post(req, body)
+
+    def done():
+        data = bytes(r.readAll()); ok = r.error() == QNetworkReply.NetworkError.NoError; r.deleteLater()
+        try:
+            j = json.loads(data.decode("utf-8")) if ok else None
+        except (ValueError, UnicodeDecodeError):
+            j = None
+        if not isinstance(j, list):
+            cb(None, ""); return
+        if len(texts) == 1 and j and isinstance(j[0], str):
+            j = [j]
+        out, src = [], ""
+        for item in j:
+            if isinstance(item, list) and item:
+                out.append(html.unescape(str(item[0]))); src = src or (str(item[1]) if len(item) > 1 else "")
+            elif isinstance(item, str):
+                out.append(html.unescape(item))
+            else:
+                out.append(None)
+        cb(out, src)
+    r.finished.connect(done)
+    return r
 
 
 class PageTranslator(QObject):
@@ -8061,6 +8274,7 @@ class PageTranslator(QObject):
         super().__init__(web)
         self.store, self.web = store, web
         self.active, self.queue, self.busy, self.done_items, self.failed = False, [], False, 0, False
+        self.target = "pl"
         self._t = QTimer(self); self._t.setInterval(2500); self._t.timeout.connect(self._collect)
         web.urlChanged.connect(self._navigated)
         self._url = web.url().toString(QUrl.UrlFormattingOption.RemoveFragment)
@@ -8069,7 +8283,8 @@ class PageTranslator(QObject):
         if u.toString(QUrl.UrlFormattingOption.RemoveFragment) != self._url:   # nowa strona: tłumaczenie od nowa (na prośbę)
             self.active = False; self._t.stop(); self.queue.clear()
 
-    def start(self):
+    def start(self, target=None):
+        self.target = target or translate_target(self.store)
         self.active, self.failed, self.done_items = True, False, 0
         self._url = self.web.url().toString(QUrl.UrlFormattingOption.RemoveFragment)
         self._collect(); self._t.start()
@@ -8111,33 +8326,19 @@ class PageTranslator(QObject):
             return
         self.busy = True
         s, texts = self.queue.pop(0)
-        cores = [t.strip() for t in texts]
-        body = "&".join("q=" + quote(c, safe="") for c in cores).encode("ascii")
-        req = QNetworkRequest(QUrl(TR_URL))
-        req.setHeader(QNetworkRequest.KnownHeaders.ContentTypeHeader, "application/x-www-form-urlencoded;charset=utf-8")
-        req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "Mozilla/5.0")
-        req.setTransferTimeout(20000)
-        r = self.store.nam.post(req, body)
-        r.finished.connect(lambda r=r, s=s, texts=texts: self._reply(r, s, texts))
+        translate_texts(self.store, [t.strip() for t in texts], self.target,
+                        lambda res, src, s=s, texts=texts: self._reply(res, s, texts))
 
-    def _reply(self, r, s, texts):
+    def _reply(self, res, s, texts):
         self.busy = False
-        data = bytes(r.readAll()); ok = r.error() == QNetworkReply.NetworkError.NoError; r.deleteLater()
         out = None
-        if ok:
-            try:
-                j = json.loads(data.decode("utf-8"))
-                if isinstance(j, list) and len(texts) == 1 and j and isinstance(j[0], str):
-                    j = [j]   # pojedynczy tekst: ["tłumaczenie", "en"]
-                out = []
-                for item, orig in zip(j, texts):
-                    tr = item[0] if isinstance(item, list) and item else (item if isinstance(item, str) else None)
-                    if tr is None:
-                        out.append(None); continue
-                    lead = orig[:len(orig) - len(orig.lstrip())]; trail = orig[len(orig.rstrip()):]
-                    out.append(lead + html.unescape(tr) + trail)
-            except (ValueError, UnicodeDecodeError):
-                out = None
+        if res is not None:
+            out = []
+            for tr, orig in zip(res, texts):
+                if tr is None:
+                    out.append(None); continue
+                lead = orig[:len(orig) - len(orig.lstrip())]; trail = orig[len(orig.rstrip()):]
+                out.append(lead + tr + trail)
         if out is None:
             self.failed = True; self.queue.clear(); self.status.emit("error"); return
         try:
@@ -8154,6 +8355,528 @@ def translator_for(store, web):
     if tr is None:
         tr = PageTranslator(store, web); web._translator = tr
     return tr
+
+
+# --- czysty link: bez parametrów śledzących (utm_*, fbclid, gclid…) ---
+_TRACK_PARAMS = re.compile(r"^(utm_\w+|fbclid|gclid|dclid|gbraid|wbraid|msclkid|mc_eid|mc_cid|yclid|_hsenc|_hsmi|igshid|"
+                           r"igsh|si|ref_src|ref_url|spm|scm|_ga|_gl|vero_id|oly_\w+|wickedid|twclid|ttclid|srsltid)$", re.I)
+
+
+def clean_url(url):
+    try:
+        p = urllib.parse.urlsplit(url)
+        q = [(k, v) for k, v in urllib.parse.parse_qsl(p.query, keep_blank_values=True) if not _TRACK_PARAMS.match(k)]
+        return urllib.parse.urlunsplit((p.scheme, p.netloc, p.path, urlencode(q, doseq=True), p.fragment))
+    except ValueError:
+        return url
+
+
+class TranslatePopup(QFrame):
+    """Tłumaczenie zaznaczonego tekstu z dowolnego języka na wybrany (lista wszystkich języków)."""
+
+    def __init__(self, browser, text, pos):
+        super().__init__(browser, Qt.WindowType.Popup); self.b, self.text = browser, text
+        self.setObjectName("tabpop"); self.setFixedWidth(460)
+        v = QVBoxLayout(self); v.setContentsMargins(12, 12, 12, 12); v.setSpacing(8)
+        row = QHBoxLayout(); self.src = lbl("Tłumaczenie…", "muted2"); row.addWidget(self.src, 1)
+        row.addWidget(lbl("na:", "muted2"))
+        self.combo = QComboBox()
+        for code, name in sorted(LANGS.items(), key=lambda kv: fold(kv[1])):
+            self.combo.addItem(name, code)
+        self.combo.setCurrentIndex(max(0, self.combo.findData(translate_target(browser.store))))
+        self.combo.currentIndexChanged.connect(self._lang); row.addWidget(self.combo); v.addLayout(row)
+        self.out = QPlainTextEdit(); self.out.setReadOnly(True); self.out.setMinimumHeight(110); self.out.setMaximumHeight(260)
+        v.addWidget(self.out)
+        bb = QHBoxLayout(); cp = QPushButton("Kopiuj"); cp.clicked.connect(lambda: QGuiApplication.clipboard().setText(self.out.toPlainText()))
+        bb.addStretch(1); bb.addWidget(cp); v.addLayout(bb)
+        self.move(pos); self.show(); self.run()
+
+    def _lang(self, _):
+        self.b.store.settings["translate_target"] = self.combo.currentData(); self.b.store.save_soon(); self.run()
+
+    def run(self):
+        self.out.setPlainText("Tłumaczę…")
+
+        def got(res, src):
+            try:
+                if res is None:
+                    self.out.setPlainText("Nie udało się połączyć z Tłumaczem Google."); return
+                self.out.setPlainText(res[0] or "")
+                self.src.setText("Wykryty język: " + (lang_name(src) if src else "nieznany"))
+            except RuntimeError:
+                pass
+        translate_texts(self.b.store, [self.text[:4500]], self.combo.currentData(), got)
+
+
+def show_qr(parent, url):
+    d = QDialog(parent); d.setWindowTitle("Kod QR"); v = QVBoxLayout(d)
+    q = QLabel(); q.setPixmap(qr_pixmap(url, px=5)); q.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(q)
+    t = lbl(url[:120], "muted2", wrap=True); v.addWidget(t)
+    bt = QPushButton("Kopiuj link"); bt.clicked.connect(lambda: QGuiApplication.clipboard().setText(url)); v.addWidget(bt)
+    d.exec()
+
+
+# --- zakreślenia i notatki na stronach: zapis tekstu z kontekstem (prefiks/sufiks), odtwarzane po powrocie na stronę ---
+HIGHLIGHTS = HOME / ".luna_zakreslenia.json"
+HL_COLORS = [("Żółty", "#fff176"), ("Zielony", "#a5d6a7"), ("Różowy", "#f8bbd0"), ("Niebieski", "#90caf9")]
+HL_LIB = r"""var LHL=window.__lhl||(window.__lhl={});
+LHL.nodes=function(){var a=[];if(!document.body)return a;var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,{acceptNode:function(n){var p=n.parentElement;if(!p)return 2;var t=p.tagName;return(t==='SCRIPT'||t==='STYLE'||t==='NOSCRIPT'||t==='TEXTAREA')?2:1}});var n;while(n=w.nextNode())a.push(n);return a};
+LHL.wrap=function(r,id,color,note){var root=r.commonAncestorContainer;if(root.nodeType===3)root=root.parentNode;var nodes=[],it=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),n;while(n=it.nextNode()){if(r.intersectsNode(n))nodes.push(n)}
+ var sc=r.startContainer,so=r.startOffset,ec=r.endContainer,eo=r.endOffset;
+ nodes.forEach(function(t){var s=(t===sc)?so:0,e=(t===ec)?eo:t.nodeValue.length;if(e<=s||!t.nodeValue.slice(s,e).length)return;var mid=t;if(s>0)mid=t.splitText(s);if(e-s<mid.nodeValue.length)mid.splitText(e-s);
+  var m=document.createElement('mark');m.setAttribute('data-lhl',id);m.style.cssText='background:'+color+'!important;color:#111!important;border-radius:2px;padding:0;cursor:'+(note?'help':'auto');if(note)m.title=note;mid.parentNode.insertBefore(m,mid);m.appendChild(mid);});};
+LHL.find=function(h){var nodes=LHL.nodes(),full='',idx=[];nodes.forEach(function(n){idx.push(full.length);full+=n.nodeValue});var pos=-1,from=0,best=-1;
+ while((pos=full.indexOf(h.text,from))>=0){if(best<0)best=pos;if((h.prefix&&full.slice(Math.max(0,pos-h.prefix.length),pos)===h.prefix)||(h.suffix&&full.slice(pos+h.text.length,pos+h.text.length+h.suffix.length)===h.suffix)){best=pos;break}from=pos+1}
+ if(best<0)return null;var a=best,b=best+h.text.length,r=document.createRange(),ok1=false,ok2=false;
+ for(var i=0;i<nodes.length;i++){var st=idx[i],ln=nodes[i].nodeValue.length;if(!ok1&&a<st+ln){r.setStart(nodes[i],a-st);ok1=true}if(ok1&&b<=st+ln){r.setEnd(nodes[i],b-st);ok2=true;break}}return ok1&&ok2?r:null};
+"""
+HL_CAPTURE = HL_LIB + r"""(function(color,note){var s=getSelection();if(!s||s.isCollapsed||!s.rangeCount)return '';var r=s.getRangeAt(0);
+var nodes=LHL.nodes(),full='',a=-1,b=-1;for(var i=0;i<nodes.length;i++){var n=nodes[i];if(n===r.startContainer)a=full.length+r.startOffset;if(n===r.endContainer)b=full.length+r.endOffset;full+=n.nodeValue}
+var text=(a>=0&&b>a)?full.slice(a,b):s.toString();if(!text.trim())return '';var id='h'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+var res={id:id,text:text,prefix:a>=0?full.slice(Math.max(0,a-40),a):'',suffix:b>=0?full.slice(b,b+40):''};LHL.wrap(r,id,color,note);s.removeAllRanges();return JSON.stringify(res)})(%s,%s)"""
+HL_APPLY = HL_LIB + r"""(function(items){var n=0;items.forEach(function(h){if(document.querySelector('mark[data-lhl="'+h.id+'"]')){n++;return}var r=LHL.find(h);if(r){LHL.wrap(r,h.id,h.color,h.note);n++}});return n})(%s)"""
+HL_REMOVE = r"""(function(id){document.querySelectorAll('mark[data-lhl="'+id+'"]').forEach(function(m){var p=m.parentNode;while(m.firstChild)p.insertBefore(m.firstChild,m);p.removeChild(m);p.normalize()})})(%s)"""
+HL_HOVER = r"""(function(){var m=document.querySelectorAll('mark[data-lhl]:hover');return m.length?m[m.length-1].getAttribute('data-lhl'):''})()"""
+
+
+class Highlights:
+    _data = None
+
+    @staticmethod
+    def key(url):
+        u = clean_url(url).split("#", 1)[0]
+        return u[:-1] if u.endswith("/") and u.count("/") > 3 else u
+
+    @classmethod
+    def data(cls):
+        if cls._data is None:
+            try:
+                d = json.loads(HIGHLIGHTS.read_text(encoding="utf-8"))
+                cls._data = d if isinstance(d, dict) else {}
+            except (OSError, ValueError):
+                cls._data = {}
+        return cls._data
+
+    @classmethod
+    def save(cls):
+        try:
+            tmp = HIGHLIGHTS.with_suffix(".tmp"); tmp.write_text(json.dumps(cls.data(), ensure_ascii=False), encoding="utf-8")
+            tmp.replace(HIGHLIGHTS)
+        except OSError:
+            pass
+
+    @classmethod
+    def for_url(cls, url):
+        return cls.data().get(cls.key(url), [])
+
+    @classmethod
+    def add(cls, url, item, title=""):
+        lst = cls.data().setdefault(cls.key(url), [])
+        item.update(t=int(time.time()), title=title[:200]); lst.append(item); cls.save()
+
+    @classmethod
+    def remove(cls, url, hid):
+        k = cls.key(url); lst = [h for h in cls.data().get(k, []) if h.get("id") != hid]
+        if lst:
+            cls.data()[k] = lst
+        else:
+            cls.data().pop(k, None)
+        cls.save()
+
+    @classmethod
+    def set_note(cls, url, hid, note):
+        for h in cls.data().get(cls.key(url), []):
+            if h.get("id") == hid:
+                h["note"] = note
+        cls.save()
+
+
+def apply_highlights(view):
+    """Po wczytaniu strony: odtwórz zapisane zakreślenia (dwa podejścia – także dla treści doczytywanej skryptami)."""
+    try:
+        items = Highlights.for_url(view.url().toString())
+    except RuntimeError:
+        return
+    if not items:
+        return
+    src = HL_APPLY % json.dumps(items, ensure_ascii=False)
+    for ms in (0, 2500):
+        QTimer.singleShot(ms, lambda: _safe_js(view, src))
+
+
+def _safe_js(view, src, cb=None):
+    try:
+        if cb is None:
+            view.page().runJavaScript(src, QWebEngineScript.ScriptWorldId.ApplicationWorld)
+        else:
+            view.page().runJavaScript(src, QWebEngineScript.ScriptWorldId.ApplicationWorld, cb)
+    except RuntimeError:
+        pass
+
+
+# --- autouzupełnianie adresów (dane zaszyfrowane w sejfie haseł) ---
+ADDR_FIELDS = [("first", "Imię"), ("last", "Nazwisko"), ("company", "Firma"), ("street", "Ulica i numer"),
+               ("line2", "Lokal / dodatkowe"), ("postal", "Kod pocztowy"), ("city", "Miejscowość"),
+               ("country", "Kraj"), ("tel", "Telefon"), ("email", "E-mail")]
+ADDR_JS = r"""(function(A,fill){var el=document.activeElement;var root=(el&&el.form)||document;
+var map=[['email',/e-?mail/],['tel',/(^|\W)tel|phone|telefon|kom[oó]rk|mobile/],['postal',/postal|zip|kod.?poczt|post.?code/],
+['city',/city|locality|address-level2|miasto|miejscowo|town/],['country',/country|kraj|pa[nń]stw/],['first',/given|first|fname|imi[eę](?!.*nazw)/],
+['last',/family|last|lname|surname|nazwisk/],['line2',/address-line2|addr(ess)?.?2|lokal|mieszkani|apartment/],
+['company',/organi[sz]ation|company|firma/],['street',/street|address-line1|addr(ess)?.?1|ulica|adres|address/]];
+var n=0,kinds={};root.querySelectorAll('input,select,textarea').forEach(function(i){var t=(i.type||'').toLowerCase();if(t==='hidden'||t==='password'||t==='checkbox'||t==='radio'||t==='submit'||i.disabled||i.readOnly)return;
+var r=i.getBoundingClientRect();if(!r.width||!r.height)return;var lab='';if(i.id){var l=document.querySelector('label[for="'+CSS.escape(i.id)+'"]');if(l)lab=l.textContent}if(!lab&&i.closest('label'))lab=i.closest('label').textContent;
+var ac=(i.getAttribute('autocomplete')||'').toLowerCase().replace(/^(shipping|billing|section-\S+)\s+/g,'');var key=(ac+' '+(i.name||'')+' '+(i.id||'')+' '+(i.placeholder||'')+' '+(i.getAttribute('aria-label')||'')+' '+lab).toLowerCase();
+var k=null;if(ac==='name')k='full';for(var j=0;!k&&j<map.length;j++){if(map[j][1].test(ac))k=map[j][0]}for(var j=0;!k&&j<map.length;j++){if(map[j][1].test(key))k=map[j][0]}
+if(!k)return;kinds[k]=1;if(!fill||A[k]==null||A[k]==='')return;var v=String(A[k]);
+if(i.tagName==='SELECT'){var o=Array.prototype.find.call(i.options,function(o){return o.value.toLowerCase()===v.toLowerCase()||o.text.trim().toLowerCase()===v.toLowerCase()});if(!o)return;i.value=o.value}
+else{var d=Object.getOwnPropertyDescriptor(i.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value');d.set.call(i,v)}
+i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new Event('change',{bubbles:true}));n++});
+return JSON.stringify({filled:n,address:!!(kinds.street&&(kinds.postal||kinds.city)),kinds:Object.keys(kinds)})})(%s,%s)"""
+
+
+def addresses():
+    v = VAULT[0] if VAULT and VAULT[0].available() else None
+    return v.data.setdefault("addresses", []) if v is not None else []
+
+
+def address_values(a):
+    d = dict(a); d["full"] = (a.get("first", "") + " " + a.get("last", "")).strip()
+    return d
+
+
+def fill_address(view, a, cb=None):
+    _safe_js(view, ADDR_JS % (json.dumps(address_values(a), ensure_ascii=False), "true"), cb)
+
+
+# --- YouTube: pomijanie fragmentów sponsorowanych (otwarta baza SponsorBlock; zapytanie po 4 znakach skrótu SHA-256
+# identyfikatora filmu – serwis nie wie, który film oglądasz) ---
+SB_CATS = {"sponsor": "fragment sponsorowany", "selfpromo": "autopromocję", "interaction": "prośbę o subskrypcję"}
+SB_JS = r"""(function(segs,vid,key){var S=window.__lsb||(window.__lsb={});S.segs=segs;S.vid=vid;if(S.on)return;S.on=true;S.last=0;
+document.addEventListener('timeupdate',function(e){var v=e.target;if(!(v instanceof HTMLMediaElement)||!S.segs.length)return;
+var cur=new URLSearchParams(location.search).get('v')||(location.pathname.match(/\/(?:shorts|live)\/([\w-]{11})/)||[])[1];
+if(cur!==S.vid)return;var t=v.currentTime;for(var i=0;i<S.segs.length;i++){var s=S.segs[i];if(t>=s[0]&&t<s[1]-0.4){
+if(Date.now()-S.last<800)return;S.last=Date.now();v.currentTime=s[1];console.log(key+'sb:'+JSON.stringify({c:s[2],d:Math.round(s[1]-t)}));return}}},true)})(%s,%s,%s)"""
+
+
+def youtube_id(u):
+    q = u if isinstance(u, QUrl) else QUrl(u)
+    h = q.host().lower()
+    if h.endswith("youtu.be"):
+        vid = q.path().strip("/")[:11]
+    elif h.endswith("youtube.com"):
+        vid = urllib.parse.parse_qs(q.query()).get("v", [""])[0]
+        if not vid:
+            m = re.match(r"^/(?:shorts|live|embed)/([\w-]{11})", q.path())
+            vid = m.group(1) if m else ""
+    else:
+        return ""
+    return vid if re.fullmatch(r"[\w-]{11}", vid or "") else ""
+
+
+class SponsorBlock:
+    cache = {}
+
+    @classmethod
+    def segments(cls, store, vid, cb):
+        if vid in cls.cache:
+            cb(cls.cache[vid]); return
+        pre = hashlib.sha256(vid.encode()).hexdigest()[:4]
+        cats = quote(json.dumps(list(SB_CATS)), safe="")
+
+        def got(data, err, status):
+            segs = []
+            if status == 200 and data:
+                try:
+                    for v in json.loads(data.decode("utf-8")):
+                        if v.get("videoID") == vid:
+                            for s in v.get("segments", []):
+                                a, b = s.get("segment", [0, 0])[:2]
+                                if s.get("actionType", "skip") == "skip" and s.get("category") in SB_CATS and b > a:
+                                    segs.append([float(a), float(b), s["category"]])
+                except (ValueError, TypeError, AttributeError):
+                    pass
+            cls.cache[vid] = sorted(segs)
+            cb(cls.cache[vid])
+        store.http(f"https://sponsor.ajay.app/api/skipSegments/{pre}?categories={cats}&actionTypes=%5B%22skip%22%5D",
+                   got, timeout=10000, raw=True)
+
+
+# --- import z Brave / Chrome / Edge: zakładki, historia, hasła (Windows) ---
+BOOKMARKS = HOME / ".luna_zakladki.json"
+CHROMIUM_BROWSERS = [("Brave", ("BraveSoftware", "Brave-Browser")), ("Chrome", ("Google", "Chrome")),
+                     ("Edge", ("Microsoft", "Edge")), ("Vivaldi", ("Vivaldi",)), ("Opera", ())]
+
+
+def aes_gcm(key, nonce, data, tag=b"", decrypt=True):
+    """AES-GCM przez Windows CNG (bcrypt.dll) – bez zewnętrznych bibliotek. Szyfrowanie → (szyfrogram, znacznik)."""
+    import ctypes
+    from ctypes import wintypes
+    bc = ctypes.windll.bcrypt
+
+    class INFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.ULONG), ("dwInfoVersion", wintypes.ULONG), ("pbNonce", ctypes.c_void_p),
+                    ("cbNonce", wintypes.ULONG), ("pbAuthData", ctypes.c_void_p), ("cbAuthData", wintypes.ULONG),
+                    ("pbTag", ctypes.c_void_p), ("cbTag", wintypes.ULONG), ("pbMacContext", ctypes.c_void_p),
+                    ("cbMacContext", wintypes.ULONG), ("cbAAD", wintypes.ULONG), ("cbData", ctypes.c_ulonglong),
+                    ("dwFlags", wintypes.ULONG)]
+    alg, hkey = ctypes.c_void_p(), ctypes.c_void_p()
+    if bc.BCryptOpenAlgorithmProvider(ctypes.byref(alg), ctypes.c_wchar_p("AES"), None, 0):
+        raise OSError("AES")
+    try:
+        mode = ctypes.create_unicode_buffer("ChainingModeGCM")
+        if bc.BCryptSetProperty(alg, ctypes.c_wchar_p("ChainingMode"), mode, ctypes.sizeof(mode), 0):
+            raise OSError("GCM")
+        kb = ctypes.create_string_buffer(bytes(key), len(key))
+        if bc.BCryptGenerateSymmetricKey(alg, ctypes.byref(hkey), None, 0, kb, len(key), 0):
+            raise OSError("klucz")
+        try:
+            nb = ctypes.create_string_buffer(bytes(nonce), len(nonce))
+            tb = ctypes.create_string_buffer(bytes(tag) if decrypt else b"\0" * 16, 16)
+            info = INFO(); info.cbSize = ctypes.sizeof(INFO); info.dwInfoVersion = 1
+            info.pbNonce = ctypes.cast(nb, ctypes.c_void_p); info.cbNonce = len(nonce)
+            info.pbTag = ctypes.cast(tb, ctypes.c_void_p); info.cbTag = 16
+            src = ctypes.create_string_buffer(bytes(data), max(1, len(data)))
+            out = ctypes.create_string_buffer(max(1, len(data))); got = wintypes.ULONG()
+            fn = bc.BCryptDecrypt if decrypt else bc.BCryptEncrypt
+            st = fn(hkey, src, len(data), ctypes.byref(info), None, 0, out, len(data), ctypes.byref(got), 0)
+            if st:
+                raise ValueError("AES-GCM: błąd 0x%08x" % (st & 0xFFFFFFFF))
+            res = out.raw[:got.value]
+            return res if decrypt else (res, tb.raw)
+        finally:
+            bc.BCryptDestroyKey(hkey)
+    finally:
+        bc.BCryptCloseAlgorithmProvider(alg, 0)
+
+
+def chromium_profiles():
+    """[(nazwa do pokazania, katalog User Data, katalog profilu)] zainstalowanych przeglądarek na bazie Chromium."""
+    out, local = [], Path(os.environ.get("LOCALAPPDATA", ""))
+    roam = Path(os.environ.get("APPDATA", ""))
+    for name, parts in CHROMIUM_BROWSERS:
+        root = (roam / "Opera Software" / "Opera Stable") if name == "Opera" else local.joinpath(*parts, "User Data")
+        if not root.is_dir():
+            continue
+        names = {}
+        try:
+            ls = json.loads((root / "Local State").read_text(encoding="utf-8"))
+            names = {k: v.get("name", k) for k, v in ((ls.get("profile") or {}).get("info_cache") or {}).items()}
+        except (OSError, ValueError, AttributeError):
+            pass
+        cands = [root] if name == "Opera" else [p for p in root.iterdir() if p.is_dir() and (p.name == "Default" or p.name.startswith("Profile "))]
+        for p in sorted(cands):
+            if (p / "Bookmarks").exists() or (p / "History").exists() or (p / "Login Data").exists():
+                label = name + ("" if name == "Opera" else f" – {names.get(p.name, p.name)}")
+                out.append((label, root, p))
+    return out
+
+
+def _copy_db(path):
+    import shutil, tempfile
+    d = tempfile.mkdtemp(prefix="luna_imp_"); dst = os.path.join(d, "db")
+    shutil.copy2(str(path), dst)
+    return dst
+
+
+def import_bookmarks(profile):
+    try:
+        j = json.loads((Path(profile) / "Bookmarks").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out = []
+
+    def walk(node, folder):
+        if node.get("type") == "url":
+            if str(node.get("url", "")).startswith(("http://", "https://")):
+                out.append({"title": node.get("name") or node["url"], "url": node["url"], "folder": folder})
+        elif node.get("type") == "folder":
+            sub = (folder + " / " if folder else "") + (node.get("name") or "")
+            for ch in node.get("children", []) or []:
+                walk(ch, sub)
+    names = {"bookmark_bar": "Pasek zakładek", "other": "Inne zakładki", "synced": "Zakładki na telefonie"}
+    for key, node in (j.get("roots") or {}).items():
+        if isinstance(node, dict):
+            for ch in node.get("children", []) or []:
+                walk(ch, names.get(key, key))
+    return out
+
+
+def import_history(profile, limit=1000):
+    import sqlite3
+    p = Path(profile) / "History"
+    if not p.exists():
+        return []
+    db = sqlite3.connect(_copy_db(p))
+    try:
+        rows = db.execute("SELECT url, title, last_visit_time FROM urls WHERE hidden=0 AND url LIKE 'http%' "
+                          "ORDER BY last_visit_time DESC LIMIT ?", (limit,)).fetchall()
+    finally:
+        db.close()
+    return [{"name": (t or "")[:200], "url": u, "t": int(max(0, lv / 1e6 - 11644473600))} for u, t, lv in rows]
+
+
+def import_passwords(root, profile):
+    """(lista {origin,user,pw}, liczba pominiętych v20). v10/v11: AES-GCM kluczem z „Local State” (DPAPI);
+    v20 (szyfrowanie związane z aplikacją, nowy Chrome) da się odczytać tylko w tej przeglądarce → eksport CSV."""
+    import sqlite3
+    p = Path(profile) / "Login Data"
+    if not p.exists():
+        return [], 0
+    ls = json.loads((Path(root) / "Local State").read_text(encoding="utf-8"))
+    enc = base64.b64decode(ls["os_crypt"]["encrypted_key"])
+    key = _dpapi(enc[5:] if enc.startswith(b"DPAPI") else enc, False)
+    db = sqlite3.connect(_copy_db(p))
+    try:
+        rows = db.execute("SELECT origin_url, username_value, password_value FROM logins WHERE blacklisted_by_user=0").fetchall()
+    finally:
+        db.close()
+    out, v20 = [], 0
+    for origin, user, pv in rows:
+        pv = bytes(pv or b"")
+        try:
+            if pv[:3] in (b"v10", b"v11"):
+                pw = aes_gcm(key, pv[3:15], pv[15:-16], pv[-16:]).decode("utf-8")
+            elif pv[:3] == b"v20":
+                v20 += 1; continue
+            elif pv:
+                pw = _dpapi(pv, False).decode("utf-8")   # bardzo stare wersje
+            else:
+                continue
+        except (ValueError, OSError, UnicodeDecodeError):
+            continue
+        if origin and pw:
+            out.append({"origin": origin_of(origin), "user": user or "", "pw": pw})
+    return out, v20
+
+
+def import_passwords_csv(path):
+    """Eksport haseł z Chrome/Brave/Edge/Firefox (kolumny name/url/username/password)."""
+    import csv
+    out = []
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        for r in csv.DictReader(f):
+            r = {(k or "").strip().lower(): (v or "") for k, v in r.items()}
+            url, pw = r.get("url") or r.get("origin") or "", r.get("password", "")
+            if url.startswith(("http://", "https://")) and pw:
+                out.append({"origin": origin_of(url), "user": r.get("username") or r.get("login") or "", "pw": pw})
+    return out
+
+
+class Bookmarks:
+    _items = None
+
+    @classmethod
+    def items(cls):
+        if cls._items is None:
+            try:
+                d = json.loads(BOOKMARKS.read_text(encoding="utf-8"))
+                cls._items = d if isinstance(d, list) else []
+            except (OSError, ValueError):
+                cls._items = []
+        return cls._items
+
+    @classmethod
+    def add_many(cls, new):
+        have = {b["url"] for b in cls.items()}
+        n = 0
+        for b in new:
+            if b["url"] not in have:
+                cls.items().append(b); have.add(b["url"]); n += 1
+        try:
+            tmp = BOOKMARKS.with_suffix(".tmp"); tmp.write_text(json.dumps(cls.items(), ensure_ascii=False), encoding="utf-8")
+            tmp.replace(BOOKMARKS)
+        except OSError:
+            pass
+        return n
+
+
+class ImportDialog(QDialog):
+    """Import zakładek, historii i haseł z innej przeglądarki (albo hasła z pliku CSV)."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b = browser
+        self.setWindowTitle("Import z innej przeglądarki"); self.setMinimumWidth(520)
+        v = QVBoxLayout(self)
+        v.addWidget(lbl("Import z innej przeglądarki", "h3"))
+        v.addWidget(lbl("Zakładki, historia i hasła z Brave, Chrome, Edge, Vivaldi albo Opery na tym komputerze. Dane "
+                        "zostają na tym komputerze; hasła są od razu szyfrowane w sejfie Luny.", "muted", wrap=True))
+        self.combo = QComboBox(); self.profiles = chromium_profiles()
+        for label, root, prof in self.profiles:
+            self.combo.addItem(label)
+        if not self.profiles:
+            self.combo.addItem("Nie znaleziono innych przeglądarek"); self.combo.setEnabled(False)
+        v.addWidget(self.combo)
+        self.cb = {}
+        for key, text in (("bookmarks", "Zakładki"), ("history", "Historia (ostatnie 1000 stron)"), ("passwords", "Hasła")):
+            c = QCheckBox(text); c.setChecked(True); v.addWidget(c); self.cb[key] = c
+        if not (VAULT and VAULT[0].available()):
+            self.cb["passwords"].setChecked(False); self.cb["passwords"].setEnabled(False)
+        self.out = lbl("Najlepiej zamknij tamtą przeglądarkę przed importem.", "muted2", wrap=True); v.addWidget(self.out)
+        row = QHBoxLayout()
+        go = QPushButton("Importuj"); go.setObjectName("primary"); go.clicked.connect(self.run); go.setEnabled(bool(self.profiles))
+        csvb = QPushButton("Hasła z pliku CSV…"); csvb.clicked.connect(self.run_csv)
+        row.addWidget(go); row.addWidget(csvb); row.addStretch(1)
+        close = QPushButton("Zamknij"); close.clicked.connect(self.accept); row.addWidget(close); v.addLayout(row)
+
+    def _save_passwords(self, lst):
+        v = VAULT[0]; n = 0
+        for x in lst:
+            cur = v.find(x["origin"], x["user"])
+            if cur is None or cur.get("pw") != x["pw"]:
+                if cur is None:
+                    v.data["logins"].append({"origin": x["origin"], "user": x["user"], "pw": x["pw"], "ts": int(time.time())})
+                else:
+                    cur.update(pw=x["pw"], ts=int(time.time()))
+                n += 1
+        if n:
+            v.save()
+        return n
+
+    def run(self):
+        if not self.profiles:
+            return
+        label, root, prof = self.profiles[self.combo.currentIndex()]
+        msg = []
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            if self.cb["bookmarks"].isChecked():
+                bm = import_bookmarks(prof); n = Bookmarks.add_many(bm)
+                msg.append(f"zakładki: {n} nowych (z {len(bm)})")
+            if self.cb["history"].isChecked():
+                try:
+                    h = import_history(prof)
+                    st = self.b.store; seen = {x["url"] for x in st.history}
+                    st.history = sorted(st.history + [x for x in h if x["url"] not in seen], key=lambda x: -x.get("t", 0))[:1000]
+                    st._write(HIST, st.history)
+                    msg.append(f"historia: {len([x for x in h if x['url'] not in seen])} stron")
+                except Exception as e:
+                    msg.append(f"historia: błąd ({e.__class__.__name__})")
+            if self.cb["passwords"].isChecked():
+                try:
+                    pw, v20 = import_passwords(root, prof)
+                    n = self._save_passwords(pw)
+                    msg.append(f"hasła: {n} zapisanych")
+                    if v20:
+                        msg.append(f"{v20} haseł jest zaszyfrowanych tylko dla tamtej przeglądarki (nowy Chrome) – wyeksportuj "
+                                   "je tam do pliku CSV (Ustawienia → Hasła → Eksportuj) i użyj „Hasła z pliku CSV…”, potem usuń plik")
+                except Exception as e:
+                    msg.append(f"hasła: nie udało się odczytać ({e.__class__.__name__})")
+        finally:
+            QApplication.restoreOverrideCursor()
+        self.out.setText(f"{label}: " + "; ".join(msg) + ".")
+
+    def run_csv(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Plik CSV z hasłami", str(HOME), "CSV (*.csv)")
+        if not path:
+            return
+        try:
+            n = self._save_passwords(import_passwords_csv(path))
+            self.out.setText(f"Zaimportowano hasła z pliku: {n}. Usuń teraz ten plik CSV – zawiera hasła jawnym tekstem.")
+        except (OSError, ValueError, UnicodeDecodeError) as e:
+            self.out.setText(f"Nie udało się odczytać pliku: {e}")
+
+
+SPEED_JS = r"""(function(r){var n=0;document.querySelectorAll('video,audio').forEach(function(v){v.playbackRate=r;n++});return n})(%s)"""
 
 
 class Updater(QObject):
@@ -9408,6 +10131,56 @@ class ReadLaterDialog(QDialog):
             self.rl.remove(it); self.fill()
 
 
+class HighlightsDialog(QDialog):
+    """Wszystkie zakreślenia i notatki: strona → fragmenty; dwuklik otwiera stronę."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b = browser
+        self.setWindowTitle("Zakreślenia i notatki"); self.resize(fit_size(680, 540))
+        v = QVBoxLayout(self)
+        v.addWidget(lbl("Zakreślenia i notatki", "h3"))
+        v.addWidget(lbl("Zaznacz tekst na stronie → prawy przycisk → Zakreśl. Zakreślenia wracają, gdy otworzysz stronę ponownie.",
+                        "muted", wrap=True))
+        self.tree = QTreeWidget(); self.tree.setHeaderHidden(True); self.tree.setObjectName("wlist"); v.addWidget(self.tree, 1)
+        self.tree.itemDoubleClicked.connect(self._open)
+        row = QHBoxLayout(); op = QPushButton("Otwórz stronę"); op.clicked.connect(lambda: self._open(self.tree.currentItem()))
+        rm = QPushButton("Usuń zaznaczone"); rm.clicked.connect(self._remove)
+        row.addWidget(op); row.addWidget(rm); row.addStretch(1); v.addLayout(row)
+        self.fill()
+
+    def fill(self):
+        self.tree.clear()
+        data = Highlights.data()
+        for url, items in sorted(data.items(), key=lambda kv: -max((h.get("t", 0) for h in kv[1]), default=0)):
+            top = QTreeWidgetItem([(items[0].get("title") or url)[:90] + f"   ({len(items)})"])
+            top.setData(0, Qt.ItemDataRole.UserRole, (url, None)); top.setToolTip(0, url)
+            for h in items:
+                txt = h.get("text", "").replace("\n", " ")
+                ch = QTreeWidgetItem(["„" + txt[:110] + ("…" if len(txt) > 110 else "") + "”"
+                                      + (f"   — {h['note'][:80]}" if h.get("note") else "")])
+                ch.setIcon(0, tab_icon(None, h.get("color", "#fff176"))); ch.setData(0, Qt.ItemDataRole.UserRole, (url, h.get("id")))
+                top.addChild(ch)
+            self.tree.addTopLevelItem(top); top.setExpanded(True)
+        if not data:
+            self.tree.addTopLevelItem(QTreeWidgetItem(["Brak zakreśleń."]))
+
+    def _open(self, it):
+        d = it.data(0, Qt.ItemDataRole.UserRole) if it else None
+        if d:
+            self.b.open_url_new_tab(d[0]); self.accept()
+
+    def _remove(self):
+        it = self.tree.currentItem(); d = it.data(0, Qt.ItemDataRole.UserRole) if it else None
+        if not d:
+            return
+        url, hid = d
+        if hid:
+            Highlights.remove(url, hid)
+        else:
+            Highlights.data().pop(Highlights.key(url), None); Highlights.save()
+        self.fill()
+
+
 class Tab(QStackedWidget):
     """Karta: ekran główny, a po wejściu na stronę – widok WWW (tworzony leniwie). Należy do przestrzeni roboczej,
     opcjonalnie do grupy i kontenera; może mieć podział ekranu (druga strona obok) i może zostać uśpiona."""
@@ -9455,6 +10228,8 @@ class Tab(QStackedWidget):
         v.iconChanged.connect(lambda i, v=v: v.owner._view_icon(v, i))
         v.loadFinished.connect(lambda ok, v=v: v.owner.browser.on_loaded(v.owner, ok, v))
         v.loadStarted.connect(lambda v=v: v.owner.browser.on_load_started(v.owner, v))
+        v.urlChanged.connect(lambda u, v=v: v.owner.browser.on_view_url(v, u))   # też nawigacje SPA (YouTube)
+        v.page().sb_skipped.connect(lambda d, v=v: v.owner.browser.on_sponsor_skipped(v, d))
         v.page().pw_captured.connect(lambda d, v=v: v.owner.browser.on_pw(d))
         v.page().reader_state.connect(lambda d, v=v: v.owner.browser.on_reader(v, d))
         return v
@@ -10060,7 +10835,16 @@ class Browser(QMainWindow):
         self.setup_shortcuts()
         self.store.features_changed.connect(self.apply_features)
         if self.primary:
+            # poprzednie uruchomienie nie zamknęło się poprawnie (awaria, wyłączenie prądu) – zachowaj jego karty
+            crashed = bool(self.store.settings.get("running"))
+            prev = dict(self.store.settings.get("session") or {})
             self.restore_session()
+            self.store.settings["running"] = True; self.store.save_soon()
+            if crashed and not self.store.feature("restore_tabs") and prev.get("tabs"):
+                n = len(prev["tabs"])
+                QTimer.singleShot(800, lambda: self.notice.ask(
+                    f"Luna nie zamknęła się poprawnie. Przywrócić karty z poprzedniej sesji ({n})?",
+                    [("Przywróć karty", lambda: self.restore_session(prev), True), ("Nie", None, False)], icon="reload"))
         else:
             self.new_tab()
         DOWNLOADS[0].started.connect(self.on_download)
@@ -10385,6 +11169,7 @@ class Browser(QMainWindow):
         safe_disconnect(DOWNLOADS[0].changed, self._dl_changed)
         if self.primary:
             self.store.settings["session"] = self.session_data(); self._save_geometry()
+            self.store.settings["running"] = False   # poprawne zamknięcie (brak pytania o przywrócenie kart)
         self.store.save_settings()
         super().closeEvent(ev)
 
@@ -10485,7 +11270,19 @@ class Browser(QMainWindow):
         for it in self.store.items[:20]:
             bm.addAction(mini_icon(it["name"], it["url"]), it["name"]).triggered.connect(
                 lambda _=False, u=it["url"]: self.open_url_new_tab(u))
+        imp = Bookmarks.items()
+        if imp:   # zaimportowane z innej przeglądarki – według folderów
+            bm.addSeparator(); folders = {}
+            for b_ in imp:
+                folders.setdefault(b_.get("folder") or "Zakładki", []).append(b_)
+            for name in list(folders)[:25]:
+                fm_ = bm.addMenu(glyph("folder"), name[:60])
+                for b_ in folders[name][:60]:
+                    fm_.addAction(mini_icon(b_["title"], b_["url"]), b_["title"][:70]).triggered.connect(
+                        lambda _=False, u=b_["url"]: self.open_url_new_tab(u))
+        bm.addSeparator(); self.act(bm, "download", "Importuj z innej przeglądarki…", lambda: ImportDialog(self).exec())
         rl = m.addMenu(glyph("book"), "Do przeczytania"); rl.aboutToShow.connect(lambda: self.read_later_menu(rl))
+        self.act(m, "edit", "Zakreślenia i notatki…", self.show_highlights)
         self.act(m, "download", "Pobrane pliki", self.show_downloads, "Ctrl+Shift+Y")
         em = m.addMenu(glyph("puzzle"), "Rozszerzenia"); em.aboutToShow.connect(lambda: self.extensions_menu(em))
         self.act(m, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
@@ -10539,6 +11336,7 @@ class Browser(QMainWindow):
         tm = m.addMenu(glyph("tools"), "Więcej narzędzi")
         self.act(tm, "tools", "Menedżer zadań", self.task_manager, "Shift+Esc")
         self.act(tm, "save", "Kopia zapasowa…", lambda: BackupDialog(self).exec())
+        self.act(tm, "download", "Importuj z innej przeglądarki…", lambda: ImportDialog(self).exec())
         self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
         self.act(tm, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U", web is not None)
         self.act(tm, "tabs", "Karty i grupy", self.toggle_tab_popup, "Ctrl+Shift+A")
@@ -10589,15 +11387,16 @@ class Browser(QMainWindow):
             tr.restore(); self.notice.info("Przywrócono oryginalny tekst strony.", 3000, "swap"); return
         safe_disconnect(tr.status, self._translate_status)
         tr.status.connect(self._translate_status)
-        self.notice.info("Tłumaczę stronę na polski…", 15000, "swap")
-        tr.start()
+        tgt = translate_target(self.store)
+        self.notice.info(f"Tłumaczę stronę na: {LANGS[tgt]}…", 15000, "swap")
+        tr.start(tgt)
 
     def _translate_status(self, st):
         if st == "error":
             self.notice.info("Nie udało się przetłumaczyć strony (brak połączenia z Tłumaczem Google).", 6000, "swap")
         elif st == "done" and self.notice.isVisible() and self.notice.text.text().startswith("Tłumaczę"):
-            self.notice.ask("Strona przetłumaczona na polski.", [("Pokaż oryginał", self.translate_page, False),
-                                                                 ("OK", None, False)], icon="swap")
+            self.notice.ask(f"Strona przetłumaczona na: {LANGS[translate_target(self.store)]}.",
+                            [("Pokaż oryginał", self.translate_page, False), ("OK", None, False)], icon="swap")
 
     def offer_translation(self, web):
         """Po wczytaniu: strona deklaruje obcy język (atrybut lang) → pytanie, czy przetłumaczyć."""
@@ -10608,14 +11407,14 @@ class Browser(QMainWindow):
             return
 
         def got(lang):
-            code = str(lang or "").strip().lower().split("-")[0].split("_")[0]
-            if not code or code == "pl" or code not in LANG_PO or web is not self.web():
+            code, tgt = lang_code(lang), translate_target(self.store)
+            if not code or code.split("-")[0] == tgt.split("-")[0] or web is not self.web():
                 return
             if getattr(getattr(web, "_translator", None), "active", False):
                 return
             if self.notice.isVisible() and self.notice.btns.count():   # inne pytanie (np. zapis hasła) ma pierwszeństwo
                 return
-            self.notice.ask(f"Ta strona jest po {LANG_PO[code]}. Przetłumaczyć ją na polski?",
+            self.notice.ask(f"Język strony: {LANGS[code]}. Przetłumaczyć ją na: {LANGS[tgt]}?",
                             [("Przetłumacz", self.translate_page, True),
                              ("Nigdy na tej stronie", lambda: self._translate_never(host), False), ("Nie", None, False)],
                             icon="swap")
@@ -10713,12 +11512,86 @@ class Browser(QMainWindow):
             i = min(range(len(ZOOMS)), key=lambda k: abs(ZOOMS[k] - z))
             z = ZOOMS[max(0, min(len(ZOOMS) - 1, i + step))]
         web.setZoomFactor(z)
+        host = web.url().host().lower()
+        if host and not self.private:   # powiększenie zapamiętane dla tej witryny
+            zs = self.store.settings.setdefault("zoom_sites", {})
+            if abs(z - 1.0) < 0.01:
+                zs.pop(host, None)
+            else:
+                zs[host] = round(z, 2)
+            self.store.save_soon()
         if getattr(self, "_zoom_lbl", None) is not None:
             try:
                 self._zoom_lbl.setText(f"{round(z * 100)}%")
             except RuntimeError:
                 self._zoom_lbl = None
-        QToolTip.showText(QCursor.pos(), f"Powiększenie: {round(z * 100)}%", self)
+        QToolTip.showText(QCursor.pos(), f"Powiększenie: {round(z * 100)}%" + (f" (zapamiętane dla {host})" if host and abs(z - 1) > .01 else ""), self)
+
+    # --- YouTube: SponsorBlock ---
+    def on_view_url(self, view, u, reinject=False):
+        if not self.store.feature("sponsorblock"):
+            return
+        vid = youtube_id(u)
+        if not vid or (getattr(view, "_sb_vid", "") == vid and not reinject):
+            return
+        view._sb_vid = vid
+
+        def got(segs):
+            try:
+                if getattr(view, "_sb_vid", "") == vid:
+                    _safe_js(view, SB_JS % (json.dumps(segs), json.dumps(vid), json.dumps(PW_KEY)))
+            except RuntimeError:
+                pass
+        SponsorBlock.segments(self.store, vid, got)
+
+    def on_sponsor_skipped(self, view, d):
+        if view is self.web():
+            self.notice.info(f"Pominięto {SB_CATS.get(d.get('c'), 'fragment sponsorowany')} ({d.get('d', 0)} s) – SponsorBlock.",
+                             3500, "play")
+
+    def apply_site_zoom(self, view):
+        """Po wczytaniu: powiększenie zapamiętane dla witryny (albo 100%, gdy przechodzimy na inną witrynę)."""
+        try:
+            host = view.url().host().lower()
+            z = float((self.store.settings.get("zoom_sites") or {}).get(host, 1.0))
+            if abs(view.zoomFactor() - z) > 0.01:
+                view.setZoomFactor(z)
+        except (RuntimeError, ValueError, TypeError):
+            pass
+
+    def offer_address(self, view):
+        """Strona z formularzem adresu (ulica + kod/miasto) → pytanie, czy wypełnić zapisanym adresem."""
+        adr = addresses()
+        if not adr or view is not self.web():
+            return
+
+        def got(res):
+            try:
+                r = json.loads(res) if res else {}
+            except ValueError:
+                r = {}
+            if not r.get("address") or view is not self.web():
+                return
+            if self.notice.isVisible() and self.notice.btns.count():
+                return
+            u = view.url().toString()
+            if getattr(view, "_addr_offered", "") == u:
+                return
+            view._addr_offered = u
+            a = adr[0]
+            acts = [(f"Wypełnij: {a.get('label') or a.get('street') or 'adres'}", lambda: fill_address(view, a), True)]
+            if len(adr) > 1:
+                acts.append(("Inny adres…", lambda: self._pick_address(view), False))
+            self.notice.ask("Ta strona ma formularz adresu. Wypełnić zapisanym adresem?", acts + [("Nie", None, False)],
+                            icon="home")
+        for ms in (600, 3000):   # formularze dorysowywane skryptami
+            QTimer.singleShot(ms, lambda: _safe_js(view, ADDR_JS % ("{}", "false"), got))
+
+    def _pick_address(self, view):
+        names = [a.get("label") or a.get("street") or f"Adres {i + 1}" for i, a in enumerate(addresses())]
+        n, ok = QInputDialog.getItem(self, "Wypełnij adres", "Adres:", names, 0, False)
+        if ok:
+            fill_address(view, addresses()[names.index(n)])
 
     def toggle_fullscreen(self):
         if self.isFullScreen():
@@ -11117,6 +11990,160 @@ class Browser(QMainWindow):
     def task_manager(self):
         TaskManager(self).exec()
 
+    # --- menu prawego przycisku na stronie ---
+    def page_context_menu(self, view, d, hover_hl, pos):
+        try:
+            page = view.page()
+        except RuntimeError:
+            return
+        A = QWebEnginePage.WebAction
+        m = QMenu(self)
+        trig = lambda a: (lambda: page.triggerAction(a))
+        link, sel = d["link"], (d["sel"] or "").strip()
+        if d["miss"] and d["sugg"]:   # podpowiedzi pisowni
+            for s in d["sugg"][:6]:
+                a = m.addAction(s); f = a.font(); f.setBold(True); a.setFont(f)
+                a.triggered.connect(lambda _=False, s=s: page.replaceMisspelledWord(s))
+            m.addSeparator()
+        elif d["miss"]:
+            m.addAction("Brak podpowiedzi pisowni").setEnabled(False); m.addSeparator()
+        if hover_hl:   # zakreślenie pod kursorem
+            self.act(m, "edit", "Notatka do zakreślenia…", lambda: self.highlight_note(view, hover_hl))
+            self.act(m, "trash", "Usuń zakreślenie", lambda: self.highlight_remove(view, hover_hl))
+            m.addSeparator()
+        if link:
+            self.act(m, "plus", "Otwórz link w nowej karcie", lambda: self.open_url_new_tab(link, view.container))
+            self.act(m, "split", "Otwórz link w podziale ekranu", lambda: self.open_in_split(link))
+            cm = m.addMenu(glyph("layers"), "Otwórz link w kontenerze")
+            cm.addAction("Bez kontenera (zwykły profil)").triggered.connect(lambda _=False: self.open_url_new_tab(link, ""))
+            for c in self.containers():
+                cm.addAction(tab_icon(None, c["color"]), c["name"]).triggered.connect(
+                    lambda _=False, x=c["id"]: self.open_url_new_tab(link, x))
+            self.act(m, "window", "Otwórz link w nowym oknie", trig(A.OpenLinkInNewWindow))
+            m.addSeparator()
+            self.act(m, "copy", "Kopiuj link", lambda: QGuiApplication.clipboard().setText(link))
+            cl = clean_url(link)
+            if cl != link:
+                self.act(m, "copy", "Kopiuj czysty link (bez śledzenia)", lambda: QGuiApplication.clipboard().setText(cl))
+            self.act(m, "qr", "Kod QR linku", lambda: show_qr(self, cl))
+            self.act(m, "download", "Zapisz plik z linku…", trig(A.DownloadLinkToDisk))
+            m.addSeparator()
+        if d["image"] and d["media_url"]:
+            self.act(m, "external", "Otwórz obraz w nowej karcie", lambda: self.open_url_new_tab(d["media_url"], view.container))
+            self.act(m, "save", "Zapisz obraz jako…", trig(A.DownloadImageToDisk))
+            self.act(m, "copy", "Kopiuj obraz", trig(A.CopyImageToClipboard))
+            self.act(m, "copy", "Kopiuj adres obrazu", trig(A.CopyImageUrlToClipboard))
+            m.addSeparator()
+        if d["video"]:
+            self.act(m, "play", "Odtwórz / wstrzymaj", trig(A.ToggleMediaPlayPause))
+            self.act(m, "external", "Obraz w obrazie", self.pip)
+            self.speed_menu(m, view)
+            self.act(m, "eye", "Pokaż / ukryj sterowanie", trig(A.ToggleMediaControls))
+            m.addSeparator()
+        if d["edit"]:
+            for kind, text, act in (("undo", "Cofnij", A.Undo), ("redo", "Ponów", A.Redo)):
+                self.act(m, kind, text, trig(act))
+            m.addSeparator()
+            for kind, text, act in (("cut", "Wytnij", A.Cut), ("copy", "Kopiuj", A.Copy), ("paste", "Wklej", A.Paste),
+                                    ("paste", "Wklej jako zwykły tekst", A.PasteAndMatchStyle),
+                                    ("select", "Zaznacz wszystko", A.SelectAll)):
+                self.act(m, kind, text, trig(act))
+            adr = addresses()
+            if adr:
+                am = m.addMenu(glyph("home"), "Wypełnij adres")
+                for a_ in adr:
+                    am.addAction(a_.get("label") or a_.get("street") or "Adres").triggered.connect(
+                        lambda _=False, a_=a_: fill_address(view, a_))
+            m.addSeparator()
+        if sel:
+            short = sel[:28] + ("…" if len(sel) > 28 else "")
+            if not d["edit"]:
+                self.act(m, "copy", "Kopiuj", trig(A.Copy))
+            self.act(m, "search", f"Szukaj „{short}” w {CURRENT[0]}",
+                     lambda: self.open_url_new_tab(ENGINES[CURRENT[0]] + quote(sel), view.container))
+            self.act(m, "swap", f"Przetłumacz „{short}”", lambda: TranslatePopup(self, sel, QCursor.pos()))
+            if not d["edit"]:
+                hm = m.addMenu(glyph("edit"), "Zakreśl")
+                for name, col in HL_COLORS:
+                    hm.addAction(tab_icon(None, col), name).triggered.connect(
+                        lambda _=False, col=col: self.highlight_selection(view, col))
+                hm.addSeparator()
+                hm.addAction("Zakreśl i dodaj notatkę…").triggered.connect(
+                    lambda _=False: self.highlight_selection(view, HL_COLORS[0][1], ask_note=True))
+            m.addSeparator()
+        if not (link or sel or d["edit"] or d["image"] or d["video"]):   # sama strona
+            self.act(m, "back", "Wstecz", trig(A.Back), "Alt+Left", view.history().canGoBack())
+            self.act(m, "forward", "Dalej", trig(A.Forward), "Alt+Right", view.history().canGoForward())
+            self.act(m, "reload", "Odśwież", trig(A.Reload), "F5")
+            m.addSeparator()
+            tr_on = getattr(getattr(view, "_translator", None), "active", False)
+            self.act(m, "swap", "Pokaż oryginał" if tr_on else f"Przetłumacz stronę na: {LANGS[translate_target(self.store)]}",
+                     self.translate_page, "Ctrl+Shift+L")
+            self.act(m, "book", "Tryb czytania", self.toggle_reader, "F9")
+            self.act(m, "book", "Dodaj do „Do przeczytania”", self.read_later_add, "Ctrl+Shift+O")
+            self.act(m, "qr", "Kod QR strony", lambda: show_qr(self, clean_url(view.url().toString())))
+            self.act(m, "copy", "Kopiuj czysty link strony", lambda: QGuiApplication.clipboard().setText(clean_url(view.url().toString())))
+            self.act(m, "save", "Zapisz stronę jako…", self.save_page, "Ctrl+S")
+            self.act(m, "print", "Drukuj…", self.print_page, "Ctrl+P")
+            self.speed_menu(m, view)
+            m.addSeparator()
+            self.act(m, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U")
+        self.act(m, "tools", "Zbadaj element", trig(A.InspectElement))
+        m.popup(pos)
+
+    def speed_menu(self, m, view):
+        sm = m.addMenu(glyph("play"), "Prędkość odtwarzania filmu")
+        for r in (0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0):
+            sm.addAction(f"{r:g}×" + ("  (normalna)" if r == 1.0 else "")).triggered.connect(
+                lambda _=False, r=r: _safe_js(view, SPEED_JS % r))
+
+    def open_in_split(self, url):
+        t = self.cur()
+        if t is None:
+            return
+        if t.sides:   # podział już jest – nowa karta z linkiem
+            self.open_url_new_tab(url, t.container); return
+        if t.main is None or t.on_home():
+            t.go(url); return
+        t.split_with(url)
+
+    # --- zakreślenia i notatki ---
+    def highlight_selection(self, view, color, ask_note=False):
+        note = ""
+        if ask_note:
+            note, ok = QInputDialog.getMultiLineText(self, "Notatka", "Notatka do zakreślenia:")
+            if not ok:
+                return
+        url = view.url().toString()
+
+        def got(res):
+            try:
+                h = json.loads(res) if res else None
+            except ValueError:
+                h = None
+            if not h:
+                return
+            h.update(color=color, note=note.strip())
+            Highlights.add(url, h, view.title())
+            self.notice.info("Zakreślenie zapisane – zobaczysz je po powrocie na tę stronę.", 3500, "edit")
+        _safe_js(view, HL_CAPTURE % (json.dumps(color), json.dumps(note.strip())), got)
+
+    def highlight_note(self, view, hid):
+        url = view.url().toString()
+        cur = next((h.get("note", "") for h in Highlights.for_url(url) if h.get("id") == hid), "")
+        note, ok = QInputDialog.getMultiLineText(self, "Notatka", "Notatka do zakreślenia:", cur)
+        if ok:
+            Highlights.set_note(url, hid, note.strip())
+            _safe_js(view, "document.querySelectorAll('mark[data-lhl=%s]').forEach(function(m){m.title=%s;m.style.cursor=%s})"
+                     % (json.dumps(hid), json.dumps(note.strip()), json.dumps("help" if note.strip() else "auto")))
+
+    def highlight_remove(self, view, hid):
+        Highlights.remove(view.url().toString(), hid)
+        _safe_js(view, HL_REMOVE % json.dumps(hid))
+
+    def show_highlights(self):
+        HighlightsDialog(self).exec()
+
     # --- paleta poleceń (Ctrl+K) ---
     def palette(self):
         if getattr(self, "_palette", None) is None:
@@ -11134,6 +12161,9 @@ class Browser(QMainWindow):
                 ("history", "Historia", "Ctrl+H", self.show_history),
                 ("download", "Pobrane pliki", "Ctrl+Shift+Y", self.show_downloads),
                 ("book", "Do przeczytania – lista", "", self.show_read_later),
+                ("edit", "Zakreślenia i notatki", "", self.show_highlights),
+                ("download", "Importuj z innej przeglądarki (Brave, Chrome, Edge)", "", lambda: ImportDialog(self).exec()),
+                ("swap", "Język tłumaczenia (ustawienia)", "", lambda: self.open_settings("features")),
                 ("grid", "Rynek Widgetów", "Ctrl+Shift+E", self.open_market),
                 ("moon", "Ciemny tryb stron – przełącz", "Ctrl+Shift+D", self.toggle_dark),
                 ("tools", "Menedżer zadań", "Shift+Esc", self.task_manager),
@@ -11159,6 +12189,9 @@ class Browser(QMainWindow):
                      ("copy", "Zrzut: zaznaczony fragment", "Ctrl+Shift+S", lambda: self.screenshot("region")),
                      ("zoom", "Powiększ", "Ctrl++", lambda: self.zoom(1)), ("zoom", "Pomniejsz", "Ctrl+-", lambda: self.zoom(-1)),
                      ("zoom", "Powiększenie 100%", "Ctrl+0", lambda: self.zoom(0)),
+                     ("play", "Prędkość filmu: 1,5×", "", lambda: _safe_js(web, SPEED_JS % 1.5)),
+                     ("play", "Prędkość filmu: 2×", "", lambda: _safe_js(web, SPEED_JS % 2.0)),
+                     ("play", "Prędkość filmu: normalna", "", lambda: _safe_js(web, SPEED_JS % 1.0)),
                      ("tools", "Narzędzia deweloperskie", "F12", self.devtools),
                      ("app", "Źródło strony", "Ctrl+U", self.view_source)]
         cmds.append(("window", "Pełny ekran", "F11", self.toggle_fullscreen))
@@ -11188,6 +12221,9 @@ class Browser(QMainWindow):
         for it in self.store.items[:60]:
             add("tile", 2, mini_icon(it["name"], it["url"]), it["name"], "ekran główny  ·  " + host_of(it["url"]),
                 lambda u=it["url"]: self.open_url_new_tab(u), it["url"])
+        for b_ in Bookmarks.items()[:500]:
+            add("tile", 2, mini_icon(b_["title"], b_["url"]), b_["title"], "zakładka  ·  " + (b_.get("folder") or host_of(b_["url"])),
+                lambda u=b_["url"]: self.open_url_new_tab(u), b_["url"])
         for it in ReadLater.get().unread()[:30]:
             add("later", 2, glyph("book"), it["title"], "do przeczytania  ·  " + host_of(it["url"]),
                 lambda it=it: self.open_read_later(it, False), it["url"])
@@ -11428,12 +12464,16 @@ class Browser(QMainWindow):
             tabs.append(d)
         return {"tabs": tabs, "current": self.stack.currentIndex()}
 
-    def restore_session(self):
-        s = self.store.settings.get("session") if self.store.feature("restore_tabs") else None
+    def restore_session(self, session=None):
+        """session: zapisana sesja do odtworzenia (np. po awarii); domyślnie – ta z ustawień, gdy włączone przywracanie."""
+        s = session if session is not None else (self.store.settings.get("session") if self.store.feature("restore_tabs") else None)
         tabs = [d for d in (s or {}).get("tabs", []) if isinstance(d, dict)]
         if not tabs:
-            self.new_tab(); return
+            if session is None:
+                self.new_tab()
+            return
         known = self.workspaces()
+        base = self.stack.count()   # przy przywracaniu po awarii obok już otwartych kart
         for d in tabs:
             nt = self.new_tab(container=d.get("container", ""), ws=d.get("ws") if d.get("ws") in known else known[0],
                               group=d.get("group", ""), title=d.get("title", ""), lazy_url=d.get("url", ""), activate=False)
@@ -11442,7 +12482,8 @@ class Browser(QMainWindow):
             if d.get("pinned"):
                 self.pin_tab(nt, True)
         i = s.get("current", 0)
-        t = self.stack.widget(i) if isinstance(i, int) and 0 <= i < self.stack.count() else self.stack.widget(0)
+        i = base + i if isinstance(i, int) else base
+        t = self.stack.widget(i) if 0 <= i < self.stack.count() else self.stack.widget(base)
         self.ws = t.ws; self.store.settings["ws_current"] = t.ws
         self.activate(t)
         if t.pending:
@@ -11951,6 +12992,12 @@ class Browser(QMainWindow):
             self.update_shield(); self.update_page_bg()
             if ok:
                 self.offer_translation(view)
+        if ok and view is not None and view.url().scheme() in ("http", "https", "file"):
+            apply_highlights(view)
+            self.apply_site_zoom(view)
+            self.on_view_url(view, view.url(), reinject=True)
+            if addresses():
+                self.offer_address(view)
         if ok and view is not None:
             self.autofill(view)
             url = view.url().toString()
@@ -12005,6 +13052,29 @@ def wait_for_previous():
                 pass
 
 
+ERROR_LOG = HOME / ".luna_bledy.log"
+
+
+def install_error_guard():
+    """Nieobsłużony wyjątek w slocie/timerze Qt nie zamyka już całej Luny (PyQt6 domyślnie wtedy przerywa proces):
+    trafia do dziennika ~/.luna_bledy.log (max ok. 256 KB, starsze wpisy obcinane) i na stderr."""
+    import traceback
+
+    def hook(etype, value, tb):
+        text = "".join(traceback.format_exception(etype, value, tb))
+        try:
+            sys.__stderr__ and sys.__stderr__.write(text)
+        except Exception:
+            pass
+        try:
+            old = ERROR_LOG.read_text(encoding="utf-8") if ERROR_LOG.exists() else ""
+            entry = f"--- {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n{text}\n"
+            ERROR_LOG.write_text((old + entry)[-256 * 1024:], encoding="utf-8")
+        except Exception:
+            pass
+    sys.excepthook = hook
+
+
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "--luna-adblock-compile":   # podproces kompilatora list (Luna.exe)
         from adblock import compiler
@@ -12019,6 +13089,7 @@ if __name__ == "__main__":
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pl.luna.browser")
         except Exception:
             pass
+    install_error_guard()
     app = QApplication(sys.argv)
     migrate_old_data()
     load_local_fonts()
