@@ -113,6 +113,15 @@ _RT, _WORKERS = _rt_map()
 _REDIRECTABLE = {RT.SCRIPT, RT.SUBDOCUMENT, RT.IMAGE, RT.STYLESHEET, RT.MEDIA, RT.XHR}
 
 
+def _probe_like(url):
+    """Czy zapytanie fetch/XHR wygląda na sondę wykrywającą bloker: pobranie skryptu (…/adsbygoogle.js,
+    show_ads.js, ad_status.js) albo znanej biblioteki reklamowej. Takim udajemy sukces; resztę blokujemy."""
+    if resources.known_library(url):
+        return True
+    p = url.split("#", 1)[0].split("?", 1)[0].lower()
+    return p.endswith(".js")
+
+
 def _js(v):
     return json.dumps(v, ensure_ascii=True, separators=(",", ":"))
 
@@ -646,7 +655,17 @@ class AdBlock(QObject):
             name = None
             if kind == "redirect":
                 name = resources.canonical(res[1])
+                if rt == RT.XHR and str(res[-1]).startswith("*") and not _probe_like(url):
+                    # ogólna reguła uBO „*$xhr,3p,method=head,redirect-rule=nooptext” udaje sukces KAŻDEGO
+                    # zablokowanego HEAD – także do trackerów i telemetrii, których nikt nie używa jako sondy.
+                    # Zostawiamy ją tylko dla sond (skrypty reklamowe); resztę naprawdę blokujemy
+                    name = resources.NONE
             if name is None or name == resources.NONE:
+                if rt == RT.XHR and not _probe_like(url):
+                    # fetch/XHR do trackerów, telemetrii, API reklam: zwykły błąd sieci jak w uBO/Brave.
+                    # Udawana odpowiedź zostaje tylko dla sond anty-adblock (pobranie skryptu reklamowego)
+                    info.block(True)
+                    return
                 name = resources.known_library(url, rt) or resources.default_for(rt, url)
             if name and resources.get(name) is not None:
                 tgt = SR + "r/" + quote(name, safe="")

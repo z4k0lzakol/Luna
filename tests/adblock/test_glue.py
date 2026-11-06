@@ -95,6 +95,7 @@ i.src='http://ads.localhost:%P%/pix.png';
 var f=document.createElement('iframe'); f.onload=function(){R.frame='load'}; f.src='http://ads.localhost:%P%/frame.html';
 document.body.appendChild(f);
 fetch('http://ads.localhost:%P%/probe.txt',{mode:'no-cors'}).then(function(r){R.fetch='ok:'+r.type},function(e){R.fetch='err'});
+fetch('http://ads.localhost:%P%/pagead/show_ads.js',{method:'HEAD',mode:'no-cors'}).then(function(r){R.fetchjs='ok:'+r.type},function(e){R.fetchjs='err'});
 </script></body></html>"""
 
 
@@ -223,7 +224,10 @@ def main():
     check("blocked script -> noop.js (onload, no error)", R.get("plain") == "load", R)
     check("blocked image -> 2x2 surrogate", R.get("img") == "load:2", R)
     check("blocked iframe -> loads (noop.html)", R.get("frame") == "load", R)
-    check("blocked no-cors fetch resolves", str(R.get("fetch", "")).startswith("ok"), R)
+    # sonda anty-adblock (pobranie skryptu reklamowego) dostaje udany zasób zastępczy; zwykłe zapytanie do
+    # trackera kończy się błędem sieci jak w uBO/Brave (testy typu adblock.turtlecute.org)
+    check("blocked no-cors fetch of an ad script (detection probe) resolves", str(R.get("fetchjs", "")).startswith("ok"), R)
+    check("blocked no-cors fetch to a tracker endpoint fails like a real block", R.get("fetch") == "err", R)
     check("real ad script never ran", js("window.__realAd===undefined") is True)
     check("scriptlet set-constant applied", js("window.lunaGlueConst") is True)
     check("scriptlet leaves no userscript: in stack", "userscript" not in (js("new Error().stack") or ""))

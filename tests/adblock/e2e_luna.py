@@ -32,6 +32,8 @@ ap.add_argument("--shots", default="")
 ap.add_argument("--real", action="append", default=[])
 ap.add_argument("--timeout", type=float, default=420)
 ap.add_argument("--probe", default="", help="phase 2: JS expression evaluated on each --real page (result printed)")
+ap.add_argument("--settle", type=int, default=8000, help="phase 2: ms to wait on each --real page before measuring")
+ap.add_argument("--pre", default="", help="phase 2: JS run on each --real page right after load (e.g. start a video)")
 args = ap.parse_args()
 HOMEDIR = args.home or tempfile.mkdtemp(prefix="luna_e2e_")
 os.makedirs(HOMEDIR, exist_ok=True)
@@ -251,7 +253,10 @@ if args.phase == "2":
         ICPT.clear()
         t0 = time.time()
         t, ok = open_tab(url, 45000)
-        wait(8000)
+        if args.pre and t.web:
+            wait(3000)
+            runjs(t.web, args.pre)
+        wait(args.settle)
         OUT["real"][url] = {"loaded": ok, "blocked": ab.count(url), "s": round(time.time() - t0, 1),
                             "title": t.web.title()[:60] if t.web else "", "interceptor": icpt_stats()}
         if args.probe and t.web:
