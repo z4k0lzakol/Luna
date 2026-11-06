@@ -347,8 +347,11 @@ def test_psl():
 def test_catalog():
     ids = [l["id"] for l in catalog.LISTS]
     for i in ["ubo-filters", "ubo-badware", "ubo-privacy", "ubo-quick-fixes", "ubo-unbreak", "easylist",
-              "easyprivacy", "pgl", "pol0", "psl"]:
+              "easyprivacy", "pgl", "pol0", "hagezi-pro", "psl"]:
         check(i in ids, "catalog has " + i)
+    hz = catalog.get("hagezi-pro")
+    check(hz["url"].startswith("https://") and hz["fallback"].startswith("https://") and not hz["trusted"],
+          "hagezi: https + fallback, untrusted")
     eq(catalog.get("ubo-quick-fixes")["expires_h"], 12, "quick fixes 12h")
     eq(catalog.get("ubo-filters")["fallback"], "https://ublockorigin.pages.dev/filters/filters.min.txt", "fallback")
     check(catalog.get("ubo-filters")["trusted"] and not catalog.get("easylist")["trusted"], "trust")

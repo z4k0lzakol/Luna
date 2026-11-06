@@ -382,7 +382,7 @@ page = dlg.built.get("privacy")
 labels = [x.text() for x in page.findChildren(QLabel)]
 switches = [c for c in page.findChildren(QCheckBox) if c.objectName() == "switch"]
 OUT["settings_switches"] = len(switches)
-check("settings: 9 list switches + feature switch", len(switches) == 1 + len(adblock.catalog.filter_lists()), len(switches))
+check("settings: one switch per list + feature switch", len(switches) == 1 + len(adblock.catalog.filter_lists()), len(switches))
 check("settings: licences/attribution shown", any("GPL-3.0" in x for x in labels) and any("CC BY-NC-SA 4.0" in x for x in labels)
       and any("MPL-2.0" in x for x in labels))
 check("settings: rule counts and last update shown", any("Aktywnych reguł" in x for x in labels), [x for x in labels if "reguł" in x][:2])

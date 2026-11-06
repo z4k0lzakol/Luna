@@ -43,6 +43,16 @@ LISTS = [
          fallback=None, homepage="https://github.com/MajkiIT/polish-ads-filter", license="CC BY-NC-SA 4.0",
          expires_h=24, trusted=False, default_on=True,
          includes=["adblock_suplement.txt", "adblock_ublock.txt"], kind="filters"),
+    # lista domen w stylu DNS: telemetria telefonów/aplikacji/systemów (Xiaomi, Oppo, Huawei, Apple, Samsung…),
+    # której listy przeglądarkowe nie obejmują; działa niezależnie od DNS w danej sieci (ok. 220 tys. domen,
+    # w silniku ~1,5 MB pamięci). Wyjątki z ubo-unbreak ($badfilter) nadal ją poprawiają
+    dict(id="hagezi-pro", title="HaGeZi Multi PRO – śledzenie i telemetria",
+         desc="Domeny reklam, śledzenia i telemetrii urządzeń (telefony, aplikacje, systemy) – jak bloker DNS, "
+              "ale w każdej sieci.",
+         url="https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/pro.txt",
+         fallback="https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
+         homepage="https://github.com/hagezi/dns-blocklists", license="GPL-3.0", expires_h=24,
+         trusted=False, default_on=True, includes=[], kind="filters"),
     dict(id="psl", title="Public Suffix List", desc="Lista sufiksów publicznych (rozpoznawanie domen).",
          url="https://publicsuffix.org/list/public_suffix_list.dat", fallback=None,
          homepage="https://publicsuffix.org/", license="MPL-2.0", expires_h=720, trusted=False, default_on=True,
