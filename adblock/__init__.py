@@ -907,6 +907,12 @@ class AdBlock(QObject):
     def _sig(self):
         parts = {"ids": self.enabled_ids(), "user": hashlib.sha1(self.user_filters().encode("utf-8")).hexdigest(),
                  "files": {}}
+        lp = catalog.luna_list_path()   # zmiana wbudowanych poprawek (aktualizacja Luny) → przebudowa
+        if lp:
+            try:
+                parts["luna"] = hashlib.sha1(open(lp, "rb").read()).hexdigest()
+            except OSError:
+                pass
         for i in self._ids_with_psl():
             lst = catalog.get(i)
             paths = [catalog.list_path(i, self.home)] + [catalog.include_path(i, n, self.home) for n in lst["includes"]]

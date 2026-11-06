@@ -1,0 +1,18 @@
+! Title: Luna – poprawki
+! Description: Reguły Luny dla stron, których listy filtrów jeszcze nie obejmują. Zawsze włączone, kompilowane
+!   razem z pozostałymi listami. Ukrywamy przez visibility (element zostaje w układzie strony), żeby skrypty
+!   wykrywające bloker nie widziały zmian w rozmiarach ani w display.
+!
+! Tapeta reklamowa (screening) po bokach strony w serwisach Wirtualnej Polski – obraz z własnego serwera WP
+! (v.wpimg.pl), więc blokada sieciowa jej nie obejmuje
+wp.pl,money.pl,o2.pl,pudelek.pl,dobreprogramy.pl,abczdrowie.pl,autokult.pl,komorkomania.pl,gadzetomania.pl,fotoblogia.pl,polygamia.pl,parenting.pl,kafeteria.pl,vibez.pl,wakacje.pl,extradom.pl,totalmoney.pl,superauto.pl,benchmark.pl,homebook.pl,domodi.pl,pysznosci.pl,genialne.pl,jastrzabpost.pl,so-magazyn.pl,open.fm,essanews.com,dailywrap.net,wpartner.pl,wirtualnemedia.pl##.wp-fullpage-screening-wallpaper:style(visibility: hidden !important)
+! …drugi wariant szablonu (np. pudelek.pl, money.pl): .wp-bg-layer obejmuje CAŁĄ stronę, więc ukrywamy tylko pustą
+! warstwę tła .wp-bg-layer-inner (bez dzieci; obraz rysowany na niej/pseudoelemencie) – treść jest jej rodzeństwem
+wp.pl,money.pl,o2.pl,pudelek.pl,dobreprogramy.pl,abczdrowie.pl,autokult.pl,komorkomania.pl,gadzetomania.pl,fotoblogia.pl,polygamia.pl,parenting.pl,kafeteria.pl,vibez.pl,wakacje.pl,extradom.pl,totalmoney.pl,superauto.pl,benchmark.pl,homebook.pl,domodi.pl,pysznosci.pl,genialne.pl,jastrzabpost.pl,so-magazyn.pl,open.fm,essanews.com,dailywrap.net,wpartner.pl,wirtualnemedia.pl##.wp-bg-layer > .wp-bg-layer-inner:empty:style(visibility: hidden !important)
+!
+! Reklama w prawej kolumnie (blok oznaczony „REKLAMA”, obraz z własnej domeny serwisu)
+pudelek.pl##.rail-container div.sticky:has(span:has-text(/^REKLAMA$/)):style(visibility: hidden !important)
+!
+! Reklama wideo w prawej kolumnie strony głównej wp.pl – po zablokowaniu odtwarzacz pokazywał komunikat
+! „Błąd: The VAST response document is empty. Kod: 1009”
+wp.pl###wp-live-tabs div.sticky:has(video):style(visibility: hidden !important)

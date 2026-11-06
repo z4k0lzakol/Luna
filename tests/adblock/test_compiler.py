@@ -370,7 +370,8 @@ def test_catalog():
             open(catalog.list_path(i, home), "w").close()
         open(catalog.include_path("pol0", "adblock_ublock.txt", home), "w").close()
         cfg = catalog.build_config(["ubo-filters", "pol0", "easylist"], "x", home)
-        eq([l["id"] for l in cfg["lists"]], ["ubo-filters", "pol0"], "config lists")
+        eq([l["id"] for l in cfg["lists"]], ["ubo-filters", "pol0", catalog.LUNA_ID], "config lists (+ wbudowane poprawki Luny)")
+        eq(cfg["lists"][-1]["trusted"], True, "Luna's own list is trusted")
         eq(cfg["lists"][1]["includes"], [catalog.include_path("pol0", "adblock_ublock.txt", home)], "config inc")
         check(cfg["psl"] and cfg["lists"][0]["trusted"], "config psl/trusted")
         meta = {"ubo-filters": {"fetched": 1000}}

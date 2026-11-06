@@ -92,6 +92,18 @@ LISTS = [
 ]
 BY_ID = {l["id"]: l for l in LISTS}
 USER_ID = "user"            # "Moje filtry" (settings["adblock_user"]), never trusted
+LUNA_ID = "luna"            # adblock/luna-filters.txt – poprawki Luny dołączone do programu (nie z sieci)
+
+
+def luna_list_path():
+    """Ścieżka luna-filters.txt (obok modułu albo w paczce PyInstallera) lub None."""
+    import sys
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (here, os.path.join(getattr(sys, "_MEIPASS", ""), "adblock")):
+        p = os.path.join(d, "luna-filters.txt")
+        if d and os.path.isfile(p):
+            return p
+    return None
 
 
 def get(list_id):
@@ -199,6 +211,9 @@ def build_config(ids, user_text="", home=None):
             continue
         incs = [include_path(i, n, home) for n in lst["includes"] if os.path.isfile(include_path(i, n, home))]
         lists.append({"id": i, "path": p, "trusted": bool(lst["trusted"]), "includes": incs})
+    lp = luna_list_path()
+    if lp:   # własne poprawki Luny – zawsze, zaufane (reguły proceduralne i :style)
+        lists.append({"id": LUNA_ID, "path": lp, "trusted": True, "includes": []})
     pp = list_path("psl", home)
     return {"lists": lists, "user": user_text or "", "psl": pp if os.path.isfile(pp) else None,
             "lists_dir": ldir}

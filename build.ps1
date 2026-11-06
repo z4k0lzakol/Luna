@@ -10,7 +10,7 @@ if (-not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
 $opts = @("--noconfirm", "--noconsole", "--onefile", "--name", "Luna", "--icon", "luna.ico")
 # blokada reklam: skrypty JS i zasoby zastępcze czytane w czasie działania; kompilator list działa w podprocesie
 # (Luna.exe --luna-adblock-compile), więc jego moduł trzeba dołączyć jawnie
-$opts += @("--add-data", "adblock\js;adblock\js", "--add-data", "adblock\res;adblock\res", "--hidden-import", "adblock.compiler")
+$opts += @("--add-data", "adblock\js;adblock\js", "--add-data", "adblock\res;adblock\res", "--add-data", "adblock\luna-filters.txt;adblock", "--hidden-import", "adblock.compiler")
 if (Test-Path "luna_oauth.json") {
     $opts += @("--add-data", "luna_oauth.json;.")
     Write-Host "Klucze OAuth: wbudowane (luna_oauth.json)"
