@@ -246,6 +246,43 @@ def EXTRA(t):
     highlights()
     leak_check()
     address_fill()
+    memory_and_animations()
+
+
+def memory_and_animations():
+    A = luna.QWebEngineSettings.WebAttribute
+    prof = luna.get_profile("")
+    check("instant back off by default (saves RAM)", w.store.feature("instant_back") is False
+          and not prof.settings().testAttribute(A.BackForwardCacheEnabled))
+    w.store.set_feature("instant_back", True); wait(200)
+    check("instant back switch turns the cache on", prof.settings().testAttribute(A.BackForwardCacheEnabled))
+    w.store.set_feature("instant_back", False); wait(200)
+    # niski poziom wolnej pamięci: usypianie kart nieużywanych od 2 minut (zamiast 15)
+    tabs = [t for t in w.all_tabs() if t is not w.cur() and t.main is not None and not t.asleep]
+    check("have background tabs to test", len(tabs) >= 2, len(tabs))
+    if len(tabs) >= 2:
+        old, recent = tabs[0], tabs[1]
+        old.last_active = time.time() - 3 * 60; recent.last_active = time.time() - 30
+        for t in tabs[2:]:
+            t.last_active = time.time()
+        w.store.settings.setdefault("features", {})["sleep_tabs"] = True
+        real = luna.low_memory
+        luna.low_memory = lambda: False
+        w._sleep_tick()
+        check("normal memory: 3-minute-old tab stays awake (limit 15 min)", not old.asleep)
+        luna.low_memory = lambda: True
+        w._sleep_tick()
+        luna.low_memory = real
+        check("low memory: tab unused for 3 min goes to sleep", old.asleep)
+        check("low memory: tab used 30 s ago stays awake", not recent.asleep)
+    check("low_memory() returns a bool on this system", isinstance(luna.low_memory(), bool))
+    E = luna.QEasingCurve.Type
+    sb = w.findChildren(luna.Sidebar)
+    check("panel slide uses easing", sb and sb[0].anim.easingCurve().type() == E.OutCubic)
+    wf = w.findChildren(luna.WidgetFrame)
+    check("widget collapse uses easing", wf and wf[0].anim.easingCurve().type() == E.InOutCubic)
+    page = luna.scroll_page(luna.QWidget())
+    check("settings pages scroll smoothly", isinstance(page, luna.SmoothScroll))
 
 
 def menu_texts(fn):

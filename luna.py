@@ -1175,10 +1175,11 @@ def _setup_profile(prof, base):
     A = QWebEngineSettings.WebAttribute
     # + pełny ekran na prośbę strony (przycisk w odtwarzaczach filmów) i przechwytywanie ekranu (udostępnianie w rozmowach)
     # + PluginsEnabled: wbudowana przeglądarka PDF silnika (bez tego pliki PDF tylko się pobierają)
-    for name in ("ScrollAnimatorEnabled", "DnsPrefetchEnabled", "Accelerated2dCanvasEnabled", "BackForwardCacheEnabled",
+    for name in ("ScrollAnimatorEnabled", "DnsPrefetchEnabled", "Accelerated2dCanvasEnabled",
                  "FullScreenSupportEnabled", "ScreenCaptureEnabled", "PluginsEnabled", "PdfViewerEnabled"):
         if hasattr(A, name):
             prof.settings().setAttribute(getattr(A, name), True)
+    apply_bfcache(prof)   # błyskawiczne „Wstecz” – przełącznik w Funkcjach (pamięć vs. szybkość cofania)
     if base is not None:
         prof.setHttpCacheMaximumSize(300 * 1024 * 1024)
     apply_spellcheck(prof)
@@ -1201,6 +1202,37 @@ def _setup_profile(prof, base):
 
 
 _CONTAINER_PROFILES = {}
+
+# --- pamięć: błyskawiczne „Wstecz” (back-forward cache) jako przełącznik; usypianie kart przy braku RAM ---
+BFCACHE = {"on": False}
+
+
+def apply_bfcache(prof):
+    try:
+        prof.settings().setAttribute(QWebEngineSettings.WebAttribute.BackForwardCacheEnabled, BFCACHE["on"])
+    except (AttributeError, RuntimeError):
+        pass
+
+
+def low_memory():
+    """True, gdy w systemie brakuje wolnej pamięci RAM (zajęte ≥ 85% albo wolne < 1,5 GB) – Windows."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+
+        class MS(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong), ("ullTotalPhys", ctypes.c_ulonglong),
+                        ("ullAvailPhys", ctypes.c_ulonglong), ("ullTotalPageFile", ctypes.c_ulonglong),
+                        ("ullAvailPageFile", ctypes.c_ulonglong), ("ullTotalVirtual", ctypes.c_ulonglong),
+                        ("ullAvailVirtual", ctypes.c_ulonglong), ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        m = MS(); m.dwLength = ctypes.sizeof(MS)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+            return False
+        return m.dwMemoryLoad >= 85 or m.ullAvailPhys < 1.5 * 2**30
+    except Exception:
+        return False
+
 
 # --- sprawdzanie pisowni (polski + angielski): czerwone podkreślenia i podpowiedzi pod prawym przyciskiem myszy ---
 DICTS = {"pl-PL": "pl-pl-3-0.bdic", "en-US": "en-us-10-1.bdic"}
@@ -2417,6 +2449,9 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                       "Wyłączony: licznik tylko z otwartych kart Discorda.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
+    "instant_back": ("Błyskawiczne „Wstecz”", "Strony, z których przechodzisz dalej, zostają w pamięci, więc powrót jest "
+                     "natychmiastowy – kosztem ok. 50–100 MB RAM za każdą. Wyłączone: „Wstecz” wczytuje stronę ponownie "
+                     "(szybko, z pamięci podręcznej na dysku), a Luna zużywa mniej pamięci.", False),
     "translate_offer": ("Propozycja tłumaczenia stron", "Gdy strona jest w innym języku (dowolnym), Luna proponuje "
                         "tłumaczenie na wybrany język – domyślnie polski (Ctrl+Shift+L). Tekst strony trafia do Tłumacza "
                         "Google dopiero po kliknięciu.", True),
@@ -2709,7 +2744,9 @@ class WidgetFrame(QFrame):
         self.lay = QVBoxLayout(self.body); self.lay.setContentsMargins(16, 0, 16, 14); self.lay.setSpacing(6)
         v.addWidget(self.body)
         self.collapsed = bool(store.wcfg(wid)["collapsed"])
-        self.anim = QPropertyAnimation(self.body, b"maximumHeight", self); self.anim.setDuration(170)
+        # zwijanie widgetu: łagodny start i koniec (InOutCubic) zamiast stałej prędkości – płynniejsze dla oka
+        self.anim = QPropertyAnimation(self.body, b"maximumHeight", self); self.anim.setDuration(200)
+        self.anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.anim.finished.connect(self._anim_done)
         self.build()
         if self.menu.actions():
@@ -2803,7 +2840,24 @@ class WidgetFrame(QFrame):
         paint_glass(self)
 
 
-class SidebarScroll(QScrollArea):
+class SmoothScroll(QScrollArea):
+    """Kółko myszy przewija płynnie (krótka animacja z wygaszeniem) zamiast skokami; gładzik zostaje bez zmian.
+    Kolejne ruchy kółka w trakcie animacji sumują się do celu – przewijanie nie „szarpie” przy szybkim kręceniu."""
+
+    def wheelEvent(self, ev):
+        sb = self.verticalScrollBar(); d = ev.angleDelta().y()
+        if not d or not ev.pixelDelta().isNull() or ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            return super().wheelEvent(ev)
+        anim = getattr(self, "_anim", None)
+        if anim is None:
+            anim = self._anim = QPropertyAnimation(sb, b"value", self); anim.setDuration(220)
+            anim.setEasingCurve(QEasingCurve.Type.OutCubic); self._goal = sb.value()
+        base = self._goal if anim.state() == QPropertyAnimation.State.Running else sb.value()
+        self._goal = max(sb.minimum(), min(sb.maximum(), base - d))
+        anim.stop(); anim.setStartValue(sb.value()); anim.setEndValue(self._goal); anim.start(); ev.accept()
+
+
+class SidebarScroll(SmoothScroll):
     """Przewijany obszar panelu o stałej szerokości docelowej. Bez tego Qt przydzielał mu szerokość zawartości (bez
     pionowego paska); gdy pasek się pojawiał (wysoki panel), widok kurczył się o 8 px i obcinał prawą krawędź kart."""
     def sizeHint(self):
@@ -2811,19 +2865,6 @@ class SidebarScroll(QScrollArea):
 
     def minimumSizeHint(self):
         return QSize(0, 0)
-
-    def wheelEvent(self, ev):
-        """Kółko myszy przewija płynnie (krótka animacja) zamiast skokami; gładzik zostaje bez zmian."""
-        sb = self.verticalScrollBar(); d = ev.angleDelta().y()
-        if not d or not ev.pixelDelta().isNull():
-            return super().wheelEvent(ev)
-        anim = getattr(self, "_anim", None)
-        if anim is None:
-            anim = self._anim = QPropertyAnimation(sb, b"value", self); anim.setDuration(180)
-            anim.setEasingCurve(QEasingCurve.Type.OutCubic); self._goal = sb.value()
-        base = self._goal if anim.state() == QPropertyAnimation.State.Running else sb.value()
-        self._goal = max(sb.minimum(), min(sb.maximum(), base - d))
-        anim.stop(); anim.setStartValue(sb.value()); anim.setEndValue(self._goal); anim.start(); ev.accept()
 
 
 class Sidebar(QWidget):
@@ -2864,7 +2905,8 @@ class Sidebar(QWidget):
             lay.addWidget(self.scroll); lay.addLayout(rb)
         else:
             lay.addLayout(rb); lay.addWidget(self.scroll)
-        self.anim = QPropertyAnimation(self.scroll, b"maximumWidth", self); self.anim.setDuration(180)
+        self.anim = QPropertyAnimation(self.scroll, b"maximumWidth", self); self.anim.setDuration(220)
+        self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)   # wysuwanie/zwijanie panelu: szybki start, miękkie wyhamowanie
         self.anim.finished.connect(self._anim_done)
         self.user_collapsed = bool(store.settings.get("sidebar", {}).get(side, False))  # wybór użytkownika (zapisywany)
         self.collapsed = self.user_collapsed                                            # stan widoczny (może być wymuszony)
@@ -6403,7 +6445,7 @@ class WidgetMarket(QDialog):
         bl.addWidget(x); root.addWidget(bar)
         self.stack = QStackedWidget(); self.stack.setObjectName("clear"); root.addWidget(self.stack, 1)
         # katalog
-        self.cat_area = QScrollArea(); self.cat_area.setWidgetResizable(True); self.cat_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.cat_area = SmoothScroll(); self.cat_area.setWidgetResizable(True); self.cat_area.setFrameShape(QFrame.Shape.NoFrame)
         self.cat_area.viewport().setAutoFillBackground(False); self.stack.addWidget(self.cat_area)
         # zainstalowane
         inst = QWidget(); inst.setObjectName("clear"); il = QHBoxLayout(inst); il.setContentsMargins(20, 14, 20, 18); il.setSpacing(16)
@@ -6411,7 +6453,7 @@ class WidgetMarket(QDialog):
         for side, title in (("left", "Lewy panel"), ("right", "Prawy panel")):
             box = QFrame(); box.setObjectName("acc"); v = QVBoxLayout(box); v.setContentsMargins(14, 12, 14, 12); v.setSpacing(6)
             v.addWidget(lbl(title, "h3"))
-            sa = QScrollArea(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.Shape.NoFrame); sa.viewport().setAutoFillBackground(False)
+            sa = SmoothScroll(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.Shape.NoFrame); sa.viewport().setAutoFillBackground(False)
             sa.setObjectName("clear"); sa.viewport().setObjectName("clear")
             holder = QWidget(); holder.setObjectName("clear"); col = QVBoxLayout(holder); col.setContentsMargins(0, 0, 0, 0)
             col.setSpacing(4); sa.setWidget(holder); v.addWidget(sa, 1); il.addWidget(box, 1); self.cols[side] = col
@@ -6615,7 +6657,7 @@ def switch_row(title, desc, checked, on_toggle):
 
 
 def scroll_page(inner):
-    sa = QScrollArea(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.Shape.NoFrame)
+    sa = SmoothScroll(); sa.setWidgetResizable(True); sa.setFrameShape(QFrame.Shape.NoFrame)
     sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     sa.viewport().setAutoFillBackground(False); sa.setWidget(inner)
     return sa
@@ -7413,6 +7455,7 @@ class Caption(QLabel):
         self.setText(self.pool[0])
         self.eff = QGraphicsOpacityEffect(self); self.setGraphicsEffect(self.eff)
         self.anim = QPropertyAnimation(self.eff, b"opacity", self); self.anim.setDuration(380)
+        self.anim.setEasingCurve(QEasingCurve.Type.InOutSine)   # przenikanie podpisu bez „skoku” jasności
         self.anim.finished.connect(self._step)
         self.timer = QTimer(self); self.timer.timeout.connect(self.next)
 
@@ -10943,6 +10986,11 @@ class Browser(QMainWindow):
         self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.apply_pins()
         if SHIELD:
             SHIELD[0].reload()
+        bf = self.store.feature("instant_back")
+        if bf != BFCACHE["on"] or not getattr(self, "_bf_init", False):
+            self._bf_init = True; BFCACHE["on"] = bf
+            for p in all_profiles():
+                apply_bfcache(p)
         sp = self.store.feature("spellcheck")
         if sp != SPELL["on"] or not getattr(self, "_spell_init", False):
             self._spell_init = True; SPELL["on"] = sp
@@ -12437,8 +12485,11 @@ class Browser(QMainWindow):
         limit = int(self.store.settings.get("sleep_after", 15)) * 60
         if self.saving():
             limit = min(limit, 5 * 60)
+        low = low_memory()
+        if low:   # mało wolnej pamięci RAM w systemie: usypiaj wcześniej (karta nieużywana od 2 minut)
+            limit = min(limit, 2 * 60)
         now = time.time(); cur = self.cur(); changed = False
-        for t in self.all_tabs():
+        for t in sorted(self.all_tabs(), key=lambda x: x.last_active):   # najdawniej używane najpierw
             if t is not cur and not t.asleep and t.main is not None and now - t.last_active > limit:
                 t.sleep(); changed = changed or t.asleep
                 if t.asleep:
