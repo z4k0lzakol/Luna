@@ -707,13 +707,13 @@ QWidget#strip { background:#0a0a0a; }
 QToolButton#winclose:hover { background:#b3352c; }
 QWidget#tool { background:#111111; border-bottom:1px solid #1e1e1e; }
 QTabBar { background:transparent; }
-QTabBar::tab { background:transparent; color:#8c8c8c; height:30px; padding:0 4px 0 14px; margin:1px 2px;
+QTabBar::tab { background:transparent; color:#8c8c8c; height:30px; padding:0 9px 0 14px; margin:1px 2px;
                border-radius:15px; max-width:190px; font-size:13px; }
 QTabBar::tab:hover:!selected { background:#1a1a1a; color:#d4d4d4; }
 QTabBar::tab:selected { background:#ececec; color:#111111; font-weight:600; }
 QToolButton { background:transparent; border:0; border-radius:18px; padding:0; }
 QToolButton:hover { background:#1f1f1f; }
-QToolButton#tabclose { border-radius:10px; padding:0; margin:0; }
+QToolButton#tabclose { border-radius:9px; padding:0; margin:0; }
 QToolButton#tabclose:hover { background:rgba(128,128,128,0.38); }
 QToolButton#chip { background:#232323; color:#bdbdbd; border-radius:14px; padding:4px 12px;
                    font-size:12px; font-weight:600; }
@@ -11336,6 +11336,15 @@ class TabBar(QTabBar):
             self._hov = i; self.hover_tab.emit(-1)
             if i >= 0 and not (ev.buttons() & Qt.MouseButton.LeftButton):
                 self._ht.start(450)
+        g = getattr(self, "_grab", None)
+        if g is not None and self._press_i >= 0 and ev.buttons() & Qt.MouseButton.LeftButton:
+            # przesuwana karta zostaje w obrębie paska: bez tego Qt rysował ją poza paskiem (znikała przy skrajnej prawej)
+            x = ev.position().x(); cx = min(max(x, g[0]), self.width() - 1 - g[1])
+            if cx != x:
+                from PyQt6.QtGui import QMouseEvent
+                d = cx - x
+                ev = QMouseEvent(ev.type(), QPointF(cx, ev.position().y()), QPointF(ev.globalPosition().x() + d, ev.globalPosition().y()),
+                                 ev.button(), ev.buttons(), ev.modifiers())
         super().mouseMoveEvent(ev)
 
     def leaveEvent(self, ev):
@@ -11358,6 +11367,10 @@ class TabBar(QTabBar):
         if ev.button() == Qt.MouseButton.MiddleButton:   # QTabBar ignoruje środkowy przycisk – wciśnięcie trafiało do paska
             ev.accept(); return                          # tytułu (= nowa karta), więc kółko zamykało kartę I otwierało nową
         self._press_i = self.tabAt(ev.position().toPoint()) if ev.button() == Qt.MouseButton.LeftButton else -1
+        self._grab = None
+        if self._press_i >= 0:   # gdzie chwycono kartę: odstęp kursora od jej lewej i prawej krawędzi
+            r = self.tabRect(self._press_i); x = ev.position().x()
+            self._grab = (x - r.left(), r.right() - x)
         super().mousePressEvent(ev)
 
     def mouseReleaseEvent(self, ev):
@@ -12634,7 +12647,7 @@ class Browser(QMainWindow):
             return
         cb = None
         if on:
-            cb = QToolButton(); cb.setObjectName("tabclose"); cb.setFixedSize(20, 20); cb.setIconSize(QSize(14, 14))
+            cb = QToolButton(); cb.setObjectName("tabclose"); cb.setFixedSize(18, 18); cb.setIconSize(QSize(12, 12))
             cb.setIcon(glyph("close", "#8c8c8c")); cb.setCursor(Qt.CursorShape.PointingHandCursor); cb.setToolTip("Zamknij kartę")
             cb.clicked.connect(lambda: self.close_tab(t))
         self.bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, cb)
