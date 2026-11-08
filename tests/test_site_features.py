@@ -80,6 +80,18 @@ ADDR_PAGE = """<!doctype html><html lang=pl><head><meta charset=utf-8><title>Dos
 </body></html>"""
 
 
+CHAT_PAGE = """<!doctype html><html><head><meta charset=utf-8><title>chat</title></head><body>
+<div style="height:300px">historia</div><textarea id=box style="width:300px;height:60px"></textarea>
+<script>window.SENT=null;document.getElementById('box').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();window.SENT=this.value}})</script>
+</body></html>"""
+OTP_PAGE = """<!doctype html><html><head><meta charset=utf-8><title>2FA</title></head><body>
+<label>Kod z aplikacji <input id=otp autocomplete="one-time-code" inputmode=numeric></label></body></html>"""
+LINKS_PAGE = """<!doctype html><html><head><meta charset=utf-8><title>links</title></head><body>
+<a id=l href="http://site-peek.localhost:%P%/en" style="position:absolute;left:20px;top:20px;font-size:30px">podgląd</a>
+<div id=ad class="promo-box" style="position:absolute;left:20px;top:120px;width:300px;height:80px;background:#c33">REKLAMA</div>
+</body></html>"""
+
+
 class H(http.server.BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -94,6 +106,12 @@ class H(http.server.BaseHTTPRequestHandler):
             b = YT_PAGE.encode()
         elif self.path.startswith("/addr"):
             b = ADDR_PAGE.encode()
+        elif self.path.startswith("/chat"):
+            b = CHAT_PAGE.encode()
+        elif self.path.startswith("/otp"):
+            b = OTP_PAGE.encode()
+        elif self.path.startswith("/links"):
+            b = LINKS_PAGE.replace("%P%", str(PORT)).encode()
         else:
             b = (EN_PAGE if self.path.startswith("/en") else PAGE).encode()
         self.send_response(200)
@@ -247,6 +265,156 @@ def EXTRA(t):
     leak_check()
     address_fill()
     memory_and_animations()
+    ai_page()
+    webapps_panel()
+    element_picker()
+    phishing()
+    compact_mode()
+    link_peek()
+    totp()
+    sync()
+
+
+def ai_page():
+    luna.PROVIDERS.clear(); luna.PROVIDERS["Test"] = f"http://chat.localhost:{PORT}/chat"
+    w.store.settings["ai_provider"] = "Test"; w.assistant.build_picks()
+    t = open_tab(f"http://site-en.localhost:{PORT}/en")
+    w.ai_ask("summary")
+    v = lambda: w.assistant.current()
+    until(lambda: v() is not None and runjs(v(), "window.SENT") is not None, 15000)
+    sent = runjs(v(), "window.SENT") if v() else None
+    check("AI summary: page text pasted into chat and sent", bool(sent) and "Podsumuj" in sent and "Good morning" in sent,
+          (sent or "")[:200])
+    runjs(v(), "window.SENT=null;document.getElementById('box').value='';1")
+    w.activate(t); w.ai_ask("ask")
+    until(lambda: "Moje pytanie" in (runjs(v(), "document.getElementById('box').value") or ""), 8000)
+    val = runjs(v(), "document.getElementById('box').value") or ""
+    check("AI ask: context pasted, waits for the question (not sent)", "Moje pytanie" in val and runjs(v(), "window.SENT") is None, val[-80:])
+    runjs(v(), "window.SENT=null;document.getElementById('box').value='';1")
+    open_tab(f"http://site-a.localhost:{PORT}/")
+    w.ai_ask("compare")
+    until(lambda: runjs(v(), "window.SENT") is not None, 15000)
+    sent = runjs(v(), "window.SENT") or ""
+    check("AI compare: several tabs in one prompt", "Porównaj" in sent and "### 1." in sent and "### 2." in sent, sent[:120])
+    wait(2500)
+    check("clipboard restored after paste", QApplication.clipboard().text() != sent)
+    w.toggle_assistant()
+
+
+def webapps_panel():
+    check("apps button pinned on the toolbar", w.apps_btn.isVisible() and "apps" in w.pins())
+    w.store.settings["webapps"] = [["Czat", f"http://app.localhost:{PORT}/chat"]]; w.webapps.build_picks()
+    w.toggle_webapps(); wait(1500)
+    check("apps panel opens, AI panel closed", w.webapps.isVisible() and not w.assistant.isVisible())
+    cur = w.webapps.current()
+    check("app loads in the panel", cur is not None and cur.url().host() == "app.localhost", cur and cur.url().toString())
+    w.toggle_assistant(); wait(300)
+    check("opening AI hides the apps panel (one panel at a time)", w.assistant.isVisible() and not w.webapps.isVisible())
+    w.toggle_assistant()
+    w.webapps.close_app("Czat")
+    check("free memory closes the app view", "Czat" not in w.webapps.views)
+
+
+def element_picker():
+    t = open_tab(f"http://site-pick.localhost:{PORT}/links")
+    wait(500)
+    w.notice.hide()
+    w.pick_element(t.web, 120, 150)
+    until(lambda: w.notice.isVisible() and "Ukryć" in w.notice.text.text(), 4000)
+    check("picker: element highlighted + question", w.notice.isVisible() and "Ukryć" in w.notice.text.text()
+          and runjs(t.web, "document.querySelectorAll('div[style*=\"pointer-events\"]').length") >= 0, w.notice.text.text())
+    btn = next((b for b in w.notice.findChildren(QPushButton) if b.text() == "Ukryj na zawsze"), None)
+    btn and btn.click(); wait(400)
+    check("picked element hidden at once", runjs(t.web, "getComputedStyle(document.getElementById('ad')).display") == "none")
+    rules = luna.SHIELD[0].user_filters()
+    check("rule saved in user filters for the site", "site-pick.localhost###ad" in rules, rules[-120:])
+    w.restore_hidden("site-pick.localhost")
+    check("restore removes the site's rules", "site-pick.localhost##" not in luna.SHIELD[0].user_filters())
+
+
+def phishing():
+    K = luna.LOGIN_DOMAINS
+    homograph = ("аllegro.pl").encode("idna").decode()   # cyrylickie „а” zamiast łacińskiego
+    cases = {"pkobp.pl.secure-login.com": "pkobp.pl", "mbamk.pl": "mbank.pl", "a11egro.pl": "allegro.pl",
+             homograph: "allegro.pl", "www.mbank.pl": "", "allegro.pl": "", "github.io": "", "amazon.de": "",
+             "google.de": "", "pkobp.pl": "", "example.com": "", "ipko.pl": ""}
+    got = {h: luna.lookalike(h, K) for h in cases}
+    check("lookalike detection (subdomain brand, typo, digits, homograph; no false alarms)", got == cases, got)
+    luna.VAULT[0].put(f"http://mbank.localhost:{PORT}", "jan", "x-Haslo-1")
+    w.notice.hide()
+    t = open_tab(f"http://mbamk.localhost:{PORT}/addr")
+    until(lambda: w.notice.isVisible() and "podszywać" in w.notice.text.text(), 6000)
+    check("warning on a fake login page imitating a saved site", w.notice.isVisible() and "mbank.localhost" in w.notice.text.text(),
+          w.notice.text.text())
+
+
+def compact_mode():
+    w.set_compact(True); wait(200)
+    check("compact: toolbar hidden", not w._tool.isVisible())
+    w.reveal_toolbar(); wait(100)
+    check("compact: Ctrl+L / hover reveals toolbar", w._tool.isVisible())
+    w.set_compact(False); wait(100)
+    check("compact off: toolbar back", w._tool.isVisible() and not w.store.settings.get("compact"))
+
+
+def link_peek():
+    t = open_tab(f"http://site-links.localhost:{PORT}/links")
+    wait(500)
+    n = len(w.all_tabs())
+    QTest.mouseClick(t.web.focusProxy() or t.web, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ShiftModifier, QPoint(60, 40))
+    until(lambda: getattr(w, "_peek", None) is not None and w._peek.isVisible(), 5000)
+    pk = getattr(w, "_peek", None)
+    check("Shift+click opens link preview (no new tab)", pk is not None and pk.isVisible() and len(w.all_tabs()) == n
+          and "site-peek.localhost" in pk.url, (pk and pk.url, len(w.all_tabs()), n))
+    if pk is not None:
+        until(lambda: pk.title.text() == "English", 5000)
+        pk.to_tab(); wait(800)
+        check("preview → open in tab", not pk.isVisible() and len(w.all_tabs()) == n + 1)
+
+
+def totp():
+    sec = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"   # RFC 6238, klucz „12345678901234567890”
+    check("TOTP matches RFC 6238 test vector", luna.totp_code(f"otpauth://totp/x?secret={sec}&digits=8", now=59)[0] == "94287082"
+          and luna.totp_code(sec, now=59)[0] == "287082", luna.totp_code(sec, now=59))
+    check("invalid 2FA key rejected", luna.totp_code("to nie jest klucz!") is None)
+    o = f"http://otp.localhost:{PORT}"
+    luna.VAULT[0].put(o, "jan", "x-Haslo-2"); luna.VAULT[0].find(o, "jan")["totp"] = sec; luna.VAULT[0].save()
+    w.notice.hide()
+    t = open_tab(o + "/otp")
+    until(lambda: w.notice.isVisible() and "kod 2FA" in w.notice.text.text(), 6000)
+    check("2FA field detected, code offered", w.notice.isVisible() and "kod 2FA" in w.notice.text.text(), w.notice.text.text())
+    btn = next((b for b in w.notice.findChildren(QPushButton) if b.text() == "Wpisz kod"), None)
+    btn and btn.click(); wait(400)
+    check("current 2FA code typed into the field", runjs(t.web, "document.getElementById('otp').value") == luna.totp_code(sec)[0])
+
+
+def sync():
+    folder = tempfile.mkdtemp(prefix="luna_sync_")
+    luna.VAULT[0].data["sync_pw"] = "haslo-sync-123"
+    if not luna.SYNC:
+        luna.SYNC.append(luna.SyncManager(w.store))
+    sm = luna.SYNC[0]
+    sm.cfg().update(on=True, folder=folder)
+    sm.start(); sm.write()
+    mine = os.path.join(folder, "Luna-sync", sm.cfg()["device"] + ".lunasync")
+    check("this computer writes its encrypted sync file", os.path.isfile(mine) and b"Kowalski" not in open(mine, "rb").read())
+    # drugi komputer: nowsze kafelki, nowe hasło, usunięcie hasła, otwarte karty
+    future = int(time.time()) + 100
+    luna.VAULT[0].put("https://keep.example.org", "a", "stare"); kept_ts = luna.VAULT[0].find("https://keep.example.org", "a")["ts"]
+    remote = {"v": 1, "device": "bbbbbb", "name": "Laptop", "t": future,
+              "cols": {"tiles": [{"name": "Z laptopa", "url": "https://laptop.example.org"}]}, "mtime": {"tiles": future},
+              "logins": [{"origin": "https://remote.example.org", "user": "r", "pw": "z-laptopa", "ts": future}],
+              "deleted": {"https://keep.example.org\na": kept_ts + 5},
+              "tabs": [{"url": "https://tab-z-laptopa.example.org", "title": "Karta z laptopa"}]}
+    open(os.path.join(folder, "Luna-sync", "bbbbbb.lunasync"), "wb").write(luna.backup_encrypt(remote, "haslo-sync-123"))
+    sm.read_all()
+    check("newer tiles from the other computer applied", any(i["url"] == "https://laptop.example.org" for i in w.store.items))
+    check("password from the other computer merged", (luna.VAULT[0].find("https://remote.example.org", "r") or {}).get("pw") == "z-laptopa")
+    check("deletion on the other computer propagates", luna.VAULT[0].find("https://keep.example.org", "a") is None)
+    check("tabs from other computers listed", sm.other_tabs() and sm.other_tabs()[0][0] == "Laptop")
+    open(os.path.join(folder, "Luna-sync", "cccccc.lunasync"), "wb").write(luna.backup_encrypt(remote, "inne-haslo"))
+    sm.read_all()
+    check("wrong sync password reported, not applied", "inne hasło" in sm.error, sm.error)
 
 
 def memory_and_animations():
@@ -322,9 +490,6 @@ def context_menu():
     base = {"link": "", "link_text": "", "media": None, "media_url": "", "sel": "", "edit": False, "miss": "",
             "sugg": [], "image": False, "video": False}
     pos = w.mapToGlobal(QPoint(200, 200))
-    txt, _ = menu_texts(lambda: QTest.mouseClick(v.focusProxy() or v, Qt.MouseButton.RightButton,
-                                                 Qt.KeyboardModifier.NoModifier, QPoint(700, 400)))
-    check("real right-click shows Luna's Polish menu", "Odśwież" in txt and "Zbadaj element" in txt, txt)
     txt, _ = menu_texts(lambda: w.page_context_menu(v, dict(base), "", pos))
     check("page menu is Polish with Luna actions", "Wstecz" in txt and "Odśwież" in txt and any(x.startswith("Przetłumacz stronę na") for x in txt)
           and "Zbadaj element" in txt, txt)
@@ -351,6 +516,10 @@ def context_menu():
           (p.combo.count(), luna.translate_target(w.store)))
     w.store.settings["translate_target"] = "pl"
     p.hide()
+    txt, _ = menu_texts(lambda: QTest.mouseClick(v.focusProxy() or v, Qt.MouseButton.RightButton,
+                                                 Qt.KeyboardModifier.NoModifier, QPoint(700, 400)))
+    check("real right-click shows Luna's Polish menu", "Odśwież" in txt and "Zbadaj element" in txt
+          and "Ukryj ten element…" in txt, txt)
     check("lang_code maps page tags", luna.lang_code("en-GB") == "en" and luna.lang_code("he") == "iw" and luna.lang_code("zh-Hant") == "zh-TW"
           and luna.lang_code("xx") == "", [luna.lang_code(x) for x in ("en-GB", "he", "zh-Hant", "xx")])
 

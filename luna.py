@@ -992,6 +992,25 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         if kind == "next":
             p.translate(S, 0); p.scale(-1, 1)
         p.drawLine(12, 12, 12, 32); p.drawPolygon(P((32, 12), (17, 22), (32, 32)))
+    elif kind in ("chat", "chatfill"):   # dymek rozmowy – panel aplikacji (komunikatory)
+        path = QPainterPath(); path.addRoundedRect(QRectF(9, 10, 26, 19), 7, 7)
+        path.moveTo(15, 29); path.lineTo(13, 35); path.lineTo(21, 29)
+        if kind == "chatfill":
+            p.setBrush(QColor(color))
+        p.drawPath(path)
+        if kind == "chat":
+            for x in (16, 22, 28):
+                p.drawPoint(QPointF(x, 19.5))
+    elif kind == "edit":   # ołówek – zakreślenia i notatki
+        p.drawPolygon(P((13, 31), (14, 25), (28, 11), (33, 16), (19, 30)))
+        p.drawLine(25, 14, 30, 19)
+    elif kind == "eye":   # oko – tryb kompaktowy / pokaż ukryte
+        path = QPainterPath(); path.moveTo(8, 22); path.quadTo(22, 8, 36, 22); path.quadTo(22, 36, 8, 22)
+        p.drawPath(path); p.drawEllipse(QPointF(22, 22), 4.5, 4.5)
+    elif kind == "target":   # celownik – „Ukryj ten element”
+        p.drawEllipse(QPointF(22, 22), 9, 9)
+        for a, b_, c, d in ((22, 7, 22, 13), (22, 31, 22, 37), (7, 22, 13, 22), (31, 22, 37, 22)):
+            p.drawLine(a, b_, c, d)
     p.end()
     return QIcon(pm)
 
@@ -1196,6 +1215,8 @@ def _setup_profile(prof, base):
     for name, src, world, point in ((("luna-hasla", PW_JS.replace("%K%", PW_KEY), QWebEngineScript.ScriptWorldId.ApplicationWorld,
                                        QWebEngineScript.InjectionPoint.DocumentReady)),
                                      ("luna-ddg", DDG_JS.replace("%K%", PW_KEY), QWebEngineScript.ScriptWorldId.MainWorld,
+                                      QWebEngineScript.InjectionPoint.DocumentCreation),
+                                     ("luna-peek", PEEK_JS.replace("%K%", PW_KEY), QWebEngineScript.ScriptWorldId.ApplicationWorld,
                                       QWebEngineScript.InjectionPoint.DocumentCreation)):
         s = QWebEngineScript(); s.setName(name); s.setSourceCode(src); s.setWorldId(world)
         s.setInjectionPoint(point); s.setRunsOnSubFrames(False); prof.scripts().insert(s)
@@ -1392,6 +1413,7 @@ class LunaPage(QWebEnginePage):
     pw_captured = pyqtSignal(dict)
     reader_state = pyqtSignal(dict)   # tryb czytania: {"state": "on"|"off"|"none", "prefs": {...}}
     sb_skipped = pyqtSignal(dict)     # YouTube: pominięty fragment sponsorowany {"c": kategoria, "d": sekundy}
+    peek_requested = pyqtSignal(str)  # Shift+klik na linku → podgląd w okienku
 
     def __init__(self, profile, parent=None):
         super().__init__(profile, parent); LUNA_PAGES.add(self)
@@ -1442,6 +1464,11 @@ class LunaPage(QWebEnginePage):
                 return
             if isinstance(d, dict):
                 self.reader_state.emit(d)
+            return
+        if body.startswith("peek:"):
+            u = body[5:].strip()
+            if u.startswith(("http://", "https://")):
+                self.peek_requested.emit(u)
             return
         if body.startswith("sb:"):
             try:
@@ -1741,7 +1768,7 @@ class Vault(QObject):
                 _keyring().set_password("Luna", "hasla", raw.decode("utf-8"))
         except Exception:
             self.error = "Nie udało się zapisać haseł."
-        self.changed.emit()
+        self.changed.emit(); sync_touch()
 
     def logins(self, origin=None):
         return [x for x in self.data["logins"] if origin is None or x["origin"] == origin]
@@ -1759,6 +1786,7 @@ class Vault(QObject):
 
     def remove(self, origin, user):
         self.data["logins"] = [x for x in self.data["logins"] if not (x["origin"] == origin and x["user"] == user)]
+        self.data.setdefault("deleted", {})[origin + "\n" + user] = int(time.time())   # usunięcie trafi też na inne komputery
         self.save()
 
     def never(self, origin, add=None):
@@ -1825,7 +1853,7 @@ class WebView(QWebEngineView):
              "sel": req.selectedText(), "edit": req.isContentEditable(), "miss": req.misspelledWord(),
              "sugg": list(req.spellCheckerSuggestions()), "image": req.mediaType() == M.MediaTypeImage,
              "video": req.mediaType() in (M.MediaTypeVideo, M.MediaTypeAudio)}
-        pos = ev.globalPos()
+        pos = ev.globalPos(); d["pt"] = (ev.pos().x(), ev.pos().y())
         _safe_js(self, HL_HOVER, lambda hid, d=d: b.page_context_menu(self, d, hid or "", pos))
 
     def createWindow(self, wtype):
@@ -1919,7 +1947,7 @@ class Store(QObject):
             return
         if self._hist_dirty:
             self._write(HIST, self.history); self._hist_dirty = False
-        self._write(SETTINGS, self.settings)
+        self._write(SETTINGS, self.settings); sync_touch()
         try:
             os.chmod(SETTINGS, 0o600)  # klucz API tylko dla Ciebie (Linux/macOS)
         except OSError:
@@ -1997,7 +2025,7 @@ class Store(QObject):
         return r
 
     def save(self, notify=True):
-        self._write(DATA, self.items)
+        self._write(DATA, self.items); sync_touch()
         if notify:
             self.changed.emit()
 
@@ -2460,6 +2488,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                      "CC BY-NC-SA 4.0). Wysyłane są tylko 4 znaki skrótu identyfikatora filmu.", True),
     "updates": ("Sprawdzanie aktualizacji", "Po starcie i co 12 godzin Luna sprawdza w tle, czy na GitHubie jest nowa wersja, "
                 "i proponuje aktualizację jednym kliknięciem.", True),
+    "webapps": ("Panel aplikacji", "Komunikatory (WhatsApp, Messenger, Telegram…) i dowolne strony w panelu z boku – "
+                "przycisk na górnym pasku (Ctrl+Shift+K). Wyłączony: żadna z tych stron nie działa w tle.", True),
     "spellcheck": ("Sprawdzanie pisowni", "Podkreśla błędy w polach tekstowych (polski i angielski); podpowiedzi pod prawym "
                    "przyciskiem myszy. Słowniki (ok. 4 MB) pobierają się raz przy pierwszym uruchomieniu.", True),
 }
@@ -7176,7 +7206,8 @@ def page_passwords(dlg):
         for x in sorted(v.logins(), key=lambda x: x["origin"]):
             if q and q not in x["origin"].lower() and q not in x["user"].lower():
                 continue
-            it = QListWidgetItem(f"{QUrl(x['origin']).host()}   ·   {x['user'] or '(bez loginu)'}   ·   ••••••••")
+            it = QListWidgetItem(f"{QUrl(x['origin']).host()}   ·   {x['user'] or '(bez loginu)'}   ·   ••••••••"
+                                 + ("   ·   2FA" if x.get("totp") else ""))
             it.setData(Qt.ItemDataRole.UserRole, (x["origin"], x["user"])); lw.addItem(it)
     flt.textChanged.connect(lambda _: fill()); fill()
 
@@ -7193,9 +7224,27 @@ def page_passwords(dlg):
         x = cur()
         if x and QMessageBox.question(dlg, "Luna", f"Usunąć hasło dla {QUrl(x['origin']).host()}?") == QMessageBox.StandardButton.Yes:
             v.remove(x["origin"], x["user"]); fill()
+    def set_totp():
+        x = cur()
+        if not x:
+            return
+        key, ok = QInputDialog.getText(dlg, "Klucz 2FA", f"Klucz uwierzytelniania dwuskładnikowego dla {QUrl(x['origin']).host()}\n"
+                                       "(tekstowy klucz z ustawień 2FA strony albo adres otpauth://… z kodu QR;\n"
+                                       "puste pole usuwa klucz):", text=x.get("totp", ""))
+        if not ok:
+            return
+        key = key.strip()
+        if key and totp_code(key) is None:
+            QMessageBox.warning(dlg, "Klucz 2FA", "To nie wygląda na poprawny klucz 2FA (Base32 albo otpauth://…)."); return
+        x["totp"] = key; v.save(); fill()
+        if key:
+            c = totp_code(key)
+            QMessageBox.information(dlg, "Klucz 2FA", f"Zapisano. Bieżący kod: {c[0][:3]} {c[0][3:]} (ważny {c[1]} s).\n"
+                                                      "Kod znajdziesz w menu klucza na pasku i Luna zaproponuje jego wpisanie.")
     row = QHBoxLayout(); row.setSpacing(6)
     for text, fn in (("Pokaż", show), ("Kopiuj hasło", lambda: cur() and copy_secret(cur()["pw"])),
-                     ("Kopiuj login", lambda: cur() and QGuiApplication.clipboard().setText(cur()["user"])), ("Usuń", remove)):
+                     ("Kopiuj login", lambda: cur() and QGuiApplication.clipboard().setText(cur()["user"])),
+                     ("Klucz 2FA…", set_totp), ("Usuń", remove)):
         bt = QPushButton(text); bt.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(bt)
     row.addStretch(); l.addLayout(row)
     if v is not None and v.data.get("never"):
@@ -7395,7 +7444,76 @@ def page_updates(dlg):
     return scroll_page(w)
 
 
-_ORDER = ["features", "tabs", "accounts", "privacy", "passwords", "look", "keys", "updates", "dev"]
+@settings_page("sync", "Synchronizacja")
+def page_sync(dlg):
+    w, l = page_box("Synchronizacja między komputerami", "Kafelki, zakładki, zakreślenia, „Do przeczytania”, hasła, adresy, "
+                    "ustawienia i otwarte karty – przez folder synchronizowany z chmurą (OneDrive, Dysk Google, Dropbox). "
+                    "Dane są zaszyfrowane hasłem synchronizacji, zanim trafią do folderu – usługa chmurowa widzi tylko szyfr.")
+    st = dlg.store
+    if not SYNC:
+        SYNC.append(SyncManager(st))
+    sm = SYNC[0]; c = sm.cfg()
+    if not (VAULT and VAULT[0].available()):
+        l.addWidget(lbl("Synchronizacja wymaga sejfu haseł (Windows).", "muted2", wrap=True)); l.addStretch(1)
+        return scroll_page(w)
+    on = QCheckBox("Synchronizuj ten komputer"); on.setChecked(bool(c.get("on"))); l.addWidget(on)
+    l.addWidget(lbl("Folder (ten sam na wszystkich komputerach)", "h3"))
+    row = QHBoxLayout(); fe = QLineEdit(c.get("folder", "")); fe.setObjectName("glassin"); fe.setReadOnly(True)
+    pick = QPushButton("Wybierz…"); row.addWidget(fe, 1); row.addWidget(pick); l.addLayout(row)
+    od = os.environ.get("OneDrive") or os.environ.get("OneDriveConsumer")
+    if od and not c.get("folder"):
+        l.addWidget(lbl(f"Podpowiedź: Twój OneDrive to {od}", "muted", wrap=True))
+
+    def choose():
+        d = QFileDialog.getExistingDirectory(dlg, "Folder synchronizacji", c.get("folder") or od or str(HOME))
+        if d:
+            c["folder"] = d; fe.setText(d); st.save_soon(); restart()
+    pick.clicked.connect(choose)
+    l.addWidget(lbl("Hasło synchronizacji", "h3"))
+    l.addWidget(lbl("Takie samo na każdym komputerze. Zapisane w sejfie haseł tego komputera.", "muted", wrap=True))
+    pw = QPushButton("Zmień hasło…" if sm.password() else "Ustaw hasło…"); l.addWidget(pw, 0, Qt.AlignmentFlag.AlignLeft)
+
+    def set_pw():
+        a, ok = QInputDialog.getText(dlg, "Hasło synchronizacji", "Hasło (min. 8 znaków):", QLineEdit.EchoMode.Password)
+        if not ok:
+            return
+        if len(a) < 8:
+            QMessageBox.warning(dlg, "Synchronizacja", "Hasło musi mieć co najmniej 8 znaków."); return
+        b_, ok = QInputDialog.getText(dlg, "Hasło synchronizacji", "Powtórz hasło:", QLineEdit.EchoMode.Password)
+        if not ok or a != b_:
+            QMessageBox.warning(dlg, "Synchronizacja", "Hasła się różnią."); return
+        VAULT[0].data["sync_pw"] = a; VAULT[0].save(); pw.setText("Zmień hasło…"); restart()
+    pw.clicked.connect(set_pw)
+    l.addWidget(lbl("Nazwa tego komputera", "h3"))
+    ne = QLineEdit(c.get("name", "")); ne.setObjectName("glassin"); l.addWidget(ne)
+    ne.editingFinished.connect(lambda: (c.__setitem__("name", ne.text().strip()[:40] or "Komputer"), st.save_soon()))
+    stat = lbl("", "muted2", wrap=True); l.addWidget(stat)
+    now_b = QPushButton("Synchronizuj teraz"); l.addWidget(now_b, 0, Qt.AlignmentFlag.AlignLeft)
+
+    def show():
+        try:
+            if not c.get("on"):
+                stat.setText("Wyłączona."); return
+            missing = [x for x, ok in (("folder", c.get("folder") and os.path.isdir(c["folder"])), ("hasło", sm.password())) if not ok]
+            if missing:
+                stat.setText("Brakuje: " + ", ".join(missing) + "."); return
+            f = lambda ts: datetime.fromtimestamp(ts).strftime("%d.%m %H:%M") if ts else "—"
+            others = ", ".join(f"{n} ({f(t_)})" for n, t_, _ in sm.other_tabs()) or "jeszcze żaden"
+            stat.setText(f"Wysłano: {f(c.get('last_write'))} · odebrano: {f(c.get('last_read'))} · inne komputery: {others}"
+                         + (f"\n{sm.error}" if sm.error else ""))
+        except RuntimeError:
+            safe_disconnect(sm.changed, show)
+
+    def restart():
+        c["on"] = on.isChecked(); st.save_soon(); sm.start(); show()
+    on.toggled.connect(lambda _: restart())
+    now_b.clicked.connect(lambda: (sm.read_all(), sm.write(), show()))
+    sm.changed.connect(show); w.destroyed.connect(lambda _=None: safe_disconnect(sm.changed, show))
+    show(); l.addStretch(1)
+    return scroll_page(w)
+
+
+_ORDER = ["features", "tabs", "accounts", "privacy", "passwords", "sync", "look", "keys", "updates", "dev"]
 SETTINGS_PAGES.sort(key=lambda p: _ORDER.index(p[0]))
 
 
@@ -8507,6 +8625,7 @@ class Highlights:
             tmp.replace(HIGHLIGHTS)
         except OSError:
             pass
+        sync_touch()
 
     @classmethod
     def for_url(cls, url):
@@ -8830,6 +8949,7 @@ class Bookmarks:
             tmp.replace(BOOKMARKS)
         except OSError:
             pass
+        sync_touch()
         return n
 
 
@@ -8920,6 +9040,417 @@ class ImportDialog(QDialog):
 
 
 SPEED_JS = r"""(function(r){var n=0;document.querySelectorAll('video,audio').forEach(function(v){v.playbackRate=r;n++});return n})(%s)"""
+
+
+# --- kody 2FA (TOTP, RFC 6238 – jak Google Authenticator): klucz Base32 albo adres otpauth:// ---
+def totp_code(secret, now=None):
+    """(kod, sekundy do zmiany) albo None dla niepoprawnego klucza."""
+    import hmac
+    import struct
+    digits, period, algo = 6, 30, "sha1"
+    s = (secret or "").strip()
+    if s.lower().startswith("otpauth://"):
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(s).query)
+        s = (q.get("secret") or [""])[0]
+        try:
+            digits = int((q.get("digits") or ["6"])[0]); period = int((q.get("period") or ["30"])[0])
+        except ValueError:
+            return None
+        algo = (q.get("algorithm") or ["SHA1"])[0].lower()
+    s = s.replace(" ", "").replace("-", "").upper()
+    if not s or algo not in ("sha1", "sha256", "sha512") or not (6 <= digits <= 8) or period <= 0:
+        return None
+    try:
+        key = base64.b32decode(s + "=" * (-len(s) % 8))
+    except (ValueError, TypeError):
+        return None
+    if len(key) < 5:
+        return None
+    t = int(now if now is not None else time.time())
+    mac = hmac.new(key, struct.pack(">Q", t // period), getattr(hashlib, algo)).digest()
+    o = mac[-1] & 0x0F
+    code = (struct.unpack(">I", mac[o:o + 4])[0] & 0x7FFFFFFF) % (10 ** digits)
+    return str(code).zfill(digits), period - t % period
+
+
+OTP_FILL_JS = r"""(function(code,fill){var c=[].slice.call(document.querySelectorAll('input')).filter(function(i){
+var t=(i.type||'').toLowerCase();if(t==='hidden'||t==='password'||t==='checkbox'||t==='radio'||i.disabled||i.readOnly)return false;var r=i.getBoundingClientRect();if(!r.width||!r.height)return false;
+var ac=(i.getAttribute('autocomplete')||'').toLowerCase();var k=(i.name+' '+i.id+' '+(i.placeholder||'')+' '+(i.getAttribute('aria-label')||'')).toLowerCase();
+return ac==='one-time-code'||/otp|totp|2fa|mfa|one.?time|verification.?code|auth.?code|security.?code|kod.?(weryf|jednoraz|uwierz|sms|z.?aplik)|(^|\s)code(\s|$)/.test(k)});
+if(!c.length)return 0;if(!fill)return c.length;var i=c[0];var d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');d.set.call(i,code);
+i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new Event('change',{bubbles:true}));i.focus();return 1})(%s,%s)"""
+
+
+class CompactHover(QObject):
+    """Tryb kompaktowy: pasek narzędzi wysuwa się, gdy mysz jest nad paskiem kart, i chowa 0,7 s po jej zjechaniu
+    (nie chowa się przy pisaniu w pasku adresu ani przy otwartym menu). Tylko zdarzenia – bez odpytywania."""
+
+    def __init__(self, browser):
+        super().__init__(browser); self.b = browser
+        self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self._maybe_hide)
+
+    def eventFilter(self, obj, ev):
+        if self.b.store.settings.get("compact"):
+            t = ev.type()
+            if t == QEvent.Type.Enter:
+                self._t.stop(); self.b._tool.show()
+            elif t == QEvent.Type.Leave:
+                self.hide_later()
+        return False
+
+    def hide_later(self):
+        self._t.start(700)
+
+    def _maybe_hide(self):
+        b = self.b
+        if not b.store.settings.get("compact"):
+            return
+        under = b._tool.underMouse() or b._strip.underMouse()
+        busy = b.address.hasFocus() or QApplication.activePopupWidget() is not None
+        if under or busy:
+            self._t.start(700); return
+        b._tool.hide()
+
+
+# --- ochrona logowania: domeny udające znane serwisy (literówki, podmienione litery, znak z innego alfabetu,
+# marka w subdomenie cudzej domeny). Znane = zapisane w sejfie haseł + popularne serwisy w Polsce i na świecie ---
+LOGIN_DOMAINS = {
+    "pkobp.pl", "ipko.pl", "mbank.pl", "santander.pl", "ing.pl", "ingbank.pl", "pekao24.pl", "pekao.com.pl", "aliorbank.pl",
+    "bankmillennium.pl", "credit-agricole.pl", "bnpparibas.pl", "citibank.pl", "velobank.pl", "nestbank.pl", "bosbank.pl",
+    "revolut.com", "paypal.com", "allegro.pl", "olx.pl", "inpost.pl", "poczta-polska.pl", "gov.pl", "podatki.gov.pl",
+    "zus.pl", "epuap.gov.pl", "mojeid.pl", "google.com", "gmail.com", "youtube.com", "facebook.com", "instagram.com",
+    "microsoft.com", "live.com", "outlook.com", "office.com", "apple.com", "icloud.com", "amazon.com", "amazon.pl",
+    "netflix.com", "steampowered.com", "steamcommunity.com", "discord.com", "x.com", "twitter.com", "linkedin.com",
+    "github.com", "dropbox.com", "wp.pl", "onet.pl", "interia.pl", "o2.pl", "blik.com", "przelewy24.pl", "payu.pl"}
+_CONFUSABLE = str.maketrans({"а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j",
+                             "ѕ": "s", "ԁ": "d", "ɡ": "g", "ӏ": "l", "ο": "o", "α": "a", "ν": "v", "ρ": "p", "ι": "i",
+                             "κ": "k", "т": "t", "м": "m", "н": "h", "в": "b", "ł": "l"})
+
+
+def _norm_label(s):
+    import unicodedata
+    s = s.translate(_CONFUSABLE)
+    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
+    for a, b in (("rn", "m"), ("vv", "w"), ("0", "o"), ("1", "l"), ("3", "e"), ("5", "s"), ("-", "")):
+        s = s.replace(a, b)
+    return s
+
+
+def _lev1(a, b):
+    """Odległość edycyjna ≤ 1 (zamiana, wstawienie, usunięcie jednego znaku albo przestawienie sąsiednich)."""
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) > 1:
+        return False
+    if len(a) == len(b):
+        d = [i for i in range(len(a)) if a[i] != b[i]]
+        return len(d) == 1 or (len(d) == 2 and d[1] == d[0] + 1 and a[d[0]] == b[d[1]] and a[d[1]] == b[d[0]])
+    if len(a) > len(b):
+        a, b = b, a
+    for i in range(len(b)):
+        if b[:i] + b[i + 1:] == a:
+            return True
+    return False
+
+
+def lookalike(host, known):
+    """Znana domena, pod którą host się podszywa, albo "" (host bezpieczny lub sam jest znaną domeną)."""
+    host = (host or "").lower().strip(".")
+    try:
+        uni = host.encode("ascii").decode("idna") if "xn--" in host else host
+    except UnicodeError:
+        uni = host
+    reg = base_domain(uni)
+    if reg in known or any(host == k or host.endswith("." + k) for k in known):
+        return ""
+    label, _, tld = reg.partition(".")
+    nl = _norm_label(label)
+    for k in sorted(known):
+        kl, _, ktld = k.partition(".")
+        if len(kl) < 4:
+            continue
+        if uni != host and (nl == _norm_label(kl)) and tld == ktld:   # znak z innego alfabetu (homograf)
+            return k
+        if ("." + k + ".") in ("." + uni + ".") or (k + "-") in uni or ("-" + k) in uni.split(".")[0]:   # marka w cudzej domenie
+            return k
+        # literówka / podmienione znaki w tej samej końcówce domeny (ta sama marka w innej końcówce, np. github.io,
+        # amazon.de, bywa prawdziwa – nie ostrzegamy)
+        if len(kl) >= 5 and tld == ktld and label != kl and (nl == _norm_label(kl) or _lev1(nl, _norm_label(kl))):
+            return k
+    return ""
+
+
+# --- „Ukryj ten element”: wskazanie, podświetlenie, selektor CSS (krótki i stabilny), ukrycie ---
+PICK_JS = r"""(function(x,y,up){var L=window.__lpick||(window.__lpick={});var el=(x===null)?L.el:document.elementFromPoint(x,y);if(!el)return '';
+for(var i=0;i<up&&el.parentElement&&el.parentElement!==document.body&&el.parentElement!==document.documentElement;i++)el=el.parentElement;L.el=el;
+function okc(c){return /^[a-zA-Z][\w-]{1,40}$/.test(c)&&!/\d{4,}/.test(c)&&!/^(css|sc|jsx|svelte|ng)-/.test(c)}
+function part(e){if(e.id&&/^[a-zA-Z][\w-]{1,40}$/.test(e.id)&&!/\d{3,}/.test(e.id))return '#'+CSS.escape(e.id);var s=e.tagName.toLowerCase();
+var c=[].filter.call(e.classList,okc).slice(0,3);if(c.length)s+='.'+c.map(function(z){return CSS.escape(z)}).join('.');return s}
+function sel(e){var path=[],n=e;for(var i=0;i<5&&n&&n.nodeType===1&&n!==document.body&&n!==document.documentElement;i++){var p=part(n);path.unshift(p);
+var s=path.join(' > ');try{var m=document.querySelectorAll(s);if(m.length===1&&m[0]===e)return s}catch(z){}if(p[0]==='#')break;n=n.parentElement}
+var s=path.join(' > ');try{var m=document.querySelectorAll(s);if(m.length<=4)return s}catch(z){}var t=e,k=1;while((t=t.previousElementSibling))if(t.tagName===e.tagName)k++;
+path[path.length-1]+=':nth-of-type('+k+')';return path.join(' > ')}
+var o=L.ov||(L.ov=document.createElement('div'));o.style.cssText='position:fixed;z-index:2147483647;pointer-events:none;background:rgba(255,92,92,.22);outline:2px solid #ff5c5c;border-radius:3px';
+var r=el.getBoundingClientRect();o.style.left=r.left+'px';o.style.top=r.top+'px';o.style.width=r.width+'px';o.style.height=r.height+'px';(document.body||document.documentElement).appendChild(o);
+var s=sel(el),n=1;try{n=document.querySelectorAll(s).length}catch(z){}return JSON.stringify({sel:s,w:Math.round(r.width),h:Math.round(r.height),n:n})})(%s,%d)"""
+PICK_CANCEL_JS = r"""(function(){var L=window.__lpick;if(L&&L.ov&&L.ov.parentNode)L.ov.parentNode.removeChild(L.ov)})()"""
+PICK_HIDE_JS = r"""(function(s){try{document.querySelectorAll(s).forEach(function(e){e.style.setProperty('display','none','important')})}catch(z){}
+var L=window.__lpick;if(L&&L.ov&&L.ov.parentNode)L.ov.parentNode.removeChild(L.ov)})(%s)"""
+
+# --- podgląd linku: Shift+klik otwiera stronę w pływającym okienku zamiast nowej karty ---
+PEEK_JS = r"""document.addEventListener('click',function(e){if(!e.shiftKey||e.button!==0||e.ctrlKey||e.altKey||e.metaKey)return;
+var a=e.target&&e.target.closest&&e.target.closest('a[href]');if(!a||!/^https?:/.test(a.href))return;e.preventDefault();e.stopImmediatePropagation();
+console.log('%K%peek:'+a.href)},true);"""
+
+
+class PeekOverlay(QWidget):
+    """Pływające okienko z podglądem linku nad stroną; Esc / klik obok zamyka, przyciski: do karty albo do podziału."""
+
+    def __init__(self, browser):
+        super().__init__(browser.centralWidget()); self.b = browser; self.url = ""; self.container = ""
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setStyleSheet("PeekOverlay{background:rgba(0,0,0,150);}")
+        self.card = QFrame(self); self.card.setObjectName("tabpop")
+        sh = QGraphicsDropShadowEffect(self.card); sh.setBlurRadius(40); sh.setOffset(0, 10); sh.setColor(QColor(0, 0, 0, 200))
+        self.card.setGraphicsEffect(sh)
+        v = QVBoxLayout(self.card); v.setContentsMargins(8, 8, 8, 8); v.setSpacing(6)
+        head = QHBoxLayout(); self.title = lbl("", "h3"); head.addWidget(self.title, 1)
+        for kind, tip, fn in (("plus", "Otwórz w nowej karcie", self.to_tab), ("split", "Otwórz w podziale ekranu", self.to_split),
+                              ("close", "Zamknij podgląd (Esc)", self.close_peek)):
+            b = QToolButton(); b.setIcon(glyph(kind)); b.setIconSize(QSize(20, 20)); b.setFixedSize(30, 30); b.setToolTip(tip)
+            b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, f=fn: f()); head.addWidget(b)
+        v.addLayout(head)
+        self.view = None; self._v = v
+        QShortcut(QKeySequence("Esc"), self, activated=self.close_peek)
+        self.hide()
+
+    def open(self, url, container=""):
+        self.url, self.container = url, container
+        if self.view is None or self.view.container != container:
+            if self.view is not None:
+                self.view.deleteLater()
+            self.view = WebView(container=container)
+            self.view.link_requested.connect(lambda u: self.b.open_url_new_tab(u, self.container))
+            self.view.titleChanged.connect(lambda t: self.title.setText(t[:90]))
+            self._v.addWidget(self.view, 1)
+        self.title.setText(host_of(url)); self.view.setUrl(QUrl(url))
+        self.setGeometry(self.parentWidget().rect()); self._place(); self.show(); self.raise_(); self.view.setFocus()
+
+    def _place(self):
+        r = self.rect(); w, h = int(r.width() * 0.78), int(r.height() * 0.84)
+        self.card.setGeometry((r.width() - w) // 2, (r.height() - h) // 2 + 10, w, h)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev); self._place()
+
+    def mousePressEvent(self, ev):
+        if not self.card.geometry().contains(ev.position().toPoint()):
+            self.close_peek()
+
+    def current_url(self):
+        return self.view.url().toString() if self.view is not None and self.view.url().isValid() else self.url
+
+    def close_peek(self):
+        self.hide()
+        if self.view is not None:
+            self.view.setUrl(QUrl("about:blank"))   # zwolnij stronę (dźwięk, pamięć)
+
+    def to_tab(self):
+        u = self.current_url(); self.close_peek(); self.b.open_url_new_tab(u, self.container)
+
+    def to_split(self):
+        u = self.current_url(); self.close_peek(); self.b.open_in_split(u)
+
+
+# --- synchronizacja między komputerami: każdy komputer zapisuje własny zaszyfrowany plik w folderze synchronizowanym
+# przez OneDrive / Dysk Google / Dropbox, a czyta pliki pozostałych (bez serwera Luny, bez konfliktów zapisu) ---
+SYNC_SETTINGS = ["features", "engine", "translate_target", "zoom_sites", "shield_allow", "shield_exc", "adblock_user",
+                 "adblock_lists", "dark_except", "workspaces", "containers", "toolbar_pins", "webapps", "phish_trust",
+                 "translate_never", "reader", "sleep_after"]
+SYNC = []
+
+
+def sync_touch():
+    """Wywoływane przy zapisie danych – zaplanuj wysłanie zmian (20 s ciszy)."""
+    if SYNC:
+        SYNC[0].touch()
+
+
+class SyncManager(QObject):
+    changed = pyqtSignal()
+    DIR = "Luna-sync"
+
+    def __init__(self, store):
+        super().__init__(QApplication.instance()); self.store = store
+        self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.write)
+        self.watcher = None; self.remote = {}; self.error = ""; self._applying = False
+        st = store.settings.setdefault("sync", {})
+        st.setdefault("device", secrets.token_hex(6))
+        st.setdefault("name", os.environ.get("COMPUTERNAME", "Ten komputer").title())
+
+    # --- konfiguracja ---
+    def cfg(self):
+        return self.store.settings.setdefault("sync", {})
+
+    def password(self):
+        v = VAULT[0] if VAULT and VAULT[0].available() else None
+        return v.data.get("sync_pw", "") if v else ""
+
+    def enabled(self):
+        c = self.cfg()
+        return bool(c.get("on") and c.get("folder") and os.path.isdir(c["folder"]) and self.password())
+
+    def folder(self):
+        return os.path.join(self.cfg()["folder"], self.DIR)
+
+    def start(self):
+        if not self.enabled():
+            return
+        os.makedirs(self.folder(), exist_ok=True)
+        if self.watcher is None:
+            from PyQt6.QtCore import QFileSystemWatcher
+            self.watcher = QFileSystemWatcher(self)
+            self.watcher.directoryChanged.connect(lambda _: QTimer.singleShot(1500, self.read_all))
+        if self.folder() not in self.watcher.directories():
+            self.watcher.addPath(self.folder())
+        self.read_all(); self.touch(5000)
+
+    def touch(self, ms=20000):
+        if self.enabled() and not self._applying:
+            self._t.start(ms)
+
+    # --- dane lokalne ---
+    def collections(self):
+        v = VAULT[0] if VAULT and VAULT[0].available() else None
+        return {"tiles": self.store.items, "bookmarks": Bookmarks.items(), "highlights": Highlights.data(),
+                "readlater": [dict(x) for x in ReadLater.get().items], "addresses": v.data.get("addresses", []) if v else [],
+                "settings": {k: self.store.settings[k] for k in SYNC_SETTINGS if k in self.store.settings}}
+
+    @staticmethod
+    def _hash(x):
+        return hashlib.sha1(json.dumps(x, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    def _stamp(self, cols):
+        """Czas ostatniej zmiany każdej kolekcji (zmiana skrótu = teraz)."""
+        state = self.cfg().setdefault("state", {}); now = int(time.time()); out = {}
+        for k, val in cols.items():
+            h = self._hash(val); s = state.get(k) or {}
+            if s.get("hash") != h:
+                s = {"hash": h, "mtime": now}; state[k] = s
+            out[k] = s["mtime"]
+        return out
+
+    def write(self):
+        if not self.enabled():
+            return
+        try:
+            cols = self.collections(); mt = self._stamp(cols)
+            v = VAULT[0]
+            payload = {"v": 1, "device": self.cfg()["device"], "name": self.cfg()["name"], "t": int(time.time()),
+                       "cols": cols, "mtime": mt, "logins": v.logins(), "deleted": v.data.get("deleted", {}),
+                       "tabs": self._tabs()}
+            blob = backup_encrypt(payload, self.password())
+            path = os.path.join(self.folder(), self.cfg()["device"] + ".lunasync"); tmp = path + ".tmp"
+            with open(tmp, "wb") as f:
+                f.write(blob)
+            os.replace(tmp, path)
+            self.cfg()["last_write"] = int(time.time()); self.error = ""; self.store.save_soon()
+        except (OSError, ValueError) as e:
+            self.error = f"Nie udało się zapisać: {e}"
+        self.changed.emit()
+
+    @staticmethod
+    def _tabs():
+        out = []
+        for w in WINDOWS:
+            try:
+                if not w.private:
+                    out += [{"url": d["url"], "title": d.get("title", "")} for d in w.session_data()["tabs"] if d.get("url")]
+            except (RuntimeError, AttributeError):
+                pass
+        return out[:100]
+
+    # --- dane z innych komputerów ---
+    def read_all(self):
+        if not self.enabled():
+            return
+        seen = self.cfg().setdefault("seen", {})
+        try:
+            files = [f for f in os.listdir(self.folder()) if f.endswith(".lunasync") and not f.startswith(self.cfg()["device"])]
+        except OSError:
+            return
+        for f in files:
+            p = os.path.join(self.folder(), f)
+            try:
+                mt = os.stat(p).st_mtime_ns
+                if seen.get(f) == mt and f in self.remote:
+                    continue
+                data = backup_decrypt(open(p, "rb").read(), self.password())
+            except ValueError:
+                self.error = f"Plik {f}: inne hasło synchronizacji – ustaw to samo hasło na wszystkich komputerach."; continue
+            except OSError:
+                continue
+            seen[f] = mt; self.remote[f] = data
+            self.merge(data)
+        self.cfg()["last_read"] = int(time.time()); self.store.save_soon(); self.changed.emit()
+
+    def merge(self, r):
+        """Kolekcje: nowsza wygrywa w całości. Hasła: wpis po wpisie (nowszy wygrywa), usunięcia przenoszone."""
+        self._applying = True
+        try:
+            state = self.cfg().setdefault("state", {}); cols = r.get("cols") or {}; mts = r.get("mtime") or {}
+            local = self.collections(); self._stamp(local)
+            changed_settings = False
+            for k, val in cols.items():
+                if k not in local or int(mts.get(k, 0)) <= int((state.get(k) or {}).get("mtime", 0)):
+                    continue
+                if k == "tiles":
+                    self.store.items = val; self.store.save()
+                elif k == "bookmarks":
+                    Bookmarks._items = list(val); Bookmarks.add_many([])
+                elif k == "highlights":
+                    Highlights._data = dict(val); Highlights.save()
+                elif k == "readlater":
+                    rl = ReadLater.get(); rl.items = list(val); rl.save()
+                elif k == "addresses" and VAULT and VAULT[0].available():
+                    VAULT[0].data["addresses"] = list(val); VAULT[0].save()
+                elif k == "settings":
+                    self.store.settings.update({x: y for x, y in val.items() if x in SYNC_SETTINGS}); changed_settings = True
+                state[k] = {"hash": self._hash(val), "mtime": int(mts[k])}
+            if VAULT and VAULT[0].available():
+                self._merge_logins(r.get("logins") or [], r.get("deleted") or {})
+            if changed_settings:
+                self.store.save_settings(); self.store.features_changed.emit()
+        finally:
+            self._applying = False
+
+    @staticmethod
+    def _merge_logins(remote, rdel):
+        v = VAULT[0]; dele = v.data.setdefault("deleted", {}); changed = False
+        for k, ts in rdel.items():
+            if int(ts) > int(dele.get(k, 0)):
+                dele[k] = int(ts); changed = True
+        for k, ts in list(dele.items()):
+            o, _, u = k.partition("\n")
+            x = v.find(o, u)
+            if x and int(x.get("ts", 0)) < int(ts):
+                v.data["logins"] = [y for y in v.data["logins"] if y is not x]; changed = True
+        for x in remote:
+            k = x["origin"] + "\n" + x["user"]
+            if int(dele.get(k, 0)) >= int(x.get("ts", 0)):
+                continue
+            cur = v.find(x["origin"], x["user"])
+            if cur is None:
+                v.data["logins"].append(dict(x)); changed = True
+            elif int(x.get("ts", 0)) > int(cur.get("ts", 0)):
+                cur.update(x); changed = True
+        if changed:
+            v.save()
+
+    def other_tabs(self):
+        """[(nazwa komputera, czas, [karty])] z innych komputerów."""
+        return sorted(((d.get("name", "?"), d.get("t", 0), d.get("tabs", [])) for d in self.remote.values()),
+                      key=lambda x: -x[1])
 
 
 class Updater(QObject):
@@ -9428,9 +9959,10 @@ def menu_row_action(menu, row):
 
 # ikony, które można przypiąć do paska obok wyszukiwarki (reszta trafia do menu burgera)
 TOOL_ITEMS = [("shield", "Blokada reklam i śledzenia"), ("key", "Hasła i aliasy"), ("split", "Podział ekranu"),
-              ("reader", "Tryb czytania"), ("star", "Dodaj do ekranu głównego"), ("ai", "Asystent AI"), ("gear", "Ustawienia"),
+              ("reader", "Tryb czytania"), ("star", "Dodaj do ekranu głównego"), ("ai", "Asystent AI"),
+              ("apps", "Panel aplikacji (komunikatory)"), ("gear", "Ustawienia"),
               ("google", "Konto Google")]
-TOOL_DEFAULT = ["shield", "key", "reader", "star", "ai", "google"]
+TOOL_DEFAULT = ["shield", "key", "reader", "star", "ai", "apps", "google"]
 PRIVATE = "__prywatne__"
 PRIVACY_URL = "https://z4k0lzakol.github.io/Luna/privacy.html"   # GitHub Pages z folderu docs/ (wymagane przez Google)
 ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0]
@@ -10079,7 +10611,7 @@ class ReadLater(QObject):
             tmp.replace(READLATER)
         except OSError:
             pass
-        self.changed.emit()
+        self.changed.emit(); sync_touch()
 
     def find(self, url):
         return next((x for x in self.items if x["url"] == url), None)
@@ -10273,6 +10805,7 @@ class Tab(QStackedWidget):
         v.loadStarted.connect(lambda v=v: v.owner.browser.on_load_started(v.owner, v))
         v.urlChanged.connect(lambda u, v=v: v.owner.browser.on_view_url(v, u))   # też nawigacje SPA (YouTube)
         v.page().sb_skipped.connect(lambda d, v=v: v.owner.browser.on_sponsor_skipped(v, d))
+        v.page().peek_requested.connect(lambda u, v=v: v.owner.browser.peek(u, v.container))
         v.page().pw_captured.connect(lambda d, v=v: v.owner.browser.on_pw(d))
         v.page().reader_state.connect(lambda d, v=v: v.owner.browser.on_reader(v, d))
         return v
@@ -10500,7 +11033,12 @@ class Tab(QStackedWidget):
 
 
 class Assistant(QWidget):
-    """Panel boczny z ChatGPT, Claude, Gemini i DeepSeek jako zwykłymi stronami (własne logowanie)."""
+    """Panel boczny ze stronami-usługami (własne logowanie, sesja zapamiętana). Bazowo: asystent AI – ChatGPT, Claude,
+    Gemini i DeepSeek; podklasa WebAppsPanel używa tego samego układu dla komunikatorów i dowolnych stron."""
+    KEY, DEFAULT, ICON_ONLY = "ai_provider", "ChatGPT", False
+
+    def providers(self):
+        return PROVIDERS
 
     def __init__(self, store, browser):
         super().__init__()
@@ -10512,61 +11050,108 @@ class Assistant(QWidget):
 
         head = QWidget(); head.setObjectName("aihead")
         h = QVBoxLayout(head); h.setContentsMargins(12, 10, 12, 8); h.setSpacing(6)
-        row = QHBoxLayout(); row.setSpacing(4)
-        group = QButtonGroup(self); group.setExclusive(True)
-        for name, url in PROVIDERS.items():
-            b = QToolButton(); b.setObjectName("aipick"); b.setCheckable(True); b.setText(name)
-            b.setIcon(mini_icon(name, url)); b.setIconSize(QSize(16, 16))
-            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-            b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.clicked.connect(lambda _=False, n=name: self.select(n))
-            group.addButton(b); row.addWidget(b); self.picks[name] = b
-        row.addStretch()
-        h.addLayout(row)
+        self.pick_row = QHBoxLayout(); self.pick_row.setSpacing(4)
+        self.group = QButtonGroup(self); self.group.setExclusive(True)
+        self.build_picks()
+        h.addLayout(self.pick_row)
 
         tools = QHBoxLayout(); tools.setSpacing(2)
-        self.hint = QLabel("Zaloguj się raz – Luna zapamięta sesję."); self.hint.setObjectName("muted")
+        self.hint = QLabel(self.hint_text()); self.hint.setObjectName("muted")
         tools.addWidget(self.hint); tools.addStretch()
-        for kind, tip, fn in (("reload", "Odśwież", self.reload),
-                              ("external", "Otwórz w zwykłej karcie", self.open_tab),
-                              ("copy", "Skopiuj treść otwartej strony (do wklejenia w czacie)", self.copy_page)):
+        for kind, tip, fn in self.tool_defs():
             tb = QToolButton(); tb.setIcon(glyph(kind)); tb.setIconSize(QSize(22, 22)); tb.setFixedSize(30, 30)
             tb.setToolTip(tip); tb.setCursor(Qt.CursorShape.PointingHandCursor)
             tb.clicked.connect(lambda _=False, f=fn: f()); tools.addWidget(tb)
         h.addLayout(tools)
+        self.extra_tools(h)
         lay.addWidget(head)
 
         self.stack = QStackedWidget(); lay.addWidget(self.stack, 1)
         self._ri = QTimer(self); self._ri.setSingleShot(True); self._ri.timeout.connect(self.refresh_icons)
         store.changed.connect(lambda: self._ri.start(400))
 
+    # --- do nadpisania w podklasach ---
+    def hint_text(self):
+        return "Zaloguj się raz – Luna zapamięta sesję."
+
+    def tool_defs(self):
+        return (("reload", "Odśwież", self.reload), ("external", "Otwórz w zwykłej karcie", self.open_tab),
+                ("copy", "Skopiuj treść otwartej strony (do wklejenia w czacie)", self.copy_page))
+
+    def extra_tools(self, h):
+        """AI znające stronę: podsumowanie, pytania o stronę, porównanie kart (treść trafia do czatu wybranej usługi)."""
+        row = QHBoxLayout(); row.setSpacing(4)
+        for text, tip, mode in (("Podsumuj stronę", "Wyślij treść bieżącej strony do czatu z prośbą o podsumowanie", "summary"),
+                                ("Zapytaj o stronę", "Wklej treść strony do czatu – dopisz swoje pytanie i wyślij", "ask"),
+                                ("Porównaj karty", "Porównanie otwartych kart (np. produktów, ofert, artykułów)", "compare")):
+            b = QPushButton(text); b.setToolTip(tip); b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _=False, m=mode: self.browser.ai_ask(m)); row.addWidget(b)
+        row.addStretch(); h.addLayout(row)
+
+    def build_picks(self):
+        while self.pick_row.count():
+            w = self.pick_row.takeAt(0).widget()
+            if w is not None:
+                self.group.removeButton(w); w.deleteLater()
+        self.picks = {}
+        for name, url in self.providers().items():
+            b = QToolButton(); b.setObjectName("aipick"); b.setCheckable(True)
+            b.setIcon(mini_icon(name, url)); b.setIconSize(QSize(16, 16)); b.setToolTip(name)
+            if self.ICON_ONLY:
+                b.setFixedSize(34, 30)
+            else:
+                b.setText(name); b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.clicked.connect(lambda _=False, n=name: self.select(n))
+            b.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            b.customContextMenuRequested.connect(lambda _=None, n=name, b=b: self.pick_menu(n, b))
+            self.group.addButton(b); self.pick_row.addWidget(b); self.picks[name] = b
+        self.after_picks()
+        self.pick_row.addStretch()
+
+    def after_picks(self):
+        pass
+
+    def pick_menu(self, name, btn):
+        pass
+
     def release(self):
-        """Zwalnia strony AI z pamięci (po wyłączeniu funkcji)."""
+        """Zwalnia strony z pamięci (po wyłączeniu funkcji)."""
         for v in self.views.values():
             self.stack.removeWidget(v); v.deleteLater()
         self.views.clear()
 
     def provider(self):
-        p = self.store.settings.get("ai_provider", "ChatGPT")
-        return p if p in PROVIDERS else "ChatGPT"
+        p = self.store.settings.get(self.KEY, self.DEFAULT)
+        provs = self.providers()
+        return p if p in provs else (self.DEFAULT if self.DEFAULT in provs else next(iter(provs), ""))
 
     def refresh_icons(self):
+        provs = self.providers()
         for name, b in self.picks.items():
-            b.setIcon(mini_icon(name, PROVIDERS[name]))
+            if name in provs:
+                b.setIcon(mini_icon(name, provs[name]))
 
     def ensure(self):
-        """Wywoływane przy otwarciu panelu: ładuje aktualnie wybraną stronę AI."""
-        self.select(self.provider())
+        """Wywoływane przy otwarciu panelu: ładuje aktualnie wybraną stronę."""
+        if self.provider():
+            self.select(self.provider())
 
     def select(self, name):
-        self.store.settings["ai_provider"] = name; self.store.save_settings()
+        provs = self.providers()
+        if name not in provs:
+            return
+        self.store.settings[self.KEY] = name; self.store.save_settings()
         v = self.views.get(name)
         if v is None:
-            v = WebView()
+            v = WebView(); v._ready = False
             v.link_requested.connect(self.browser.open_url_new_tab)
-            v.setUrl(QUrl(PROVIDERS[name]))
+            v.loadFinished.connect(lambda ok, v=v: setattr(v, "_ready", True))
+            v.setUrl(QUrl(provs[name]))
             self.views[name] = v; self.stack.addWidget(v)
-        self.stack.setCurrentWidget(v); self.picks[name].setChecked(True)
+        self.stack.setCurrentWidget(v)
+        if name in self.picks:
+            self.picks[name].setChecked(True)
 
     def current(self):
         return self.stack.currentWidget()
@@ -10592,6 +11177,96 @@ class Assistant(QWidget):
             QApplication.clipboard().setText(f"Strona: {title}\n{url}\n\n{text[:20000]}")
             QToolTip.showText(QCursor.pos(), "Skopiowano treść strony – wklej ją w czacie (Ctrl+V).", self)
         t.web.page().toPlainText(done)
+
+
+WEBAPPS_DEFAULT = [["WhatsApp", "https://web.whatsapp.com/"], ["Messenger", "https://www.messenger.com/"],
+                   ["Telegram", "https://web.telegram.org/a/"], ["Instagram", "https://www.instagram.com/direct/inbox/"]]
+
+
+class WebAppsPanel(Assistant):
+    """Panel aplikacji (przycisk na pasku jak asystent AI): komunikatory i dowolne strony przypięte z boku.
+    Strony działają w tle (powiadomienia o wiadomościach); „Zwolnij pamięć” zamyka wybraną aplikację."""
+    KEY, DEFAULT, ICON_ONLY = "webapp_current", "WhatsApp", True
+
+    def providers(self):
+        lst = self.store.settings.get("webapps")
+        if not isinstance(lst, list):
+            lst = WEBAPPS_DEFAULT
+        return {n: u for n, u in lst if isinstance(n, str) and isinstance(u, str)}
+
+    def hint_text(self):
+        return "Komunikatory i strony z boku. Prawy przycisk na ikonie: usuń."
+
+    def tool_defs(self):
+        return (("reload", "Odśwież", self.reload), ("external", "Otwórz w zwykłej karcie", self.open_tab),
+                ("trash", "Zwolnij pamięć tej aplikacji (zamknij ją do następnego kliknięcia)", self.close_current))
+
+    def extra_tools(self, h):
+        pass
+
+    def after_picks(self):
+        add = QToolButton(); add.setObjectName("aipick"); add.setIcon(glyph("plus")); add.setFixedSize(34, 30)
+        add.setToolTip("Dodaj stronę do panelu"); add.setCursor(Qt.CursorShape.PointingHandCursor)
+        add.clicked.connect(self.add_app); self.pick_row.addWidget(add)
+
+    def _save(self, provs):
+        self.store.settings["webapps"] = [[n, u] for n, u in provs.items()]; self.store.save_soon()
+
+    def add_app(self):
+        t = self.browser.cur()
+        cur = t.web.url().toString() if t and t.web and not t.on_home() else "https://"
+        url, ok = QInputDialog.getText(self, "Dodaj do panelu aplikacji", "Adres strony:", text=cur)
+        if not ok or not url.strip():
+            return
+        url = url.strip() if "://" in url else "https://" + url.strip()
+        name, ok = QInputDialog.getText(self, "Dodaj do panelu aplikacji", "Nazwa:", text=host_of(url).split(".")[0].capitalize())
+        if not ok or not name.strip():
+            return
+        provs = self.providers(); provs[name.strip()[:30]] = url; self._save(provs)
+        self.build_picks(); self.select(name.strip()[:30])
+
+    def pick_menu(self, name, btn):
+        m = QMenu(self)
+        m.addAction("Zwolnij pamięć", lambda: self.close_app(name))
+        m.addAction("Usuń z panelu", lambda: self.remove_app(name))
+        m.exec(QCursor.pos())
+
+    def close_app(self, name):
+        v = self.views.pop(name, None)
+        if v is not None:
+            self.stack.removeWidget(v); v.deleteLater()
+
+    def close_current(self):
+        cur = next((n for n, v in self.views.items() if v is self.stack.currentWidget()), None)
+        if cur:
+            self.close_app(cur)
+            QToolTip.showText(QCursor.pos(), f"Zamknięto {cur} – otworzy się ponownie po kliknięciu.", self)
+
+    def remove_app(self, name):
+        self.close_app(name)
+        provs = self.providers(); provs.pop(name, None); self._save(provs)
+        self.build_picks()
+        if self.providers():
+            self.ensure()
+
+
+# --- AI znające stronę: treść główna strony (bez menu i stopki), wklejana do czatu wybranej usługi ---
+PAGE_TEXT_JS = r"""(function(){var m=document.querySelector('article')||document.querySelector('main,[role=main]')||document.body;
+var t=(m&&m.innerText||'').replace(/\n{3,}/g,'\n\n').trim();if(t.length<400&&document.body)t=document.body.innerText.replace(/\n{3,}/g,'\n\n').trim();
+return JSON.stringify({title:document.title,url:location.href,text:t.slice(0,%d)})})()"""
+CHAT_INPUT_JS = r"""(function(){var c=[].slice.call(document.querySelectorAll('textarea,[contenteditable="true"],[contenteditable=""]')).filter(function(e){
+var r=e.getBoundingClientRect();return r.width>80&&r.height>10&&getComputedStyle(e).visibility!=='hidden'&&!e.disabled});
+if(!c.length)return false;c.sort(function(a,b){return b.getBoundingClientRect().bottom-a.getBoundingClientRect().bottom});var e=c[0];e.focus();
+try{if(e.tagName==='TEXTAREA'){e.setSelectionRange(e.value.length,e.value.length)}else{var s=getSelection(),r=document.createRange();r.selectNodeContents(e);r.collapse(false);s.removeAllRanges();s.addRange(r)}}catch(x){}
+return true})()"""
+AI_PROMPTS = {
+    "summary": "Podsumuj po polsku najważniejsze informacje z poniższej strony: maksymalnie 8 krótkich punktów, a na końcu "
+               "jedno zdanie, czy warto przeczytać całość.\n\nStrona: {title}\n{url}\n\n{text}",
+    "ask": "Poniżej jest treść strony, którą czytam. Odpowiadaj na moje pytania na jej podstawie, po polsku.\n\n"
+           "Strona: {title}\n{url}\n\n{text}\n\nMoje pytanie: ",
+    "compare": "Porównaj po polsku poniższe strony (np. produkty, oferty albo artykuły): najważniejsze podobieństwa, różnice "
+               "(najlepiej w tabeli) i co polecasz – z krótkim uzasadnieniem.\n\n{pages}",
+    "explain": "Wyjaśnij prosto, po polsku, ten fragment ze strony „{title}” ({url}):\n\n„{text}”"}
 
 
 class Frame(QWidget):
@@ -10823,6 +11498,8 @@ class Browser(QMainWindow):
         tl.addWidget(self.star_btn)
         self.ai_btn = self.btn("assistant", "Asystent AI (Ctrl+J)", self.toggle_assistant)
         tl.addWidget(self.ai_btn)
+        self.apps_btn = self.btn("chat", "Panel aplikacji: komunikatory i strony z boku (Ctrl+Shift+K)", self.toggle_webapps)
+        tl.addWidget(self.apps_btn)
         self.gear_btn = self.btn("gear", "Ustawienia (Ctrl+,)", self.open_settings)
         tl.addWidget(self.gear_btn)
         self.acct_btn = QToolButton(); self.acct_btn.setObjectName("acct"); self.acct_btn.setFixedSize(34, 34)
@@ -10845,8 +11522,11 @@ class Browser(QMainWindow):
                        if isinstance(w, QToolButton) and w is not self.acct_btn]
         self.tool_btns = {"shield": self.shield_btn, "key": self.key_btn, "split": self.split_btn, "reader": self.reader_btn,
                           "star": self.star_btn,
-                          "ai": self.ai_btn, "gear": self.gear_btn, "google": self.acct_btn}
+                          "ai": self.ai_btn, "apps": self.apps_btn, "gear": self.gear_btn, "google": self.acct_btn}
         v.addWidget(tool)
+        self._strip, self._tool = strip, tool
+        self._compact_hover = CompactHover(self)   # tryb kompaktowy: pasek narzędzi wysuwa się po najechaniu na karty
+        strip.installEventFilter(self._compact_hover); tool.installEventFilter(self._compact_hover)
         self.notice = NoticeBar(); v.addWidget(self.notice)
         self.find_bar = FindBar(self); v.addWidget(self.find_bar)
 
@@ -10859,11 +11539,12 @@ class Browser(QMainWindow):
         QGuiApplication.instance().applicationStateChanged.connect(self._state_cb)
         QApplication.instance().focusChanged.connect(self._focus_changed)   # podział ekranu: aktywna strona = kliknięta
         self.assistant = Assistant(self.store, self); self.assistant.hide()
+        self.webapps = WebAppsPanel(self.store, self); self.webapps.hide()
         self.tabpanel = TabPanel(self); self.body = body
         self.tab_popup = QFrame(self, Qt.WindowType.Popup); self.tab_popup.setObjectName("tabpop")   # lista kart z przycisku na pasku
         QVBoxLayout(self.tab_popup).setContentsMargins(1, 1, 1, 1)
         body.addWidget(self.tabpanel); body.addWidget(self.host.left); body.addWidget(self.stack, 1); body.addWidget(self.host.right)
-        body.addWidget(self.assistant)
+        body.addWidget(self.assistant); body.addWidget(self.webapps)
         v.addWidget(self.bgframe, 1)
         self.setCentralWidget(central)
         # drobne odświeżenia UI z debouncingiem (zdarzeń „changed” jest dużo: ikony, ładowanie stron)
@@ -10876,6 +11557,8 @@ class Browser(QMainWindow):
             self.frame_layout.setContentsMargins(0, 0, 0, 0); self.max_btn.setIcon(glyph("restore"))
         self.update_engine_ui()
         self.setup_shortcuts()
+        if self.store.settings.get("compact"):
+            self._tool.hide()
         self.store.features_changed.connect(self.apply_features)
         if self.primary:
             # poprzednie uruchomienie nie zamknęło się poprawnie (awaria, wyłączenie prądu) – zachowaj jego karty
@@ -10894,6 +11577,8 @@ class Browser(QMainWindow):
         self.apply_features(); self.host.sync()
         if SHIELD:
             QTimer.singleShot(8000, SHIELD[0].maybe_update)   # lista domen raz w tygodniu, po starcie
+        if self.primary and not SYNC:
+            SYNC.append(SyncManager(self.store)); QTimer.singleShot(5000, SYNC[0].start)
         up = updater()
         up.result.connect(self.on_update_result)
         if len(WINDOWS) <= 1 and self.store.feature("updates") and up.available() and not up.state:
@@ -10958,7 +11643,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
-                ("Ctrl+Shift+L", self.translate_page), ("Ctrl+K", self.palette), ("Ctrl+Shift+O", self.read_later_add),
+                ("Ctrl+Shift+L", self.translate_page), ("Ctrl+Shift+K", self.toggle_webapps), ("Ctrl+K", self.palette), ("Ctrl+Shift+O", self.read_later_add),
                 ("Ctrl+Shift+Space", self.search_tabs), ("Shift+Esc", self.task_manager),
                 ("Ctrl+Shift+S", lambda: self.screenshot("region")), ("Ctrl+Shift+P", self.pip),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
@@ -10967,7 +11652,8 @@ class Browser(QMainWindow):
                 ("Ctrl+F", self.find_bar.open), ("Ctrl+S", self.save_page), ("F12", self.devtools), ("Ctrl+U", self.view_source),
                 ("F11", self.toggle_fullscreen), ("Ctrl+=", lambda: self.zoom(1)), ("Ctrl++", lambda: self.zoom(1)),
                 ("Ctrl+-", lambda: self.zoom(-1)), ("Ctrl+0", lambda: self.zoom(0)), ("Ctrl+D", self.pin_current),
-                ("Ctrl+L", lambda: (self.address.setFocus(), self.address.selectAll()))]
+                ("Ctrl+L", lambda: (self.reveal_toolbar(), self.address.setFocus(), self.address.selectAll())),
+                ("Ctrl+Shift+F", self.toggle_compact)]
         self.shortcuts = [QShortcut(QKeySequence(k), self, fn) for k, fn in defs]
 
     def apply_features(self):
@@ -10979,6 +11665,8 @@ class Browser(QMainWindow):
         self.ai_btn.setVisible(ai)
         if not ai:
             self.assistant.hide(); self.assistant.release()
+        if not self.store.feature("webapps"):
+            self.webapps.hide(); self.webapps.release()
         self.update_account_btn()
         self.ws_btn.setVisible(self.store.feature("workspaces"))
         self.apply_dark()
@@ -11093,10 +11781,10 @@ class Browser(QMainWindow):
                if self.store.feature(sb.side) and ok and sb.has_widgets()]
         for sb in (self.host.left, self.host.right):
             sb.setVisible(sb in sbs)
-        ai = self.assistant.isVisible()
-        if ai:   # asystent też się dopasowuje do szerokości okna
-            self.assistant.setFixedWidth(max(300, min(440, int(self.width() * 0.36))))
-        total = self.width() - 12 - (self.assistant.width() if ai else 0)
+        side = self.assistant if self.assistant.isVisible() else (self.webapps if self.webapps.isVisible() else None)
+        if side is not None:   # panel asystenta / aplikacji też się dopasowuje do szerokości okna
+            side.setFixedWidth(max(300, min(440, int(self.width() * 0.36))))
+        total = self.width() - 12 - (side.width() if side is not None else 0)
         rails = len(sbs) * Sidebar.RAIL
         cap = max(0, int((total - rails - self.MIN_CENTER) // Sidebar.W))
         prefer = prefer or self._pinned     # panel otwarty ręcznie zostaje otwarty, dopóki mieści się w oknie
@@ -11193,10 +11881,24 @@ class Browser(QMainWindow):
         if not self.store.feature("assistant"):
             return
         show = not self.assistant.isVisible()
+        if show and self.webapps.isVisible():   # jeden panel boczny naraz
+            self.webapps.hide(); self.apps_btn.setIcon(glyph("chat"))
         self.assistant.setVisible(show)
         self.ai_btn.setIcon(glyph("assistantfill" if show else "assistant"))
         if show:
             self.assistant.ensure()
+        self.update_sidebars_soon()
+
+    def toggle_webapps(self):
+        if not self.store.feature("webapps"):
+            return
+        show = not self.webapps.isVisible()
+        if show and self.assistant.isVisible():
+            self.assistant.hide(); self.ai_btn.setIcon(glyph("assistant"))
+        self.webapps.setVisible(show)
+        self.apps_btn.setIcon(glyph("chatfill" if show else "chat"))
+        if show:
+            self.webapps.ensure()
         self.update_sidebars_soon()
 
     def open_url_new_tab(self, url, container=""):
@@ -11218,6 +11920,8 @@ class Browser(QMainWindow):
         if self.primary:
             self.store.settings["session"] = self.session_data(); self._save_geometry()
             self.store.settings["running"] = False   # poprawne zamknięcie (brak pytania o przywrócenie kart)
+            if SYNC and SYNC[0].enabled():
+                SYNC[0].write()
         self.store.save_settings()
         super().closeEvent(ev)
 
@@ -11237,7 +11941,14 @@ class Browser(QMainWindow):
     # --- pasek narzędzi: przypięte ikony i menu burgera ---
     def pins(self):
         p = self.store.settings.get("toolbar_pins")
-        return list(TOOL_DEFAULT) if not isinstance(p, list) else p
+        if not isinstance(p, list):
+            return list(TOOL_DEFAULT)
+        known = self.store.settings.setdefault("toolbar_known", [k for k, _ in TOOL_ITEMS if k != "apps"])
+        new = [k for k in TOOL_DEFAULT if k not in known]   # nowe ikony (np. panel aplikacji) – raz przypięte domyślnie
+        if new:
+            p = p + [k for k in new if k not in p]; known += new
+            self.store.settings["toolbar_pins"] = [k for k, _ in TOOL_ITEMS if k in p]; self.store.save_soon()
+        return p
 
     def set_pin(self, key, on):
         p = [k for k in self.pins() if k != key] + ([key] if on else [])
@@ -11247,7 +11958,8 @@ class Browser(QMainWindow):
     def apply_pins(self):
         """Ikony przypięte widać obok wyszukiwarki; pozostałe są w menu burgera (skrajnie po prawej)."""
         p = set(self.pins())
-        allowed = {"ai": self.store.feature("assistant"), "google": self.host.google is not None}
+        allowed = {"ai": self.store.feature("assistant"), "apps": self.store.feature("webapps"),
+                   "google": self.host.google is not None}
         for key, btn in self.tool_btns.items():
             btn.setVisible(key in p and allowed.get(key, True))
 
@@ -11330,6 +12042,13 @@ class Browser(QMainWindow):
                         lambda _=False, u=b_["url"]: self.open_url_new_tab(u))
         bm.addSeparator(); self.act(bm, "download", "Importuj z innej przeglądarki…", lambda: ImportDialog(self).exec())
         rl = m.addMenu(glyph("book"), "Do przeczytania"); rl.aboutToShow.connect(lambda: self.read_later_menu(rl))
+        if SYNC and SYNC[0].enabled() and SYNC[0].remote:
+            om = m.addMenu(glyph("window"), "Karty z innych komputerów")
+            for name, ts, tabs in SYNC[0].other_tabs():
+                sm_ = om.addMenu(f"{name} ({len(tabs)})")
+                for d_ in tabs[:40]:
+                    sm_.addAction(mini_icon(d_.get("title") or d_["url"], d_["url"]), (d_.get("title") or d_["url"])[:60]).triggered.connect(
+                        lambda _=False, u=d_["url"]: self.open_url_new_tab(u))
         self.act(m, "edit", "Zakreślenia i notatki…", self.show_highlights)
         self.act(m, "download", "Pobrane pliki", self.show_downloads, "Ctrl+Shift+Y")
         em = m.addMenu(glyph("puzzle"), "Rozszerzenia"); em.aboutToShow.connect(lambda: self.extensions_menu(em))
@@ -11351,6 +12070,8 @@ class Browser(QMainWindow):
         self.act(m, "swap", "Pokaż oryginał strony" if tr_on else "Przetłumacz stronę na polski", self.translate_page,
                  "Ctrl+Shift+L", web is not None)
         self.act(m, "external", "Obraz w obrazie (film w okienku)", self.pip, "Ctrl+Shift+P", web is not None)
+        cp = self.act(m, "eye", "Tryb kompaktowy (pasek adresu schowany)", self.toggle_compact, "Ctrl+Shift+F")
+        cp.setCheckable(True); cp.setChecked(bool(self.store.settings.get("compact")))
         dk = self.act(m, "moon", "Ciemny tryb stron", self.toggle_dark, "Ctrl+Shift+D")
         dk.setCheckable(True); dk.setChecked(self.store.feature("dark_pages"))
         if web is not None and self.store.feature("dark_pages"):
@@ -12038,6 +12759,182 @@ class Browser(QMainWindow):
     def task_manager(self):
         TaskManager(self).exec()
 
+    # --- tryb kompaktowy: pasek adresu i narzędzi schowany, wraca po najechaniu na pasek kart (Ctrl+Shift+F) ---
+    def toggle_compact(self):
+        self.set_compact(not self.store.settings.get("compact", False))
+
+    def set_compact(self, on):
+        self.store.settings["compact"] = bool(on); self.store.save_soon()
+        self._tool.setVisible(not on)
+        if on:
+            self.notice.info("Tryb kompaktowy: pasek adresu pojawia się po najechaniu na karty (Ctrl+L, Ctrl+Shift+F – wyłącz).",
+                             4000, "eye")
+
+    def reveal_toolbar(self):
+        if self.store.settings.get("compact"):
+            self._tool.show(); self._compact_hover.hide_later()
+
+    # --- ostrzeżenie przed fałszywą stroną logowania (domena udająca bank, sklep, pocztę…) ---
+    def check_phishing(self, view):
+        try:
+            host = view.url().host().lower()
+        except RuntimeError:
+            return
+        if not host or host in self.store.settings.get("phish_trust", []):
+            return
+        brand = lookalike(host, self.known_login_domains())
+        if not brand:
+            return
+
+        def got(has_pw):
+            if not has_pw or view is not self.web():
+                return
+            self.notice.ask(f"Uwaga: {host} może podszywać się pod {brand}. Nie wpisuj tu hasła ani danych karty.",
+                            [(f"Przejdź na {brand}", lambda: view.setUrl(QUrl("https://" + brand)), True),
+                             ("To zaufana strona", lambda: self._phish_trust(host), False)], icon="shield")
+        for ms in (300, 2500):   # formularze logowania dorysowywane skryptami
+            QTimer.singleShot(ms, lambda: _safe_js(view, "!!document.querySelector('input[type=password]')", got))
+
+    def known_login_domains(self):
+        own = {base_domain(QUrl(x["origin"]).host()) for x in (VAULT[0].logins() if VAULT and VAULT[0].available() else [])}
+        return (own | LOGIN_DOMAINS) - {""}
+
+    def _phish_trust(self, host):
+        lst = self.store.settings.setdefault("phish_trust", [])
+        if host not in lst:
+            lst.append(host); self.store.save_soon()
+
+    # --- „Ukryj ten element” (wskazany prawym przyciskiem) – reguła trafia do „Moich filtrów” ---
+    def pick_element(self, view, x, y, up=0):
+        z = view.zoomFactor() or 1.0
+
+        def got(res):
+            try:
+                d = json.loads(res) if res else None
+            except ValueError:
+                d = None
+            if not d or not d.get("sel"):
+                self.notice.info("Nie udało się wskazać elementu.", 3000, "target"); return
+            sel = d["sel"]
+            self.notice.ask(f"Ukryć zaznaczony element? ({d['w']}×{d['h']} px, pasujących: {d['n']})",
+                            [("Ukryj na zawsze", lambda: self.hide_element(view, sel), True),
+                             ("Większy obszar", lambda: self.pick_element(view, None, None, 1), False),
+                             ("Anuluj", lambda: _safe_js(view, PICK_CANCEL_JS), False)], icon="target")
+        args = "null,null" if x is None else f"{x / z:.1f},{y / z:.1f}"
+        _safe_js(view, PICK_JS % (args, up), got)
+
+    def hide_element(self, view, sel):
+        dom = base_domain(view.url().host())
+        rule = f"{dom}##{sel}"
+        _safe_js(view, PICK_HIDE_JS % json.dumps(sel))
+        if SHIELD:
+            cur = SHIELD[0].user_filters().rstrip("\n")
+            if rule not in cur.splitlines():
+                SHIELD[0].set_user_filters((cur + "\n" if cur else "") + rule + "\n")
+        self.notice.info(f"Ukryto. Reguła zapisana w „Moich filtrach”: {rule}", 5000, "target")
+
+    def restore_hidden(self, dom):
+        if not SHIELD:
+            return
+        lines = SHIELD[0].user_filters().splitlines()
+        keep = [ln for ln in lines if not ln.startswith(dom + "##")]
+        SHIELD[0].set_user_filters("\n".join(keep) + ("\n" if keep else ""))
+        self.notice.info(f"Przywrócono ukryte elementy na {dom} (odśwież stronę za chwilę).", 4000, "target")
+
+    # --- podgląd linku (Shift+klik) ---
+    def peek(self, url, container=""):
+        if getattr(self, "_peek", None) is None:
+            self._peek = PeekOverlay(self)
+        self._peek.open(url, container)
+
+    # --- AI znające stronę (podsumowanie, pytania, porównanie kart, wyjaśnienie zaznaczenia) ---
+    def ai_ask(self, mode, selection=""):
+        if not self.store.feature("assistant"):
+            self.notice.info("Asystent AI jest wyłączony (Ustawienia → Funkcje).", 4000, "assistant"); return
+        if mode == "compare":
+            views = [t.main for t in self.all_tabs() if t.main is not None and not t.on_home() and not t.asleep
+                     and not t.pending and t.main.url().scheme().startswith("http")][:6]
+            if len(views) < 2:
+                self.notice.info("Do porównania otwórz co najmniej dwie karty ze stronami.", 4000, "assistant"); return
+            got = {}
+
+            def one(i, res):
+                got[i] = res
+                if len(got) < len(views):
+                    return
+                parts = []
+                for k in range(len(views)):
+                    try:
+                        d = json.loads(got[k]) if got[k] else None
+                    except ValueError:
+                        d = None
+                    if d:
+                        parts.append(f"### {k + 1}. {d['title']}\n{d['url']}\n\n{d['text']}")
+                self._ai_send(AI_PROMPTS["compare"].format(pages="\n\n".join(parts)), True)
+            for i, v in enumerate(views):
+                _safe_js(v, PAGE_TEXT_JS % 4000, lambda r, i=i: one(i, r))
+            return
+        web = self.web()
+        if web is None or not web.url().scheme() in ("http", "https", "file"):
+            self.notice.info("Najpierw otwórz stronę w karcie.", 3000, "assistant"); return
+        if mode == "explain":
+            self._ai_send(AI_PROMPTS["explain"].format(title=web.title(), url=web.url().toString(), text=selection[:6000]), True)
+            return
+
+        def got(res):
+            try:
+                d = json.loads(res) if res else None
+            except ValueError:
+                d = None
+            if d:
+                self._ai_send(AI_PROMPTS[mode].format(**d), mode != "ask")
+        _safe_js(web, PAGE_TEXT_JS % 14000, got)
+
+    def _ai_send(self, text, submit):
+        """Wkleja tekst w pole czatu otwartej usługi AI (prawdziwe wklejenie – działa w ChatGPT, Claude, Gemini,
+        DeepSeek) i opcjonalnie wysyła Enterem. Bez kluczy API: używa Twojej sesji w panelu."""
+        if not self.assistant.isVisible():
+            self.toggle_assistant()
+        self.assistant.ensure()
+        v = self.assistant.current()
+        if v is None:
+            return
+        cb = QGuiApplication.clipboard(); old = cb.text()
+
+        def fail():
+            cb.setText(text)
+            self.notice.info("Nie znalazłem pola czatu – zaloguj się w panelu AI. Treść strony jest w schowku (Ctrl+V).",
+                             8000, "assistant")
+
+        def paste(ok):
+            if not ok:
+                fail(); return
+            cb.setText(text); v.setFocus(); v.page().triggerAction(QWebEnginePage.WebAction.Paste)
+            if submit:
+                QTimer.singleShot(700, lambda: self._ai_enter(v))
+            QTimer.singleShot(2000, lambda: cb.text() == text and cb.setText(old))   # przywróć schowek
+
+        def go(tries=0):
+            try:
+                if not getattr(v, "_ready", True) and tries < 40:   # czat jeszcze się ładuje
+                    QTimer.singleShot(500, lambda: go(tries + 1)); return
+                v.page().runJavaScript(CHAT_INPUT_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld,
+                                       lambda ok: QTimer.singleShot(300 if tries else 0, lambda: paste(ok)) if ok or tries >= 6
+                                       else QTimer.singleShot(800, lambda: go(tries + 1)))
+            except RuntimeError:
+                pass
+        go()
+
+    @staticmethod
+    def _ai_enter(v):
+        from PyQt6.QtGui import QKeyEvent
+        try:
+            tgt = v.focusProxy() or v
+            for t_ in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+                QApplication.postEvent(tgt, QKeyEvent(t_, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier, "\r"))
+        except RuntimeError:
+            pass
+
     # --- menu prawego przycisku na stronie ---
     def page_context_menu(self, view, d, hover_hl, pos):
         try:
@@ -12110,6 +13007,8 @@ class Browser(QMainWindow):
             self.act(m, "search", f"Szukaj „{short}” w {CURRENT[0]}",
                      lambda: self.open_url_new_tab(ENGINES[CURRENT[0]] + quote(sel), view.container))
             self.act(m, "swap", f"Przetłumacz „{short}”", lambda: TranslatePopup(self, sel, QCursor.pos()))
+            if self.store.feature("assistant"):
+                self.act(m, "assistant", "Wyjaśnij z AI", lambda: self.ai_ask("explain", sel))
             if not d["edit"]:
                 hm = m.addMenu(glyph("edit"), "Zakreśl")
                 for name, col in HL_COLORS:
@@ -12128,6 +13027,11 @@ class Browser(QMainWindow):
             self.act(m, "swap", "Pokaż oryginał" if tr_on else f"Przetłumacz stronę na: {LANGS[translate_target(self.store)]}",
                      self.translate_page, "Ctrl+Shift+L")
             self.act(m, "book", "Tryb czytania", self.toggle_reader, "F9")
+            if self.store.feature("assistant"):
+                am = m.addMenu(glyph("assistant"), "AI")
+                self.act(am, "assistant", "Podsumuj stronę", lambda: self.ai_ask("summary"))
+                self.act(am, "assistant", "Zapytaj o tę stronę", lambda: self.ai_ask("ask"))
+                self.act(am, "tabs", "Porównaj otwarte karty", lambda: self.ai_ask("compare"))
             self.act(m, "book", "Dodaj do „Do przeczytania”", self.read_later_add, "Ctrl+Shift+O")
             self.act(m, "qr", "Kod QR strony", lambda: show_qr(self, clean_url(view.url().toString())))
             self.act(m, "copy", "Kopiuj czysty link strony", lambda: QGuiApplication.clipboard().setText(clean_url(view.url().toString())))
@@ -12136,6 +13040,11 @@ class Browser(QMainWindow):
             self.speed_menu(m, view)
             m.addSeparator()
             self.act(m, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U")
+        if d.get("pt") and not d["edit"]:
+            x_, y_ = d["pt"]
+            self.act(m, "target", "Ukryj ten element…", lambda: self.pick_element(view, x_, y_))
+        if link:
+            self.act(m, "eye", "Podgląd linku (Shift+klik)", lambda: self.peek(link, view.container))
         self.act(m, "tools", "Zbadaj element", trig(A.InspectElement))
         m.popup(pos)
 
@@ -12221,6 +13130,11 @@ class Browser(QMainWindow):
                 ("exit", "Zakończ Lunę", "", self.quit_all)]
         if self.store.feature("assistant"):
             cmds.append(("assistant", "Asystent AI", "Ctrl+J", self.toggle_assistant))
+            cmds += [("assistant", "AI: podsumuj stronę", "", lambda: self.ai_ask("summary")),
+                     ("assistant", "AI: zapytaj o tę stronę", "", lambda: self.ai_ask("ask")),
+                     ("assistant", "AI: porównaj otwarte karty", "", lambda: self.ai_ask("compare"))]
+        if self.store.feature("webapps"):
+            cmds.append(("chat", "Panel aplikacji (WhatsApp, Messenger…)", "Ctrl+Shift+K", self.toggle_webapps))
         if web is not None:
             cmds += [("book", "Tryb czytania", "F9", self.toggle_reader),
                      ("swap", "Przetłumacz stronę na polski / pokaż oryginał", "Ctrl+Shift+L", self.translate_page),
@@ -12243,6 +13157,7 @@ class Browser(QMainWindow):
                      ("tools", "Narzędzia deweloperskie", "F12", self.devtools),
                      ("app", "Źródło strony", "Ctrl+U", self.view_source)]
         cmds.append(("window", "Pełny ekran", "F11", self.toggle_fullscreen))
+        cmds.append(("eye", "Tryb kompaktowy – przełącz", "Ctrl+Shift+F", self.toggle_compact))
         for pid, title, _ in SETTINGS_PAGES:
             cmds.append(("gear", f"Ustawienia: {title}", "", lambda p=pid: self.open_settings(p)))
         return cmds
@@ -12845,6 +13760,10 @@ class Browser(QMainWindow):
             if len(rows) > 12:
                 rest = sum(n for _, n in rows[12:])
                 m.addAction(f"…i jeszcze {len(rows) - 12} domen ({rest} zapytań)").setEnabled(False)
+        hidden = [ln for ln in sh.user_filters().splitlines() if ln.startswith(dom + "##")]
+        if hidden:
+            m.addSeparator()
+            m.addAction(f"Przywróć elementy ukryte na {dom} ({len(hidden)})", lambda: self.restore_hidden(dom))
         exc = sh.site_exceptions(url)
         if exc:
             m.addSeparator()
@@ -12924,11 +13843,44 @@ class Browser(QMainWindow):
             for x in logins:
                 m.addAction(glyph("key"), f"Wypełnij: {x['user'] or '(bez loginu)'}",
                             lambda _=False, x=x: self.fill(view, x["user"], x["pw"]))
+                c = totp_code(x["totp"]) if x.get("totp") else None
+                if c:
+                    m.addAction(glyph("timer"), f"Kod 2FA: {c[0][:3]} {c[0][3:]}  (jeszcze {c[1]} s) – wpisz",
+                                lambda _=False, x=x: self.fill_totp(view, x))
         if view is not None:
             m.addSeparator()
             m.addAction("Wygeneruj silne hasło i wpisz", lambda: self.fill_generated(view))
             m.addAction("Wstaw alias e-mail", lambda: self.fill_alias(view))
         m.addSeparator(); m.addAction("Hasła i aliasy…", lambda: self.open_settings("passwords"))
+
+    def fill_totp(self, view, x):
+        """Wpisuje bieżący kod 2FA w pole kodu na stronie (i kopiuje go do schowka)."""
+        c = totp_code(x.get("totp", ""))
+        if not c:
+            return
+        copy_secret(c[0])
+        _safe_js(view, OTP_FILL_JS % (json.dumps(c[0]), "true"),
+                 lambda n: self.notice.info("Wpisano kod 2FA." if n else "Kod 2FA jest w schowku (Ctrl+V).", 3000, "key"))
+
+    def offer_totp(self, view):
+        """Strona prosi o kod 2FA, a w sejfie jest klucz dla tej witryny → propozycja wpisania kodu."""
+        v = self.vault()
+        if v is None:
+            return
+        o = origin_of(view.url().toString())
+        site = base_domain(QUrl(o).host())
+        cands = [x for x in v.logins() if x.get("totp") and (x["origin"] == o or base_domain(QUrl(x["origin"]).host()) == site)]
+        if not cands:
+            return
+
+        def got(n):
+            if not n or view is not self.web() or (self.notice.isVisible() and self.notice.btns.count()):
+                return
+            x = cands[0]
+            self.notice.ask(f"Strona prosi o kod 2FA. Wpisać kod dla {x['user'] or QUrl(x['origin']).host()}?",
+                            [("Wpisz kod", lambda: self.fill_totp(view, x), True), ("Nie", None, False)], icon="key")
+        for ms in (500, 2500):
+            QTimer.singleShot(ms, lambda: _safe_js(view, OTP_FILL_JS % ('""', "false"), got))
 
     def fill_generated(self, view):
         pw = gen_password(int(self.store.settings.get("pw_len", 20)))
@@ -13049,6 +14001,10 @@ class Browser(QMainWindow):
             self.on_view_url(view, view.url(), reinject=True)
             if addresses():
                 self.offer_address(view)
+            if view.url().scheme() in ("http", "https"):
+                self.check_phishing(view)
+                if self.vault() is not None:
+                    self.offer_totp(view)
         if ok and view is not None:
             self.autofill(view)
             url = view.url().toString()
