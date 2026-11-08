@@ -21,7 +21,7 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, quote_plus, urlencode
 from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRect, QRectF, QEvent, QTimer, QLocale, QDateTime,
                           QFileInfo,
                           QEasingCurve, QElapsedTimer,
@@ -683,6 +683,7 @@ QLabel#menusec { color:#6f6f6f; font-size:11px; font-weight:600; letter-spacing:
 QFrame#menusearchrow { background:#111111; border:1px solid #2a2a2a; border-radius:8px; margin:2px 2px 4px 2px; }
 QFrame#menusearchrow:hover { border:1px solid #474747; background:#151515; }
 QSizeGrip { background:transparent; width:16px; height:16px; }
+QToolButton#splitbtn[on="true"] { background:#2e2e2e; border-radius:6px; }
 QListWidget#nav { background:#0d0d0d; border-right:1px solid #1e1e1e; padding:10px 8px; }
 QListWidget#nav::item { padding:10px 12px; border-radius:10px; color:#9a9a9a; margin:1px 0; }
 QListWidget#nav::item:selected { background:#ececec; color:#111111; font-weight:600; }
@@ -777,8 +778,58 @@ QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
 """
 
 
+# Słowa kluczowe aplikacji w pasku adresu: „yt kot” → wyszukiwarka YouTube, samo „yt” → YouTube.
+# (nazwa, strona główna, adres wyszukiwania z {q}; „@nazwa” – profil / kanał, „#tag” – tag, gdzie aplikacja to ma)
+APPS = {
+    "youtube": ("YouTube", "https://www.youtube.com/", "https://www.youtube.com/results?search_query={q}",
+                "https://www.youtube.com/@{u}", "https://www.youtube.com/hashtag/{t}"),
+    "ytmusic": ("YouTube Music", "https://music.youtube.com/", "https://music.youtube.com/search?q={q}", "", ""),
+    "spotify": ("Spotify", "https://open.spotify.com/", "https://open.spotify.com/search/{p}", "", ""),
+    "tiktok": ("TikTok", "https://www.tiktok.com/", "https://www.tiktok.com/search?q={q}",
+               "https://www.tiktok.com/@{u}", "https://www.tiktok.com/tag/{t}"),
+    "facebook": ("Facebook", "https://www.facebook.com/", "https://www.facebook.com/search/top?q={q}",
+                 "https://www.facebook.com/{u}", "https://www.facebook.com/hashtag/{t}"),
+    "instagram": ("Instagram", "https://www.instagram.com/", "https://www.instagram.com/explore/search/keyword/?q={q}",
+                  "https://www.instagram.com/{u}/", "https://www.instagram.com/explore/tags/{t}/"),
+    "x": ("X", "https://x.com/", "https://x.com/search?q={q}", "https://x.com/{u}", "https://x.com/hashtag/{t}"),
+    "reddit": ("Reddit", "https://www.reddit.com/", "https://www.reddit.com/search/?q={q}", "https://www.reddit.com/user/{u}/", ""),
+    "twitch": ("Twitch", "https://www.twitch.tv/", "https://www.twitch.tv/search?term={q}", "https://www.twitch.tv/{u}", ""),
+    "soundcloud": ("SoundCloud", "https://soundcloud.com/", "https://soundcloud.com/search?q={q}", "https://soundcloud.com/{u}", ""),
+    "pinterest": ("Pinterest", "https://www.pinterest.com/", "https://www.pinterest.com/search/pins/?q={q}", "", ""),
+    "netflix": ("Netflix", "https://www.netflix.com/", "https://www.netflix.com/search?q={q}", "", ""),
+    "linkedin": ("LinkedIn", "https://www.linkedin.com/", "https://www.linkedin.com/search/results/all/?keywords={q}", "", ""),
+}
+APP_KEYWORDS = {"yt": "youtube", "youtube": "youtube", "ytm": "ytmusic", "sp": "spotify", "spotify": "spotify",
+                "tt": "tiktok", "tiktok": "tiktok", "fb": "facebook", "facebook": "facebook", "ig": "instagram",
+                "insta": "instagram", "instagram": "instagram", "tw": "x", "twitter": "x", "rd": "reddit", "reddit": "reddit",
+                "twitch": "twitch", "soundcloud": "soundcloud",
+                "pinterest": "pinterest", "nf": "netflix", "netflix": "netflix", "linkedin": "linkedin"}
+
+
+def app_match(text):
+    """(nazwa aplikacji, adres, zapytanie) dla „yt kot” / „ig #morze” / „tt @ktoś” / samego „yt”; None – zwykły tekst."""
+    w = (text or "").strip().split(None, 1)
+    if not w or "://" in w[0]:
+        return None
+    key = APP_KEYWORDS.get(w[0].lower())
+    if key is None:
+        return None
+    name, home, search, user, tag = APPS[key]
+    if len(w) == 1:
+        return name, home, ""
+    q = w[1].strip()
+    if q.startswith("@") and user and " " not in q and len(q) > 1:
+        return name, user.format(u=quote(q[1:], safe="._-")), q
+    if q.startswith("#") and tag and " " not in q and len(q) > 1:
+        return name, tag.format(t=quote(q[1:], safe="._-")), q
+    return name, search.format(q=quote_plus(q), p=quote(q, safe="")), q
+
+
 def normalize(text: str) -> str:
     text = text.strip()
+    app = app_match(text)
+    if app is not None:
+        return app[1]
     if "://" in text:
         return text
     if " " in text or "." not in text:
@@ -904,6 +955,11 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
     elif kind == "swap":
         p.drawPolyline(P((11, 16), (33, 16))); p.drawPolyline(P((28, 11), (33, 16), (28, 21)))
         p.drawPolyline(P((33, 28), (11, 28))); p.drawPolyline(P((16, 23), (11, 28), (16, 33)))
+    elif kind == "scrollsync":   # dwie strzałki góra–dół obok siebie (przewijanie razem)
+        for x in (15, 29):
+            p.drawLine(x, 11, x, 33); p.drawPolyline(P((x - 5, 16), (x, 11), (x + 5, 16))); p.drawPolyline(P((x - 5, 28), (x, 33), (x + 5, 28)))
+    elif kind == "layouts":   # trzy kolumny (zapisany układ podziału)
+        p.drawRoundedRect(QRectF(8, 10, 28, 24), 4, 4); p.drawLine(17, 10, 17, 34); p.drawLine(27, 10, 27, 34)
     elif kind == "layers":
         p.drawPolygon(P((22, 9), (36, 16), (22, 23), (8, 16))); p.drawPolyline(P((8, 22), (22, 29), (36, 22)))
     elif kind == "moon":
@@ -1492,6 +1548,15 @@ class LunaPage(QWebEnginePage):
             if isinstance(d, dict):
                 self.sb_skipped.emit(d)
             return
+        if body.startswith("scroll:"):   # wspólne przewijanie stron podziału ekranu
+            try:
+                r = float(body[7:])
+            except ValueError:
+                return
+            v = QWebEngineView.forPage(self); o = getattr(v, "owner", None)
+            if v is not None and hasattr(o, "sync_scroll_from"):
+                o.sync_scroll_from(v, r)
+            return
         if body.startswith("ddg:"):
             if self.url().host().endswith("duckduckgo.com") and VAULT:
                 VAULT[0].set_ddg_token(body[4:].strip())
@@ -1502,6 +1567,22 @@ class LunaPage(QWebEnginePage):
             return
         if isinstance(d, dict):
             d["origin"] = origin_of(self.url().toString()); self.pw_captured.emit(d)
+
+
+# Wspólne przewijanie w podziale ekranu: strona zgłasza położenie (0…1 wysokości), Luna ustawia je w pozostałych.
+SCROLL_SYNC_JS = r"""(function(){
+const K = %K%;
+if (window.__lunaSS) { window.__lunaSS.on = true; return; }
+const st = window.__lunaSS = {on: true, lock: 0, raf: 0};
+const el = () => document.scrollingElement || document.documentElement;
+addEventListener('scroll', () => {
+  if (!st.on || Date.now() - st.lock < 150 || st.raf) return;
+  st.raf = requestAnimationFrame(() => { st.raf = 0; const e = el(), m = e.scrollHeight - innerHeight;
+    console.log(K + 'scroll:' + (m > 0 ? e.scrollTop / m : 0).toFixed(5)); });
+}, {passive: true});
+st.set = r => { st.lock = Date.now(); const e = el(); e.scrollTop = Math.round(r * (e.scrollHeight - innerHeight)); };
+})();"""
+SCROLL_SYNC_OFF_JS = "window.__lunaSS && (window.__lunaSS.on = false);"
 
 
 PAGE_FULLSCREEN = {}   # strona -> FullScreenWindow
@@ -6963,6 +7044,16 @@ def page_keys(dlg):
                  ("Środkowy przycisk na karcie", "Zamyka kartę"), ("Środkowy przycisk na pustym pasku", "Nowa karta")):
         row = QHBoxLayout(); a = lbl(k, "h3"); b = lbl(d, "muted2")
         row.addWidget(a); row.addStretch(); row.addWidget(b); l.addLayout(row)
+    l.addSpacing(14); l.addWidget(lbl("Wyszukiwanie w aplikacjach (pasek adresu)", "h2"))
+    l.addWidget(lbl("Wpisz skrót i spację, potem szukany tekst – np. „yt koncert”, „sp lofi”, „ig #morze”, „tt @nazwa”. "
+                    "Sam skrót otwiera aplikację.", "muted", wrap=True))
+    keys = {}
+    for k, app in APP_KEYWORDS.items():
+        if k != app:
+            keys.setdefault(app, []).append(k)
+    for app, ks in keys.items():
+        row = QHBoxLayout(); a = lbl("  /  ".join(ks), "h3"); b = lbl(APPS[app][0], "muted2")
+        row.addWidget(a); row.addStretch(); row.addWidget(b); l.addLayout(row)
     l.addStretch(1)
     return scroll_page(w)
 
@@ -7759,6 +7850,18 @@ def luna_confirm(parent, title, text, yes="Tak", icon="help"):
     return d.exec() == QDialog.DialogCode.Accepted
 
 
+def luna_prompt(parent, title, label, text="", icon="edit"):
+    """Pole tekstowe w stylu Luny (zamiast systemowego okienka); zwraca tekst albo None."""
+    d = LunaDialog(parent, title, icon, (480, 230))
+    d.sub.setText(label); d.sub.setVisible(True)
+    e = QLineEdit(text); e.setObjectName("glassin"); e.selectAll(); d.body.addWidget(e); d.body.addStretch(1)
+    ok, = d.footer(right=[("Anuluj", d.reject), ("Zapisz", d.accept, True)])[1:]
+    e.returnPressed.connect(d.accept); ok.setEnabled(bool(text.strip()))
+    e.textChanged.connect(lambda s: ok.setEnabled(bool(s.strip())))
+    e.setFocus()
+    return e.text().strip() if d.exec() == QDialog.DialogCode.Accepted and e.text().strip() else None
+
+
 def human_size(n):
     if not n or n < 0:
         return ""
@@ -8024,6 +8127,11 @@ class SuggestController(QObject):
         if not t or not self.store.feature("suggest") or not self.store.feature("suggest_net"):
             return
         self.seq += 1; n = self.seq
+        app = app_match(t)
+        if app is not None:
+            if not app[2] or app[2][0] in "@#":
+                return
+            t = app[2]
         url = SUGGEST_URLS.get(CURRENT[0], SUGGEST_URLS["DuckDuckGo"]) + quote(t)
         self.reply = self.store.http(url, lambda j, e, s: self.got_net(n, j), timeout=6000)
 
@@ -8038,6 +8146,17 @@ class SuggestController(QObject):
             pass
 
     def entries(self, q):
+        app = app_match(q)
+        if app is not None:   # słowo kluczowe aplikacji: najpierw wyszukiwanie w niej, podpowiedzi też do niej
+            name, url, aq = app
+            out = [{"type": "url", "text": f"Szukaj w {name}: {aq}" if aq else f"Otwórz {name}", "hint": "Enter",
+                    "icon": "search" if aq else "external", "url": url}]
+            if aq and aq[0] not in "@#":
+                key = q.split(None, 1)[0]
+                for s in self.net[:7]:
+                    if s.lower() != aq.lower():
+                        out.append({"type": "url", "text": s, "hint": name, "icon": "search", "url": normalize(f"{key} {s}")})
+            return out
         ql = q.lower(); out = [{"type": "go", "text": q, "hint": "Enter", "icon": "search"}]; urls = set()
         cur = self.br.stack.currentWidget(); tabs = 0
         for i in range(self.br.stack.count()):
@@ -9716,13 +9835,84 @@ class SyncManager(QObject):
                       key=lambda x: -x[1])
 
 
+def parse_changes(raw):
+    """Wpisy z `git log --format=%h%x1f%cd%x1f%s%x1f%b%x1e` → [{hash, date, title, points}] (punkty z linii „- …”)."""
+    out = []
+    for rec in raw.split("\x1e"):
+        parts = rec.strip("\n").split("\x1f")
+        if len(parts) < 4 or not parts[2].strip():
+            continue
+        points, para = [], []
+        for ln in parts[3].splitlines():
+            s = ln.strip()
+            if not s or s.lower().startswith(("co-authored-by", "signed-off-by")):
+                continue
+            if ln.startswith("- "):
+                points.append(s[2:])
+            elif points and ln.startswith("  "):
+                points[-1] += " " + s
+            else:
+                para.append(s)
+        out.append({"hash": parts[0].strip(), "date": parts[1].strip(), "title": parts[2].strip(), "points": points,
+                    "note": " ".join(para)})
+    return out
+
+
+class WhatsNewDialog(LunaDialog):
+    """Co nowego w Lunie: lista zmian z opisów aktualizacji (najnowsze na górze)."""
+
+    def __init__(self, browser, changes, subtitle=""):
+        super().__init__(browser, "Co nowego w Lunie", "star", (640, 600), subtitle)
+        area = QScrollArea(); area.setWidgetResizable(True); area.setFrameShape(QFrame.Shape.NoFrame)
+        inner = QWidget(); inner.setObjectName("clear"); v = QVBoxLayout(inner); v.setContentsMargins(4, 4, 10, 4); v.setSpacing(6)
+        for i, c in enumerate(changes):
+            if i:
+                v.addSpacing(10)
+            card = QFrame(); card.setObjectName("optcard"); cv = QVBoxLayout(card); cv.setContentsMargins(16, 14, 16, 14); cv.setSpacing(6)
+            cv.addWidget(lbl(c["date"], "seclabel")); cv.addWidget(lbl(c["title"], "h3", wrap=True))
+            for pt in c["points"]:
+                row = QHBoxLayout(); row.setSpacing(8); dot = lbl("•", "muted2"); dot.setAlignment(Qt.AlignmentFlag.AlignTop)
+                row.addWidget(dot); row.addWidget(lbl(pt, "muted2", wrap=True), 1); cv.addLayout(row)
+            if c.get("note") and not c["points"]:
+                cv.addWidget(lbl(c["note"], "muted2", wrap=True))
+            v.addWidget(card)
+        if not changes:
+            v.addWidget(EmptyState("star", "Brak opisu zmian", "Ta wersja Luny nie została uruchomiona z repozytorium git."))
+        v.addStretch(1); area.setWidget(inner); self.body.addWidget(area, 1)
+        self.footer(right=[("Świetnie", self.accept, True)])
+
+
 class Updater(QObject):
     """Aktualizacje Luny uruchamianej z repozytorium git (python luna.py): w tle `git fetch` (bez okienek logowania),
     a gdy na GitHubie są nowe zmiany – pasek „Dostępna nowa wersja” i aktualizacja jednym kliknięciem (git pull
     --ff-only + ponowne uruchomienie). Logowanie do prywatnego repozytorium: jednorazowo przez Git Credential Manager
     (przycisk w Ustawienia → Aktualizacje), dane logowania przechowuje Windows – Luna ich nie widzi."""
     result = pyqtSignal(dict)
+    news = pyqtSignal(list, str)   # zmiany od ostatnio oglądanej wersji, bieżący commit
     EVERY_H = 12
+
+    def changes_since(self, seen, limit=5):
+        """W wątku: opisy zmian od commitu `seen` (albo `limit` ostatnich) → sygnał news(lista, HEAD)."""
+        if not self.available():
+            return
+        import threading
+
+        def work():
+            try:
+                rc, head, _ = self._run(["rev-parse", "HEAD"], timeout=10)
+                if rc != 0:
+                    return
+                fmt = "--format=%h%x1f%cd%x1f%s%x1f%b%x1e"
+                rng = [f"{seen}..HEAD", "-n", "30"] if seen else ["-n", str(limit)]
+                if seen == head:
+                    self.news.emit([], head); return
+                rc, out, _ = self._run(["log", fmt, "--date=format:%d.%m.%Y"] + rng, timeout=15)
+                if rc != 0 and seen:   # nieznany commit (np. po przepisaniu historii) – kilka ostatnich
+                    rc, out, _ = self._run(["log", fmt, "--date=format:%d.%m.%Y", "-n", str(limit)], timeout=15)
+                self.news.emit(parse_changes(out) if rc == 0 else [], head)
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
 
     def __init__(self):
         super().__init__(QApplication.instance())
@@ -10529,6 +10719,7 @@ class SplitSide(QFrame):
         h.addWidget(self.ic); h.addSpacing(6); h.addWidget(self.title, 1)
         self.b_add = self._b(h, "plus", "Dodaj trzecią stronę", lambda: tab.add_side())
         self.b_swap = self._b(h, "swap", "Zamień strony miejscami", lambda: tab.swap_split(self))
+        self.b_sync = self._b(h, "scrollsync", "Przewijaj strony razem", lambda: tab.set_scroll_sync(not tab.scroll_sync))
         self.b_turn = self._b(h, "splitv", "Układ pionowy / poziomy", lambda: tab.turn_split())
         self.b_out = self._b(h, "external", "Odłącz do osobnej karty", lambda: tab.detach_side(self))
         self._b(h, "close", "Zamknij tę stronę", lambda: tab.close_side(self))
@@ -10586,6 +10777,10 @@ class SplitSide(QFrame):
         self.b_swap.setToolTip("Zamień strony miejscami" if len(sides) < 3 else
                                ("Zamień z prawą stroną" if j > i else "Zamień z lewą stroną"))
         self.b_add.setVisible(len(sides) < Tab.MAX_SIDES and self is sides[-1] if sides else False)
+        on = bool(self.tab.scroll_sync)
+        self.b_sync.setIcon(glyph("scrollsync", "#ffffff" if on else "#9a9a9a"))
+        self.b_sync.setProperty("on", on); self.b_sync.style().unpolish(self.b_sync); self.b_sync.style().polish(self.b_sync)
+        self.b_sync.setToolTip("Wspólne przewijanie: włączone (kliknij, aby wyłączyć)" if on else "Przewijaj strony razem")
         vert = self.tab.split is not None and self.tab.split.orientation() == Qt.Orientation.Vertical
         self.b_turn.setIcon(glyph("split" if vert else "splitv", "#9a9a9a")); self.b_out.setVisible(w is not None)
 
@@ -11054,6 +11249,7 @@ class Tab(QStackedWidget):
         self.title_text, self.icon, self.split, self.sides, self._act = "", None, None, None, 0
         self.asleep, self.pending, self.pending_split, self.last_active = False, "", None, time.time()
         self.pinned = False
+        self.scroll_sync = False   # podział ekranu: strony przewijają się razem
         self.home = HomePage(store)
         self.addWidget(self.home)
         self.home.attach_suggest(browser)
@@ -11177,6 +11373,24 @@ class Tab(QStackedWidget):
 
     MAX_SIDES = 3   # podział ekranu: 2 albo 3 strony
 
+    def set_scroll_sync(self, on):
+        self.scroll_sync = bool(on) and bool(self.sides)
+        for s in self.sides or []:
+            if s.view is not None:
+                self._scroll_js(s.view)
+            s.refresh()
+
+    def _scroll_js(self, v):
+        _safe_js(v, SCROLL_SYNC_JS.replace("%K%", json.dumps(PW_KEY)) if self.scroll_sync else SCROLL_SYNC_OFF_JS)
+
+    def sync_scroll_from(self, v, r):
+        if not self.scroll_sync or not self.sides:
+            return
+        r = max(0.0, min(1.0, r))
+        for s in self.sides:
+            if s.view is not None and s.view is not v:
+                _safe_js(s.view, f"window.__lunaSS && window.__lunaSS.set({r:.5f});")
+
     def add_side(self, url=""):
         """Kolejna (trzecia) strona podziału: pusta (wybór karty / adres) albo od razu z adresem."""
         if self.split is None or not self.sides or len(self.sides) >= self.MAX_SIDES:
@@ -11279,6 +11493,9 @@ class Tab(QStackedWidget):
 
     def _dissolve(self, keep_side):
         sp, keep = self.split, keep_side.take_view()
+        if self.scroll_sync and keep is not None:
+            _safe_js(keep, SCROLL_SYNC_OFF_JS)
+        self.scroll_sync = False
         self.split, self.sides, self._act = None, None, 0
         self.removeWidget(sp); sp.deleteLater(); self._main = keep
         b = self.browser
@@ -12100,9 +12317,31 @@ class Browser(QMainWindow):
             SYNC.append(SyncManager(self.store)); QTimer.singleShot(5000, SYNC[0].start)
         up = updater()
         up.result.connect(self.on_update_result)
+        if self.primary and len(WINDOWS) <= 1 and up.available():   # po aktualizacji: „Co nowego” (raz na wersję)
+            up.news.connect(self._startup_news)
+            QTimer.singleShot(3000, lambda: up.changes_since(self.store.settings.get("seen_head", "")))
         if len(WINDOWS) <= 1 and self.store.feature("updates") and up.available() and not up.state:
             QTimer.singleShot(20000, lambda: self.store.feature("updates") and up.check())   # po starcie, w tle
         self.store.ensure_fonts()
+
+    def _startup_news(self, changes, head):
+        up = updater(); safe_disconnect(up.news, self._startup_news)
+        first = not self.store.settings.get("seen_head")
+        self.store.settings["seen_head"] = head; self.store.save_settings()
+        if changes and not first:   # pierwsze uruchomienie – tylko zapamiętujemy wersję
+            n = len(changes)
+            self.notice.ask(f"Luna została zaktualizowana – {n} {'nowa zmiana' if n == 1 else ('nowe zmiany' if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else 'nowych zmian')}.",
+                            [("Co nowego?", lambda: WhatsNewDialog(self, changes, up.version()).exec(), True), ("Później", None, False)],
+                            icon="star")
+
+    def show_whats_new(self):
+        up = updater()
+        if not up.available():
+            WhatsNewDialog(self, []).exec(); return
+
+        def got(changes, head):
+            safe_disconnect(up.news, got); WhatsNewDialog(self, changes, f"Ostatnie zmiany  ·  wersja {up.version()}").exec()
+        up.news.connect(got); up.changes_since("", 6)
 
     # --- położenie okna między uruchomieniami (dopasowane do aktualnych monitorów) ---
     def _restore_geometry(self, scr):
@@ -12536,6 +12775,8 @@ class Browser(QMainWindow):
         on = bool(self.cur() and self.cur().sides)
         self.act(m, "split", "Zakończ podział ekranu" if on else "Podziel ekran",
                  self.split_current, "Ctrl+\\", on or web is not None)
+        lm = m.addMenu(glyph("layouts"), "Układy podziału"); lm.aboutToShow.connect(lambda: self.layouts_menu(lm))
+        self.layouts_menu(lm)
         if SYNC and SYNC[0].enabled() and SYNC[0].remote:
             om = m.addMenu(glyph("window"), "Karty z innych komputerów")
             for name, ts, tabs in SYNC[0].other_tabs():
@@ -12647,6 +12888,7 @@ class Browser(QMainWindow):
         m.addSeparator()
         # 5. systemowe
         hp = m.addMenu(glyph("help"), "Pomoc")
+        self.act(hp, "star", "Co nowego w Lunie", self.show_whats_new)
         self.act(hp, "search", "Wszystkie polecenia…", self.palette, "Ctrl+K")
         self.act(hp, "app", "Skróty klawiszowe", lambda: self.open_settings("keys"))
         self.act(hp, "help", "O Lunie", self.about)
@@ -13679,6 +13921,8 @@ class Browser(QMainWindow):
                 ("reload", "Przywróć zamkniętą kartę", "Ctrl+Shift+T", self.restore_closed),
                 ("tabs", "Karty i grupy", "Ctrl+Shift+A", self.toggle_tab_popup),
                 ("history", "Historia", "Ctrl+H", self.show_history),
+                ("layouts", "Zapisz układ podziału ekranu", "", self.save_layout),
+                ("star", "Co nowego w Lunie", "", lambda: self.show_whats_new()),
                 ("download", "Pobrane pliki", "Ctrl+Shift+Y", self.show_downloads),
                 ("book", "Do przeczytania – lista", "", self.show_read_later),
                 ("edit", "Zakreślenia i notatki", "", self.show_highlights),
@@ -13744,6 +13988,9 @@ class Browser(QMainWindow):
                     self.activate(t)
             add("tab", 1, tab_icon(t.icon, self.container_color(t.container), t.asleep or bool(t.pending)),
                 title, "karta  ·  " + host_of(url) if url else "karta", go_tab, url)
+        for lay in self.layouts():
+            add("cmd", 0, glyph("layouts"), "Układ: " + lay.get("name", ""), "  +  ".join(host_of(u) for u in lay.get("urls", [])),
+                lambda lay=lay: self.open_layout(lay), "układ podziału ekranu")
         for it in self.store.items[:60]:
             add("tile", 2, mini_icon(it["name"], it["url"]), it["name"], "ekran główny  ·  " + host_of(it["url"]),
                 lambda u=it["url"]: self.open_url_new_tab(u), it["url"])
@@ -14235,6 +14482,9 @@ class Browser(QMainWindow):
             sm.addSeparator()
             sm.addAction(glyph("swap"), "Zamień strony miejscami", t.swap_split)
             sm.addAction(glyph("splitv"), "Układ pionowy / poziomy", t.turn_split)
+            sy = sm.addAction(glyph("scrollsync"), "Przewijaj strony razem"); sy.setCheckable(True); sy.setChecked(t.scroll_sync)
+            sy.toggled.connect(lambda on: t.set_scroll_sync(on))
+            sm.addAction(glyph("layouts"), "Zapisz ten układ…", lambda: self.save_layout(t))
             last = t.sides[-1]; nm = "trzecią" if len(t.sides) > 2 else "drugą"
             if last.view is not None:
                 sm.addAction(glyph("external"), f"Odłącz {nm} stronę do karty", lambda: t.detach_side(last))
@@ -14283,6 +14533,72 @@ class Browser(QMainWindow):
         t.adopt_tab(s, o)
         if o in self.all_tabs() and s in (t.sides or []) and s.view is None:   # nie udało się – bez pustej strony
             t.close_side(s)
+
+    # --- zapisane układy podziału („Praca: Gmail + Kalendarz + Notion”) – jedno kliknięcie otwiera wszystkie strony ---
+    def layouts(self):
+        lst = self.store.settings.get("layouts")
+        return lst if isinstance(lst, list) else []
+
+    def layout_of(self, t):
+        if t is None or not t.sides:
+            return None
+        urls = [s.view.url().toString() for s in t.sides if s.view is not None]
+        urls = [u for u in urls if u.startswith(("http://", "https://", "file:"))]
+        if len(urls) < 2:
+            return None
+        return {"urls": urls, "v": t.split.orientation() == Qt.Orientation.Vertical,
+                "sizes": t.split.sizes(), "sync": bool(t.scroll_sync)}
+
+    def save_layout(self, t=None):
+        t = t or self.cur(); lay = self.layout_of(t)
+        if lay is None:
+            self.notice.info("Najpierw podziel ekran na 2 albo 3 strony – wtedy można zapisać układ.", 5000, "layouts"); return
+        names = [host_of(u).split(".")[0].capitalize() for u in lay["urls"]]
+        name = luna_prompt(self, "Zapisz układ podziału", "Nazwa układu (pojawi się w menu i w palecie Ctrl+K):",
+                           " + ".join(names), "layouts")
+        if not name:
+            return
+        lst = [x for x in self.layouts() if x.get("name") != name] + [dict(lay, name=name)]
+        self.store.settings["layouts"] = lst; self.store.save_settings()
+        self.notice.info(f"Zapisano układ „{name}” – znajdziesz go w menu: Karty i okna → Układy podziału.", 5000, "layouts")
+
+    def open_layout(self, lay, tab=None):
+        """Otwiera zapisany układ: na ekranie głównym bieżącej karty albo w nowej karcie."""
+        urls = [u for u in lay.get("urls", []) if isinstance(u, str)][:Tab.MAX_SIDES]
+        if not urls:
+            return
+        t = tab or self.cur()
+        if t is None or not (t.main is None or t.on_home()) or t.sides or t.pending:
+            t = self.new_tab()
+        self.activate(t); t.go(urls[0])
+        if len(urls) > 1:
+            t.split_with(urls[1], bool(lay.get("v")))
+            for u in urls[2:]:
+                t.add_side(u)
+            sz = lay.get("sizes")
+            if t.split is not None and isinstance(sz, list) and len(sz) == len(t.sides) and all(isinstance(x, int) for x in sz):
+                QTimer.singleShot(0, lambda: t.split is not None and t.split.setSizes(sz))
+            if t.sides:
+                t.set_active_side(t.sides[0])
+            if lay.get("sync"):
+                t.set_scroll_sync(True)
+
+    def remove_layout(self, name):
+        self.store.settings["layouts"] = [x for x in self.layouts() if x.get("name") != name]; self.store.save_settings()
+
+    def layouts_menu(self, m):
+        m.clear(); lst = self.layouts()
+        for lay in lst:
+            hosts = ", ".join(host_of(u) for u in lay.get("urls", []))
+            a = self.act(m, "layouts", lay.get("name", "Układ"), lambda lay=lay: self.open_layout(lay)); a.setToolTip(hosts)
+        if not lst:
+            m.addAction("Brak zapisanych układów").setEnabled(False)
+        m.addSeparator()
+        self.act(m, "save", "Zapisz bieżący układ…", self.save_layout, enabled=self.layout_of(self.cur()) is not None)
+        if lst:
+            dm = m.addMenu(glyph("trash"), "Usuń układ")
+            for lay in lst:
+                dm.addAction(lay.get("name", "Układ"), lambda n=lay.get("name"): self.remove_layout(n))
 
     def split_candidates(self, tab):
         """Karty, które można dołożyć do podziału: z bieżącej przestrzeni, ze stroną i bez własnego podziału."""
@@ -14579,6 +14895,8 @@ class Browser(QMainWindow):
                 self.offer_translation(view)
         elif tab is self.cur() and tab.sides:   # inna strona podziału – jej kolor ma swój panel boczny
             self.update_page_bg()
+        if ok and view is not None and getattr(tab, "scroll_sync", False) and tab.sides:
+            tab._scroll_js(view)
         if ok and view is not None and view.url().scheme() in ("http", "https", "file"):
             apply_highlights(view)
             self.apply_site_zoom(view)
