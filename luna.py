@@ -23,6 +23,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote, urlencode
 from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRect, QRectF, QEvent, QTimer, QLocale, QDateTime,
+                          QFileInfo,
                           QEasingCurve, QElapsedTimer,
                           QPropertyAnimation, pyqtSignal)
 from PyQt6.QtGui import (QGuiApplication, QImage, QCursor, QBrush, QRadialGradient, QLinearGradient, QIcon, QPixmap, QPainter, QColor, QFont,
@@ -35,7 +36,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget,
                              QVBoxLayout, QLabel, QPushButton, QHBoxLayout, QDialog, QDialogButtonBox, QFrame,
                              QScrollArea, QPlainTextEdit, QGraphicsOpacityEffect, QButtonGroup, QToolTip, QComboBox,
                              QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy, QMessageBox, QStyledItemDelegate, QStyle,
-                             QGraphicsDropShadowEffect, QSplitter, QSplitterHandle, QTreeWidget, QTreeWidgetItem, QWidgetAction)
+                             QGraphicsDropShadowEffect, QSplitter, QSplitterHandle, QTreeWidget, QTreeWidgetItem, QWidgetAction,
+                             QSizeGrip, QFileIconProvider)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
@@ -671,6 +673,16 @@ QCheckBox#todo::indicator:unchecked { image:url("%CKOFF%"); }
 QCheckBox#todo::indicator:checked { image:url("%CKON%"); }
 QDialog#settings { background:#111111; border:1px solid #2c2c2c; }
 QWidget#setHead { background:#0d0d0d; border-bottom:1px solid #1e1e1e; }
+QFrame#dlgpanel { background:#0c0c0c; border:1px solid #1f1f1f; border-radius:12px; }
+QFrame#optcard { background:#161616; border:1px solid #242424; border-radius:12px; }
+QFrame#optcard:hover { border:1px solid #333333; }
+QLabel#tileicon { background:#1f1f1f; border-radius:10px; }
+QLabel#emptyicon { background:#161616; border:1px solid #262626; border-radius:28px; }
+QLabel#seclabel { color:#7d7d7d; font-size:11px; font-weight:600; letter-spacing:1px; }
+QLabel#menusec { color:#6f6f6f; font-size:11px; font-weight:600; letter-spacing:1px; padding:8px 12px 3px 12px; }
+QFrame#menusearchrow { background:#111111; border:1px solid #2a2a2a; border-radius:8px; margin:2px 2px 4px 2px; }
+QFrame#menusearchrow:hover { border:1px solid #474747; background:#151515; }
+QSizeGrip { background:transparent; width:16px; height:16px; }
 QListWidget#nav { background:#0d0d0d; border-right:1px solid #1e1e1e; padding:10px 8px; }
 QListWidget#nav::item { padding:10px 12px; border-radius:10px; color:#9a9a9a; margin:1px 0; }
 QListWidget#nav::item:selected { background:#ececec; color:#111111; font-weight:600; }
@@ -1120,6 +1132,8 @@ QTreeWidget#vtabs::branch:selected { background:#ececec; border-top-left-radius:
 QFrame#notice { background:#1b1b1b; border-bottom:1px solid #2a2a2a; }
 QPushButton#primary { background:#ececec; color:#111111; font-weight:600; }
 QPushButton#primary:hover { background:#ffffff; }
+QPushButton:disabled { color:#5c5c5c; }
+QPushButton#primary:disabled { background:#2a2a2a; color:#6a6a6a; }
 QSplitter#split { background:#0a0a0a; }
 QFrame#splitside { background:#0d0d0d; border:1px solid #1a1a1a; border-radius:9px; }
 QFrame#splitside[active="true"] { border:1px solid #4a4a4a; }
@@ -7528,6 +7542,236 @@ class DragBar(QWidget):
             h.startSystemMove()
 
 
+ROW_SUB = Qt.ItemDataRole.UserRole + 1      # druga (szara) linia wiersza
+ROW_SIDE = Qt.ItemDataRole.UserRole + 2     # krótki tekst po prawej (godzina, rozmiar, stan)
+ROW_HEAD = Qt.ItemDataRole.UserRole + 3     # nagłówek grupy (dzień, strona)
+ROW_PROG = Qt.ItemDataRole.UserRole + 4     # pasek postępu 0…1 (pobieranie)
+ROW_INDENT = Qt.ItemDataRole.UserRole + 5   # wcięcie w pikselach (wiersze podrzędne)
+
+
+def _font_step(f, n=1):
+    f = QFont(f)
+    if f.pixelSize() > 0:
+        f.setPixelSize(max(9, f.pixelSize() - n))
+    elif f.pointSizeF() > 0:
+        f.setPointSizeF(max(7.0, f.pointSizeF() - n * 0.75))
+    return f
+
+
+class RowDelegate(QStyledItemDelegate):
+    """Wspólny wygląd wierszy list w oknach Luny: ikona w zaokrąglonym kafelku, tytuł, szara druga linia,
+    tekst po prawej, opcjonalny pasek postępu; nagłówki grup małymi literami kapitalikami."""
+
+    def sizeHint(self, opt, idx):
+        if idx.data(ROW_HEAD):
+            return QSize(0, 34)
+        return QSize(0, 54 if idx.data(ROW_SUB) else 40)
+
+    def paint(self, p, opt, idx):
+        p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setPen(Qt.PenStyle.NoPen)
+        r = QRectF(opt.rect).adjusted(2, 1, -2, -1); title = idx.data(Qt.ItemDataRole.DisplayRole) or ""
+        if idx.data(ROW_HEAD):
+            f = _font_step(opt.font, 2); f.setBold(True); f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 108)
+            p.setFont(f); p.setPen(QColor("#7d7d7d"))
+            p.drawText(r.adjusted(12, 8, -12, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title.upper())
+            p.restore(); return
+        S = QStyle.StateFlag
+        sel, hov = bool(opt.state & S.State_Selected), bool(opt.state & S.State_MouseOver)
+        if sel or hov:
+            p.setBrush(QColor("#2a2a2a" if sel else "#1a1a1a")); p.drawRoundedRect(r, 9, 9)
+        x = r.left() + 10 + (idx.data(ROW_INDENT) or 0)
+        ic = idx.data(Qt.ItemDataRole.DecorationRole)
+        if isinstance(ic, QIcon) and not ic.isNull():
+            tile = QRectF(x, r.center().y() - 15, 30, 30)
+            p.setBrush(QColor("#333333" if sel else "#1e1e1e")); p.drawRoundedRect(tile, 8, 8)
+            ic.paint(p, tile.adjusted(7, 7, -7, -7).toRect()); x += 42
+        right = r.right() - 12; side = idx.data(ROW_SIDE) or ""
+        small = _font_step(opt.font, 1); sm = QFontMetrics(small)
+        if side:
+            sw = sm.horizontalAdvance(side) + 2
+            p.setFont(small); p.setPen(QColor("#8c8c8c"))
+            p.drawText(QRectF(right - sw, r.top(), sw, r.height()), Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, side)
+            right -= sw + 16
+        tf = QFont(opt.font); ff = idx.data(Qt.ItemDataRole.FontRole)
+        if isinstance(ff, QFont):
+            tf.setBold(ff.bold())
+        fg = idx.data(Qt.ItemDataRole.ForegroundRole)
+        col = fg.color() if isinstance(fg, QBrush) else (fg if isinstance(fg, QColor) else QColor("#ffffff" if sel else "#e4e4e4"))
+        fm = QFontMetrics(tf); w = max(10.0, right - x); sub = idx.data(ROW_SUB) or ""
+        p.setFont(tf); p.setPen(col)
+        el = Qt.TextElideMode.ElideRight; L = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        if sub:
+            y = r.center().y() - (fm.height() + 2 + sm.height()) / 2
+            p.drawText(QRectF(x, y, w, fm.height()), L, fm.elidedText(title, el, int(w)))
+            p.setFont(small); p.setPen(QColor("#9a9a9a" if sel else "#858585"))
+            p.drawText(QRectF(x, y + fm.height() + 2, w, sm.height()), L, sm.elidedText(sub, el, int(w)))
+        else:
+            p.drawText(QRectF(x, r.top(), w, r.height()), L, fm.elidedText(title, el, int(w)))
+        prog = idx.data(ROW_PROG)
+        if prog is not None:
+            bw = r.right() - 12 - x; bar = QRectF(x, r.bottom() - 6, bw, 3)
+            p.setBrush(QColor("#2a2a2a")); p.drawRoundedRect(bar, 1.5, 1.5)
+            p.setBrush(QColor("#ececec")); p.drawRoundedRect(QRectF(x, bar.top(), bw * max(0.0, min(1.0, prog)), 3), 1.5, 1.5)
+        p.restore()
+
+
+def row_list(multi=False):
+    """Lista w stylu okien Luny (wiersze RowDelegate)."""
+    lst = QListWidget(); lst.setObjectName("histlist"); lst.viewport().setAutoFillBackground(False)
+    lst.setItemDelegate(RowDelegate(lst)); lst.setMouseTracking(True); lst.setUniformItemSizes(False)
+    lst.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+    lst.setFrameShape(QFrame.Shape.NoFrame)
+    if multi:
+        lst.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+    return lst
+
+
+def row_item(title, sub="", side="", icon=None, data=None, tip="", indent=0):
+    it = QListWidgetItem(title)
+    if icon is not None:
+        it.setIcon(icon)
+    if sub:
+        it.setData(ROW_SUB, sub)
+    if side:
+        it.setData(ROW_SIDE, side)
+    if indent:
+        it.setData(ROW_INDENT, indent)
+    if data is not None:
+        it.setData(Qt.ItemDataRole.UserRole, data)
+    if tip:
+        it.setToolTip(tip)
+    return it
+
+
+def head_item(text):
+    it = QListWidgetItem(text); it.setData(ROW_HEAD, True); it.setFlags(Qt.ItemFlag.NoItemFlags)
+    return it
+
+
+class EmptyState(QWidget):
+    """Pusty stan listy: ikona w kółku, tytuł i podpowiedź, co zrobić."""
+
+    def __init__(self, kind, title, hint=""):
+        super().__init__()
+        v = QVBoxLayout(self); v.setContentsMargins(28, 28, 28, 28); v.setSpacing(4); v.addStretch(1)
+        ring = QLabel(); ring.setObjectName("emptyicon"); ring.setFixedSize(56, 56); ring.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ring.setPixmap(glyph(kind, "#8c8c8c").pixmap(26, 26)); v.addWidget(ring, 0, Qt.AlignmentFlag.AlignHCenter); v.addSpacing(10)
+        self.t = lbl(title, "h3"); self.t.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(self.t)
+        self.h = lbl(hint, "muted2", wrap=True); self.h.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(self.h)
+        self.h.setVisible(bool(hint)); v.addStretch(2)
+
+    def set_text(self, title, hint=""):
+        self.t.setText(title); self.h.setText(hint); self.h.setVisible(bool(hint))
+
+
+class LunaDialog(QDialog):
+    """Wspólny wygląd okien Luny (historia, pobrane, menedżer zadań, kopia, import…): bez systemowej ramki, ciemny
+    nagłówek do przeciągania z ikoną, tytułem, opcjonalnym polem (np. wyszukiwarką) i krzyżykiem; pod nim opis, treść
+    i przyciski na dole (główny – jasny). Esc zamyka; róg w prawym dolnym rogu zmienia rozmiar."""
+
+    def __init__(self, parent, title, icon=None, size=(640, 520), subtitle="", modal=True):
+        super().__init__(parent)
+        self.setObjectName("settings"); self.setWindowTitle(title)
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True); self.setModal(modal)
+        self.resize(fit_size(*size)); self.setMinimumSize(fit_size(min(size[0], 440), min(size[1], 260), 0.8))
+        root = QVBoxLayout(self); root.setContentsMargins(1, 1, 1, 1); root.setSpacing(0)
+        bar = DragBar(); self.head = QHBoxLayout(bar); self.head.setContentsMargins(18, 8, 8, 8); self.head.setSpacing(8)
+        if icon is not None:
+            ic = QLabel(); ic.setFixedSize(20, 20)
+            ic.setPixmap(glyph(icon, "#ececec").pixmap(20, 20) if isinstance(icon, str) else icon)
+            self.head.addWidget(ic); self.head.addSpacing(2)
+        self.title_lbl = lbl(title, "h1"); self.head.addWidget(self.title_lbl); self.head.addSpacing(10)
+        self.head.addStretch(1); self._sp = self.head.itemAt(self.head.count() - 1)
+        self.xbtn = QToolButton(); self.xbtn.setIcon(glyph("close")); self.xbtn.setIconSize(QSize(20, 20)); self.xbtn.setFixedSize(32, 32)
+        self.xbtn.setToolTip("Zamknij (Esc)"); self.xbtn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.xbtn.clicked.connect(self.reject); self.head.addWidget(self.xbtn); root.addWidget(bar)
+        self.body = QVBoxLayout(); self.body.setContentsMargins(20, 14, 20, 16); self.body.setSpacing(10)
+        self.sub = lbl(subtitle, "muted2", wrap=True); self.body.addWidget(self.sub); self.sub.setVisible(bool(subtitle))
+        root.addLayout(self.body, 1)
+        self.grip = QSizeGrip(self); self.grip.setFixedSize(16, 16)
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev); self.grip.move(self.width() - 17, self.height() - 17); self.grip.raise_()
+
+    def head_widget(self, w, fill=False):
+        """Pole w nagłówku przed krzyżykiem (fill – zajmuje wolne miejsce, np. wyszukiwarka)."""
+        if fill and self._sp is not None:
+            self.head.removeItem(self._sp); self._sp = None
+        self.head.insertWidget(self.head.indexOf(self.xbtn), w, 1 if fill else 0)
+        return w
+
+    def panel(self, widget, empty_kind="app", empty_title="", empty_hint=""):
+        """Lista / drzewo w zaokrąglonym panelu z pustym stanem (show_empty)."""
+        fr = QFrame(); fr.setObjectName("dlgpanel"); lay = QVBoxLayout(fr); lay.setContentsMargins(6, 6, 6, 6)
+        self._pstack = QStackedWidget(); self._pstack.setObjectName("clear")
+        self.empty = EmptyState(empty_kind, empty_title, empty_hint)
+        self._pstack.addWidget(widget); self._pstack.addWidget(self.empty); lay.addWidget(self._pstack)
+        self.body.addWidget(fr, 1)
+        return fr
+
+    def show_empty(self, on, title=None, hint=None):
+        if title is not None:
+            self.empty.set_text(title, hint or "")
+        self._pstack.setCurrentIndex(1 if on else 0)
+
+    def section(self, text):
+        w = lbl(text.upper(), "seclabel"); self.body.addWidget(w)
+        return w
+
+    def footer(self, left=(), right=()):
+        """Przyciski na dole: (tekst, funkcja[, główny]) albo gotowy widżet; lewa grupa, odstęp, prawa grupa."""
+        row = QHBoxLayout(); row.setSpacing(8); out = []
+        for i, group in enumerate((left, right)):
+            if i:
+                row.addStretch(1)
+            for spec in group:
+                if isinstance(spec, QWidget):
+                    row.addWidget(spec); continue
+                b = QPushButton(spec[0]); b.setCursor(Qt.CursorShape.PointingHandCursor)
+                if len(spec) > 2 and spec[2]:
+                    b.setObjectName("primary")
+                b.clicked.connect(lambda _=False, f=spec[1]: f()); row.addWidget(b); out.append(b)
+        if not right:
+            row.addStretch(1)
+        self.body.addLayout(row)
+        return out
+
+
+def luna_confirm(parent, title, text, yes="Tak", icon="help"):
+    """Pytanie w stylu Luny (zamiast systemowego okienka)."""
+    d = LunaDialog(parent, title, icon, (460, 210))
+    d.sub.setText(text); d.sub.setVisible(True); d.body.addStretch(1)
+    d.footer(right=[("Anuluj", d.reject), (yes, d.accept, True)])
+    return d.exec() == QDialog.DialogCode.Accepted
+
+
+def human_size(n):
+    if not n or n < 0:
+        return ""
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.1f} {unit}".replace(".", ",")
+        n /= 1024
+
+
+class AboutDialog(LunaDialog):
+    """O Lunie: logo, wersja silnika, linki."""
+
+    def __init__(self, browser):
+        super().__init__(browser, "O Lunie", "help", (460, 360))
+        from PyQt6.QtWebEngineCore import qWebEngineChromiumVersion
+        self.body.addStretch(1)
+        lg = QLabel(); lg.setPixmap(logo_pixmap(64)); lg.setFixedSize(64, 64); self.body.addWidget(lg, 0, Qt.AlignmentFlag.AlignHCenter)
+        t = lbl("Luna", "h1"); t.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(t)
+        for text, cls in (("Lekka przeglądarka z kafelkami, widgetami, blokadą reklam i asystentem AI.", "muted2"),
+                          (f"Silnik: Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)", "muted")):
+            l_ = lbl(text, cls, wrap=True); l_.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(l_)
+        self.body.addStretch(1)
+        self.footer(left=[("Polityka prywatności", lambda: (browser.open_url_new_tab(PRIVACY_URL), self.accept())),
+                          ("Skróty klawiszowe", lambda: (self.accept(), browser.open_settings("keys")))],
+                    right=[("OK", self.accept, True)])
+
+
 class SettingsDialog(QDialog):
     def __init__(self, store, host, browser):
         super().__init__(browser)
@@ -8228,24 +8472,30 @@ class PipWindow(QFrame):
         self.web.setUrl(QUrl("about:blank")); super().closeEvent(ev)
 
 
-class BackupDialog(QDialog):
+class BackupDialog(LunaDialog):
     """Kopia zapasowa: utworzenie pliku .lunabak (hasło) albo przywrócenie z niego (Luna uruchamia się ponownie)."""
 
     def __init__(self, browser):
-        super().__init__(browser); self.b = browser
-        self.setWindowTitle("Kopia zapasowa"); self.setObjectName("settings"); self.resize(fit_size(520, 330))
-        v = QVBoxLayout(self); v.setContentsMargins(20, 18, 20, 18); v.setSpacing(10)
-        v.addWidget(lbl("Kopia zapasowa", "h1"))
-        v.addWidget(lbl("Jeden plik z kafelkami, ustawieniami, widgetami, kartami, historią, ikonami stron i hasłami. "
-                        "Cały plik jest zaszyfrowany hasłem, które podasz – bez niego nikt go nie odczyta. "
-                        "Na drugim komputerze wybierz „Przywróć z kopii” i podaj to samo hasło.", "muted2", wrap=True))
-        v.addWidget(lbl("Konta Google, Spotify i Discord trzeba po przywróceniu połączyć ponownie (logowania stron "
-                        "zostają w profilu tamtego komputera).", "muted", wrap=True))
-        v.addStretch(1)
-        row = QHBoxLayout(); row.setSpacing(8)
-        a = QPushButton("Utwórz kopię…"); a.setObjectName("primary"); a.clicked.connect(self.create)
-        r = QPushButton("Przywróć z kopii…"); r.clicked.connect(self.restore)
-        row.addWidget(a); row.addWidget(r); row.addStretch(); v.addLayout(row)
+        super().__init__(browser, "Kopia zapasowa", "save", (620, 400),
+                         "Jeden plik z kafelkami, ustawieniami, widgetami, kartami, historią, ikonami stron i hasłami, "
+                         "zaszyfrowany hasłem, które podasz – bez niego nikt go nie odczyta.")
+        self.b = browser
+        row = QHBoxLayout(); row.setSpacing(12)
+        for kind, title, text, btn, fn, primary in (
+                ("save", "Utwórz kopię", "Zapisz plik .lunabak, np. na pendrive albo w chmurze.", "Utwórz kopię…", self.create, True),
+                ("reload", "Przywróć z kopii", "Wczytaj plik .lunabak i podaj to samo hasło. Luna uruchomi się ponownie.",
+                 "Przywróć z kopii…", self.restore, False)):
+            card = QFrame(); card.setObjectName("optcard"); cv = QVBoxLayout(card); cv.setContentsMargins(16, 16, 16, 16); cv.setSpacing(6)
+            ti = QLabel(); ti.setObjectName("tileicon"); ti.setFixedSize(40, 40); ti.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            ti.setPixmap(glyph(kind, "#ececec").pixmap(20, 20)); cv.addWidget(ti); cv.addSpacing(4)
+            cv.addWidget(lbl(title, "h3")); cv.addWidget(lbl(text, "muted2", wrap=True)); cv.addStretch(1)
+            b = QPushButton(btn); b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, f=fn: f())
+            if primary:
+                b.setObjectName("primary")
+            cv.addWidget(b); row.addWidget(card, 1)
+        self.body.addLayout(row, 1)
+        self.body.addWidget(lbl("Konta Google, Spotify i Discord trzeba po przywróceniu połączyć ponownie (logowania stron "
+                                "zostają w profilu tamtego komputera).", "muted", wrap=True))
 
     def _password(self, title, confirm):
         p, ok = QInputDialog.getText(self, title, "Hasło kopii (min. 8 znaków):", QLineEdit.EchoMode.Password)
@@ -8953,33 +9203,32 @@ class Bookmarks:
         return n
 
 
-class ImportDialog(QDialog):
+class ImportDialog(LunaDialog):
     """Import zakładek, historii i haseł z innej przeglądarki (albo hasła z pliku CSV)."""
 
     def __init__(self, browser):
-        super().__init__(browser); self.b = browser
-        self.setWindowTitle("Import z innej przeglądarki"); self.setMinimumWidth(520)
-        v = QVBoxLayout(self)
-        v.addWidget(lbl("Import z innej przeglądarki", "h3"))
-        v.addWidget(lbl("Zakładki, historia i hasła z Brave, Chrome, Edge, Vivaldi albo Opery na tym komputerze. Dane "
-                        "zostają na tym komputerze; hasła są od razu szyfrowane w sejfie Luny.", "muted", wrap=True))
+        super().__init__(browser, "Import z innej przeglądarki", "download", (580, 470),
+                         "Zakładki, historia i hasła z Brave, Chrome, Edge, Vivaldi albo Opery na tym komputerze. Dane "
+                         "zostają na tym komputerze; hasła są od razu szyfrowane w sejfie Luny.")
+        self.b = browser
+        self.section("Przeglądarka")
         self.combo = QComboBox(); self.profiles = chromium_profiles()
         for label, root, prof in self.profiles:
             self.combo.addItem(label)
         if not self.profiles:
             self.combo.addItem("Nie znaleziono innych przeglądarek"); self.combo.setEnabled(False)
-        v.addWidget(self.combo)
+        self.body.addWidget(self.combo); self.body.addSpacing(4)
+        self.section("Co zaimportować")
         self.cb = {}
         for key, text in (("bookmarks", "Zakładki"), ("history", "Historia (ostatnie 1000 stron)"), ("passwords", "Hasła")):
-            c = QCheckBox(text); c.setChecked(True); v.addWidget(c); self.cb[key] = c
+            c = QCheckBox(text); c.setChecked(True); self.body.addWidget(c); self.cb[key] = c
         if not (VAULT and VAULT[0].available()):
             self.cb["passwords"].setChecked(False); self.cb["passwords"].setEnabled(False)
-        self.out = lbl("Najlepiej zamknij tamtą przeglądarkę przed importem.", "muted2", wrap=True); v.addWidget(self.out)
-        row = QHBoxLayout()
-        go = QPushButton("Importuj"); go.setObjectName("primary"); go.clicked.connect(self.run); go.setEnabled(bool(self.profiles))
-        csvb = QPushButton("Hasła z pliku CSV…"); csvb.clicked.connect(self.run_csv)
-        row.addWidget(go); row.addWidget(csvb); row.addStretch(1)
-        close = QPushButton("Zamknij"); close.clicked.connect(self.accept); row.addWidget(close); v.addLayout(row)
+        self.body.addStretch(1)
+        self.out = lbl("Najlepiej zamknij tamtą przeglądarkę przed importem.", "muted2", wrap=True); self.body.addWidget(self.out)
+        go, _csv, _close = self.footer(left=[("Importuj", self.run, True), ("Hasła z pliku CSV…", self.run_csv)],
+                                       right=[("Zamknij", self.accept)])
+        go.setEnabled(bool(self.profiles))
 
     def _save_passwords(self, lst):
         v = VAULT[0]; n = 0
@@ -9564,16 +9813,13 @@ def restart_luna(browser):
     browser.quit_all()
 
 
-class TaskManager(QDialog):
+class TaskManager(LunaDialog):
     """Menedżer zadań Luny: pamięć procesów stron i silnika, uśpij / zamknij / przejdź. Odświeża się tylko, gdy jest otwarty."""
 
     def __init__(self, browser):
-        super().__init__(browser); self.b = browser
-        self.setWindowTitle("Menedżer zadań"); self.resize(fit_size(720, 480)); self.setObjectName("settings")
-        v = QVBoxLayout(self); v.setContentsMargins(18, 16, 18, 16); v.setSpacing(8)
-        v.addWidget(lbl("Menedżer zadań", "h1"))
-        v.addWidget(lbl("Pamięć zajmowana przez karty i silnik Luny. Karty tej samej witryny mogą dzielić jeden proces.",
-                        "muted2", wrap=True))
+        super().__init__(browser, "Menedżer zadań", "tools", (760, 520),
+                         "Pamięć zajmowana przez karty i silnik Luny. Karty tej samej witryny mogą dzielić jeden proces.")
+        self.b = browser
         self.tree = QTreeWidget(); self.tree.setObjectName("vtabs"); self.tree.setRootIsDecorated(False)
         self.tree.setHeaderLabels(["Karta", "Stan", "Pamięć"]); self.tree.setIconSize(QSize(16, 16))
         self.tree.header().setStretchLastSection(False)
@@ -9581,13 +9827,10 @@ class TaskManager(QDialog):
         for c in (1, 2):
             self.tree.header().setSectionResizeMode(c, self.tree.header().ResizeMode.ResizeToContents)
         self.tree.itemDoubleClicked.connect(lambda *_: self.go())
-        v.addWidget(self.tree, 1)
-        self.total = lbl("", "muted2"); v.addWidget(self.total)
-        row = QHBoxLayout(); row.setSpacing(6)
-        self.b_sleep = QPushButton("Uśpij"); self.b_close = QPushButton("Zamknij kartę"); self.b_go = QPushButton("Przejdź do karty")
-        for bt, fn in ((self.b_go, self.go), (self.b_sleep, self.sleep), (self.b_close, self.close_tab)):
-            bt.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(bt)
-        row.addStretch(); v.addLayout(row)
+        self.panel(self.tree, "tools")
+        self.total = lbl("", "muted2")
+        self.b_go, self.b_sleep, self.b_close = self.footer(
+            left=[("Przejdź do karty", self.go, True), ("Uśpij", self.sleep), ("Zamknij kartę", self.close_tab)], right=[self.total])
         self.tree.currentItemChanged.connect(lambda *_: self.buttons())
         self.rows = []; self.timer = QTimer(self); self.timer.timeout.connect(self.fill); self.timer.start(2000); self.fill()
 
@@ -9671,21 +9914,19 @@ class TaskManager(QDialog):
             self.owner(t).close_tab(t); QTimer.singleShot(300, self.fill)
 
 
-class DownloadsDialog(QDialog):
+class DownloadsDialog(LunaDialog):
     """Lista pobranych plików: postęp, otwarcie pliku lub folderu, anulowanie."""
 
     def __init__(self, browser):
-        super().__init__(browser); self.dm = DOWNLOADS[0]
-        self.setWindowTitle("Pobrane pliki"); self.resize(fit_size(560, 420)); self.setObjectName("settings")
-        v = QVBoxLayout(self); v.setContentsMargins(18, 16, 18, 16); v.setSpacing(8)
-        v.addWidget(lbl("Pobrane pliki", "h1")); v.addWidget(lbl(f"Folder: {self.dm.folder()}", "muted2", wrap=True))
-        self.list = QListWidget(); self.list.setObjectName("wlist"); self.list.viewport().setAutoFillBackground(False)
-        v.addWidget(self.list, 1)
-        row = QHBoxLayout(); row.setSpacing(6)
-        for text, fn in (("Otwórz plik", self.open_file), ("Pokaż w folderze", self.open_folder),
-                         ("Anuluj pobieranie", self.cancel), ("Otwórz folder Pobrane", lambda: self._open(self.dm.folder()))):
-            b = QPushButton(text); b.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(b)
-        row.addStretch(); v.addLayout(row)
+        super().__init__(browser, "Pobrane pliki", "download", (620, 480), f"Folder: {DOWNLOADS[0].folder()}")
+        self.dm = DOWNLOADS[0]
+        self.list = row_list(); self.list.itemDoubleClicked.connect(lambda _: self.open_file())
+        self.list.currentRowChanged.connect(lambda _: self.buttons())
+        self.panel(self.list, "download", "Brak pobranych plików", "Pliki pobrane w tej sesji pojawią się tutaj.")
+        self.b_open, self.b_show, self.b_cancel, _ = self.footer(
+            left=[("Otwórz plik", self.open_file, True), ("Pokaż w folderze", self.open_folder), ("Anuluj pobieranie", self.cancel)],
+            right=[("Otwórz folder Pobrane", lambda: self._open(self.dm.folder()))])
+        self._icons = QFileIconProvider()
         self.dm.changed.connect(self.fill); self.fill()
 
     def done(self, r):
@@ -9695,17 +9936,31 @@ class DownloadsDialog(QDialog):
         cur = self.list.currentRow(); self.list.clear()
         S = QWebEngineDownloadRequest.DownloadState
         for req in self.dm.items:
-            st = req.state(); tot = req.totalBytes(); got = req.receivedBytes()
+            st = req.state(); tot = req.totalBytes(); got = req.receivedBytes(); prog = None
             if st == S.DownloadInProgress:
-                info = f"{got * 100 // tot}%" if tot > 0 else f"{got // 1024} KB"
+                info = (f"{human_size(got)} z {human_size(tot)}" if tot > 0 else human_size(got)) or "zaczynam…"
+                side = f"{got * 100 // tot}%" if tot > 0 else ""; prog = got / tot if tot > 0 else 0.0
             else:
-                info = {S.DownloadCompleted: "gotowe", S.DownloadCancelled: "anulowane",
-                        S.DownloadInterrupted: "przerwane"}.get(st, "")
-            self.list.addItem(f"{req.downloadFileName()}   ·   {info}")
+                info = {S.DownloadCompleted: "Gotowe", S.DownloadCancelled: "Anulowane",
+                        S.DownloadInterrupted: "Przerwane"}.get(st, "")
+                side = human_size(tot or got) if st == S.DownloadCompleted else ""
+            path = self.dm.path(req)
+            ic = self._icons.icon(QFileInfo(path)) if st == S.DownloadCompleted and os.path.exists(path) else glyph("download")
+            it = row_item(req.downloadFileName(), info, side, ic, tip=path)
+            if prog is not None:
+                it.setData(ROW_PROG, prog)
+            if st in (S.DownloadCancelled, S.DownloadInterrupted):
+                it.setForeground(QColor("#8c8c8c"))
+            self.list.addItem(it)
+        self.show_empty(not self.dm.items)
         if self.dm.items:
             self.list.setCurrentRow(max(0, min(cur, len(self.dm.items) - 1)))
-        else:
-            self.list.addItem("Brak pobranych plików w tej sesji.")
+        self.buttons()
+
+    def buttons(self):
+        r = self.sel(); S = QWebEngineDownloadRequest.DownloadState
+        self.b_open.setEnabled(r is not None and r.state() == S.DownloadCompleted)
+        self.b_cancel.setEnabled(r is not None and r.state() == S.DownloadInProgress)
 
     def sel(self):
         r = self.list.currentRow()
@@ -9774,36 +10029,23 @@ class FindBar(QFrame):
         self.hide()
 
 
-class HistoryDialog(QDialog):
+class HistoryDialog(LunaDialog):
     """Pełna historia (Ctrl+H): wyszukiwanie po tytule i adresie, grupy według dni, otwieranie, kopiowanie i usuwanie wpisów."""
     MONTHS = ["stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września",
               "października", "listopada", "grudnia"]
 
     def __init__(self, browser):
-        super().__init__(browser); self.b, self.store = browser, browser.store; self._icons = {}
-        self.setObjectName("settings"); self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
-        self.setModal(True); self.resize(fit_size(820, 640)); self.setMinimumSize(fit_size(560, 420, 0.8))
-        root = QVBoxLayout(self); root.setContentsMargins(1, 1, 1, 1); root.setSpacing(0)
-        bar = DragBar(); bl = QHBoxLayout(bar); bl.setContentsMargins(18, 8, 8, 8)
-        ic = QLabel(); ic.setPixmap(glyph("history", "#ececec").pixmap(20, 20)); bl.addWidget(ic); bl.addSpacing(6)
-        bl.addWidget(lbl("Historia", "h1")); bl.addSpacing(16)
+        super().__init__(browser, "Historia", "history", (860, 660))
+        self.b, self.store = browser, browser.store; self._icons = {}
         self.search = QLineEdit(); self.search.setObjectName("glassin"); self.search.setPlaceholderText("Szukaj w historii (tytuł lub adres)…")
-        self.search.textChanged.connect(lambda _: self._t.start(150)); bl.addWidget(self.search, 1)
-        x = QToolButton(); x.setIcon(glyph("close")); x.setIconSize(QSize(22, 22)); x.setFixedSize(32, 32); x.clicked.connect(self.accept)
-        bl.addWidget(x); root.addWidget(bar)
-        body = QVBoxLayout(); body.setContentsMargins(18, 10, 18, 14); body.setSpacing(8)
-        self.count = lbl("", "muted2"); body.addWidget(self.count)
-        self.list = QListWidget(); self.list.setObjectName("histlist"); self.list.viewport().setAutoFillBackground(False)
-        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection); self.list.setIconSize(QSize(18, 18))
-        self.list.setUniformItemSizes(False); self.list.itemActivated.connect(lambda it: self.open(it))
+        self.search.setClearButtonEnabled(True); self.search.textChanged.connect(lambda _: self._t.start(150))
+        self.head_widget(self.search, True)
+        self.count = lbl("", "muted2"); self.body.addWidget(self.count)
+        self.list = row_list(True); self.list.itemActivated.connect(lambda it: self.open(it))
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.menu)
-        body.addWidget(self.list, 1)
-        row = QHBoxLayout(); row.setSpacing(6)
-        for text, fn in (("Otwórz", lambda: [self.open(i) for i in self.selected()]), ("Usuń zaznaczone", self.remove_selected)):
-            bt = QPushButton(text); bt.clicked.connect(lambda _=False, f=fn: f()); row.addWidget(bt)
-        row.addStretch()
-        clr = QPushButton("Wyczyść całą historię…"); clr.clicked.connect(self.clear_all); row.addWidget(clr)
-        body.addLayout(row); root.addLayout(body, 1)
+        self.panel(self.list, "history")
+        self.footer(left=[("Otwórz", lambda: [self.open(i) for i in self.selected()], True), ("Usuń zaznaczone", self.remove_selected)],
+                    right=[("Wyczyść całą historię…", self.clear_all)])
         QShortcut(QKeySequence("Delete"), self.list, self.remove_selected)
         QShortcut(QKeySequence("Ctrl+F"), self, lambda: (self.search.setFocus(), self.search.selectAll()))
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.fill)
@@ -9836,18 +10078,18 @@ class HistoryDialog(QDialog):
                 continue
             day = self.day_label(h.get("t"))
             if day != last:
-                head = QListWidgetItem(day.upper()); head.setFlags(Qt.ItemFlag.NoItemFlags)
-                f = head.font(); f.setBold(True); f.setPointSizeF(max(7.5, f.pointSizeF() - 1)); head.setFont(f)
-                head.setForeground(QColor("#8c8c8c")); head.setSizeHint(QSize(0, 34)); self.list.addItem(head); last = day
+                self.list.addItem(head_item(day)); last = day
             when = datetime.fromtimestamp(h["t"]).strftime("%H:%M") if h.get("t") else ""
-            it = QListWidgetItem(self.icon(h["url"]), f"{h.get('name') or host_of(h['url'])}\n{when + '   ' if when else ''}{host_of(h['url'])}")
-            it.setData(Qt.ItemDataRole.UserRole, h["url"]); it.setToolTip(h["url"]); it.setSizeHint(QSize(0, 48))
-            self.list.addItem(it); shown += 1
+            addr = h["url"].split("://", 1)[-1].rstrip("/")
+            self.list.addItem(row_item(h.get("name") or host_of(h["url"]), addr, when, self.icon(h["url"]), h["url"], h["url"]))
+            shown += 1
         total = len(self.store.history)
         self.count.setText(f"Znaleziono {shown} z {total}" if q else f"{total} {'strona' if total == 1 else 'stron'} w historii")
-        if not shown:
-            it = QListWidgetItem("Brak wyników." if q else "Historia jest pusta."); it.setFlags(Qt.ItemFlag.NoItemFlags)
-            it.setForeground(QColor("#6f6f6f")); self.list.addItem(it)
+        self.count.setVisible(bool(total))
+        if q:
+            self.show_empty(not shown, "Brak wyników", f"Nic w historii nie pasuje do „{self.search.text().strip()}”.")
+        else:
+            self.show_empty(not shown, "Historia jest pusta", "Odwiedzone strony pojawią się tutaj, pogrupowane według dni.")
 
     def selected(self):
         return [i for i in self.list.selectedItems() if i.data(Qt.ItemDataRole.UserRole)]
@@ -9886,30 +10128,28 @@ class HistoryDialog(QDialog):
             self.remove(lambda h: h["url"] in urls)
 
     def clear_all(self):
-        if QMessageBox.question(self, "Luna", "Wyczyścić całą historię przeglądania i sekcję „Ostatnie”?") \
-                == QMessageBox.StandardButton.Yes:
+        if luna_confirm(self, "Wyczyścić historię?", "Cała historia przeglądania i sekcja „Ostatnie” zostaną usunięte. "
+                        "Tej operacji nie można cofnąć.", "Wyczyść", "trash"):
             self.store.clear_history(); self.fill()
 
 
-class ClearDataDialog(QDialog):
+class ClearDataDialog(LunaDialog):
     """Usuń dane przeglądania (Ctrl+Shift+Del): historia, ciasteczka i dane stron, pamięć podręczna, hasła."""
 
     def __init__(self, browser):
-        super().__init__(browser); self.b = browser
-        self.setWindowTitle("Usuń dane przeglądania"); self.setObjectName("settings"); self.resize(fit_size(460, 330))
-        v = QVBoxLayout(self); v.setContentsMargins(20, 18, 20, 18); v.setSpacing(8)
-        v.addWidget(lbl("Usuń dane przeglądania", "h1"))
-        self.opts = {}
-        for key, text, on in (("history", "Historia przeglądania i sekcja „Ostatnie”", True),
-                              ("cookies", "Ciasteczka i dane stron (wylogowuje ze stron – także w kontenerach)", False),
-                              ("cache", "Obrazy i pliki w pamięci podręcznej", True),
-                              ("passwords", "Zapisane hasła", False)):
-            cb = QCheckBox(text); cb.setChecked(on); v.addWidget(cb); self.opts[key] = cb
-        v.addStretch()
-        row = QHBoxLayout(); row.addStretch()
-        no = QPushButton("Anuluj"); no.clicked.connect(self.reject)
-        yes = QPushButton("Usuń dane"); yes.setObjectName("primary"); yes.clicked.connect(self.run)
-        row.addWidget(no); row.addWidget(yes); v.addLayout(row)
+        super().__init__(browser, "Usuń dane przeglądania", "trash", (520, 440),
+                         "Wybierz, co usunąć z tego komputera. Tej operacji nie można cofnąć.")
+        self.b = browser; self.opts = {}
+        for key, text, hint, on in (
+                ("history", "Historia przeglądania", "Odwiedzone strony i sekcja „Ostatnie” na ekranie głównym.", True),
+                ("cookies", "Ciasteczka i dane stron", "Wylogowuje ze stron – także w kontenerach.", False),
+                ("cache", "Obrazy i pliki w pamięci podręcznej", "Strony wczytają się raz trochę wolniej.", True),
+                ("passwords", "Zapisane hasła", "Usuwa wszystkie hasła z sejfu Luny.", False)):
+            box = QVBoxLayout(); box.setSpacing(0); box.setContentsMargins(0, 0, 0, 4)
+            cb = QCheckBox(text); cb.setChecked(on); box.addWidget(cb); self.opts[key] = cb
+            h = lbl(hint, "muted", wrap=True); h.setContentsMargins(30, 0, 0, 0); box.addWidget(h); self.body.addLayout(box)
+        self.body.addStretch(1)
+        self.footer(right=[("Anuluj", self.reject), ("Usuń dane", self.run, True)])
 
     def run(self):
         profs = [get_profile()] + list(_CONTAINER_PROFILES.values())
@@ -9950,6 +10190,28 @@ class MenuRow(QWidget):
             b.clicked.connect(lambda _=False: fn())
         self.h.addWidget(b)
         return b
+
+
+class MenuSearch(QFrame):
+    """Pierwszy wiersz menu Luny: „Szukaj poleceń i ustawień” – otwiera paletę poleceń (Ctrl+K)."""
+
+    def __init__(self, fn):
+        super().__init__(); self.setObjectName("menusearchrow"); self.fn = fn
+        self.setCursor(Qt.CursorShape.PointingHandCursor); self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        h = QHBoxLayout(self); h.setContentsMargins(10, 7, 10, 7); h.setSpacing(8)
+        ic = QLabel(); ic.setPixmap(glyph("search", "#8c8c8c").pixmap(16, 16)); h.addWidget(ic)
+        h.addWidget(lbl("Szukaj poleceń i ustawień…", "muted2"), 1); h.addWidget(lbl("Ctrl+K", "muted"))
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self.fn()
+
+
+def menu_section(menu, text):
+    """Podpis grupy w menu (zamiast samej kreski) – łatwiej znaleźć opcję."""
+    w = QLabel(text.upper()); w.setObjectName("menusec")
+    a = QWidgetAction(menu); a.setDefaultWidget(w); a.setEnabled(False); menu.addAction(a)
+    return a
 
 
 def menu_row_action(menu, row):
@@ -10652,38 +10914,49 @@ class ReadLater(QObject):
         return [x for x in self.items if not x.get("read")]
 
 
-class ReadLaterDialog(QDialog):
+class ReadLaterDialog(LunaDialog):
     """Lista „Do przeczytania”: otwórz (online albo kopię offline), oznacz jako przeczytane, usuń."""
 
     def __init__(self, browser):
-        super().__init__(browser); self.b = browser; self.rl = ReadLater.get()
-        self.setWindowTitle("Do przeczytania"); self.resize(fit_size(640, 520))
-        v = QVBoxLayout(self)
-        v.addWidget(lbl("Do przeczytania", "h3"))
-        v.addWidget(lbl("Strony odłożone na później. Kopia offline (tekst i obrazki, bez skryptów strony) otwiera się "
-                        "bez internetu, np. w podróży. Skrót dodawania: Ctrl+Shift+O.", "muted", wrap=True))
-        self.list = QListWidget(); self.list.setObjectName("wlist"); v.addWidget(self.list, 1)
-        self.list.itemDoubleClicked.connect(lambda _: self.open_sel(False))
-        row = QHBoxLayout(); row.setSpacing(6)
-        for text, fn in (("Otwórz", lambda: self.open_sel(False)), ("Otwórz offline", lambda: self.open_sel(True)),
-                         ("Przeczytane / nieprzeczytane", self.toggle_read), ("Usuń", self.remove_sel)):
-            bt = QPushButton(text); bt.clicked.connect(fn); row.addWidget(bt)
-        row.addStretch(1); v.addLayout(row)
+        super().__init__(browser, "Do przeczytania", "book", (700, 560),
+                         "Strony odłożone na później. Kopia offline (tekst i obrazki, bez skryptów strony) otwiera się "
+                         "bez internetu, np. w podróży.")
+        self.b = browser; self.rl = ReadLater.get()
+        self.list = row_list(); self.list.itemDoubleClicked.connect(lambda _: self.open_sel(False))
+        self.list.currentItemChanged.connect(lambda *_: self.buttons())
+        self.panel(self.list, "book", "Lista jest pusta",
+                   "Dodaj stronę skrótem Ctrl+Shift+O albo z menu: Do przeczytania → Dodaj tę stronę.")
+        self.b_open, self.b_off, self.b_read, self.b_rm = self.footer(
+            left=[("Otwórz", lambda: self.open_sel(False), True), ("Otwórz offline", lambda: self.open_sel(True)),
+                  ("Oznacz jako przeczytane", self.toggle_read)], right=[("Usuń", self.remove_sel)])
         self.fill()
 
     def fill(self):
-        self.list.clear()
+        self.list.clear(); last = None
         for it in sorted(self.rl.items, key=lambda x: (bool(x.get("read")), -x.get("t", 0))):
+            grp = "Przeczytane" if it.get("read") else "Do przeczytania"
+            if grp != last:
+                self.list.addItem(head_item(grp)); last = grp
             when = datetime.fromtimestamp(it.get("t", 0)).strftime("%d.%m %H:%M")
-            off = "  ·  offline" if self.rl.offline_path(it).exists() else ""
-            li = QListWidgetItem(mini_icon(it["title"], it["url"]),
-                                 f"{it['title']}      {host_of(it['url'])}  ·  {when}{off}" + ("  ·  przeczytane" if it.get("read") else ""))
-            li.setData(Qt.ItemDataRole.UserRole, it["id"]); li.setToolTip(it["url"])
+            off = self.rl.offline_path(it).exists()
+            li = row_item(it["title"], host_of(it["url"]) + ("  ·  kopia offline" if off else ""), when,
+                          mini_icon(it["title"], it["url"]), it["id"], it["url"])
             if not it.get("read"):
                 f = li.font(); f.setBold(True); li.setFont(f)
+            else:
+                li.setForeground(QColor("#9a9a9a"))
             self.list.addItem(li)
-        if not self.rl.items:
-            self.list.addItem("Lista jest pusta – dodaj stronę skrótem Ctrl+Shift+O albo z menu.")
+        self.show_empty(not self.rl.items)
+        if self.rl.items and self.list.count() > 1:
+            self.list.setCurrentRow(1)
+        self.buttons()
+
+    def buttons(self):
+        it = self._sel(); ok = it is not None
+        for b in (self.b_open, self.b_read, self.b_rm):
+            b.setEnabled(ok)
+        self.b_off.setEnabled(ok and self.rl.offline_path(it).exists())
+        self.b_read.setText("Oznacz jako nieprzeczytane" if ok and it.get("read") else "Oznacz jako przeczytane")
 
     def _sel(self):
         li = self.list.currentItem(); iid = li.data(Qt.ItemDataRole.UserRole) if li else None
@@ -10706,46 +10979,40 @@ class ReadLaterDialog(QDialog):
             self.rl.remove(it); self.fill()
 
 
-class HighlightsDialog(QDialog):
+class HighlightsDialog(LunaDialog):
     """Wszystkie zakreślenia i notatki: strona → fragmenty; dwuklik otwiera stronę."""
 
     def __init__(self, browser):
-        super().__init__(browser); self.b = browser
-        self.setWindowTitle("Zakreślenia i notatki"); self.resize(fit_size(680, 540))
-        v = QVBoxLayout(self)
-        v.addWidget(lbl("Zakreślenia i notatki", "h3"))
-        v.addWidget(lbl("Zaznacz tekst na stronie → prawy przycisk → Zakreśl. Zakreślenia wracają, gdy otworzysz stronę ponownie.",
-                        "muted", wrap=True))
-        self.tree = QTreeWidget(); self.tree.setHeaderHidden(True); self.tree.setObjectName("wlist"); v.addWidget(self.tree, 1)
-        self.tree.itemDoubleClicked.connect(self._open)
-        row = QHBoxLayout(); op = QPushButton("Otwórz stronę"); op.clicked.connect(lambda: self._open(self.tree.currentItem()))
-        rm = QPushButton("Usuń zaznaczone"); rm.clicked.connect(self._remove)
-        row.addWidget(op); row.addWidget(rm); row.addStretch(1); v.addLayout(row)
+        super().__init__(browser, "Zakreślenia i notatki", "edit", (720, 580),
+                         "Zakreślenia wracają, gdy otworzysz stronę ponownie. Dwuklik otwiera stronę.")
+        self.b = browser
+        self.tree = row_list(); self.tree.itemDoubleClicked.connect(self._open)
+        self.panel(self.tree, "edit", "Brak zakreśleń", "Zaznacz tekst na stronie → prawy przycisk → Zakreśl.")
+        self.footer(left=[("Otwórz stronę", lambda: self._open(self.tree.currentItem()), True)],
+                    right=[("Usuń zaznaczone", self._remove)])
         self.fill()
 
     def fill(self):
         self.tree.clear()
         data = Highlights.data()
         for url, items in sorted(data.items(), key=lambda kv: -max((h.get("t", 0) for h in kv[1]), default=0)):
-            top = QTreeWidgetItem([(items[0].get("title") or url)[:90] + f"   ({len(items)})"])
-            top.setData(0, Qt.ItemDataRole.UserRole, (url, None)); top.setToolTip(0, url)
+            n = len(items)
+            self.tree.addItem(row_item(items[0].get("title") or url, host_of(url),
+                                       f"{n} {'zakreślenie' if n == 1 else ('zakreślenia' if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else 'zakreśleń')}",
+                                       mini_icon(items[0].get("title") or url, url), (url, None), url))
             for h in items:
                 txt = h.get("text", "").replace("\n", " ")
-                ch = QTreeWidgetItem(["„" + txt[:110] + ("…" if len(txt) > 110 else "") + "”"
-                                      + (f"   — {h['note'][:80]}" if h.get("note") else "")])
-                ch.setIcon(0, tab_icon(None, h.get("color", "#fff176"))); ch.setData(0, Qt.ItemDataRole.UserRole, (url, h.get("id")))
-                top.addChild(ch)
-            self.tree.addTopLevelItem(top); top.setExpanded(True)
-        if not data:
-            self.tree.addTopLevelItem(QTreeWidgetItem(["Brak zakreśleń."]))
+                self.tree.addItem(row_item("„" + txt[:160] + ("…" if len(txt) > 160 else "") + "”", h.get("note", "")[:120], "",
+                                           tab_icon(None, h.get("color", "#fff176")), (url, h.get("id")), indent=26))
+        self.show_empty(not data)
 
     def _open(self, it):
-        d = it.data(0, Qt.ItemDataRole.UserRole) if it else None
+        d = it.data(Qt.ItemDataRole.UserRole) if it else None
         if d:
             self.b.open_url_new_tab(d[0]); self.accept()
 
     def _remove(self):
-        it = self.tree.currentItem(); d = it.data(0, Qt.ItemDataRole.UserRole) if it else None
+        it = self.tree.currentItem(); d = it.data(Qt.ItemDataRole.UserRole) if it else None
         if not d:
             return
         url, hid = d
@@ -11309,6 +11576,138 @@ class Frame(QWidget):
         h = self.window().windowHandle()
         if ev.button() == Qt.MouseButton.LeftButton and e and h:
             h.startSystemResize(e)
+
+
+class SplitDropOverlay(QWidget):
+    """Podgląd podziału ekranu podczas przeciągania karty z paska: nad stroną widać dwie połowy – ta pod kursorem
+    podświetla się z nazwą przeciąganej karty („upuść tutaj”), druga pokazuje obecną stronę. Puszczenie poza
+    stroną nic nie zmienia. Przy istniejącym podziale – podświetla stronę podziału, którą karta zastąpi."""
+
+    def __init__(self, browser):
+        super().__init__(browser.stack.parentWidget()); self.b = browser
+        self.setAcceptDrops(True); self.hide()
+        self.T = self.t = None; self.zone = -1; self.msg = ""; self.vertical = False
+
+    def start(self, T, t):
+        """T – karta na ekranie (zostanie podzielona), t – przeciągana karta."""
+        self.T, self.t, self.zone = T, t, -1
+        url = t.pending or (t.main.url().toString() if t.main is not None and not t.on_home() else "")
+        self.msg = ""
+        if T is None or T is t:
+            self.msg = "Przejdź najpierw na kartę, z którą chcesz podzielić ekran"
+        elif T.main is None or (T.on_home() and not T.sides):
+            self.msg = "Na tej karcie nie ma strony – otwórz stronę, aby podzielić ekran"
+        elif not url or t.split is not None:
+            self.msg = "Tej karty nie da się dołożyć do podziału" if t.split is not None else "Przeciągana karta nie ma strony"
+        self.vertical = bool(T is not None and not T.sides and T.width() < T.height() * 0.9)
+        self.setGeometry(self.b.stack.geometry()); self.raise_(); self.show(); self.update()
+
+    def stop(self):
+        self.hide(); self.T = self.t = None; self.zone = -1
+
+    def zones(self):
+        r = QRectF(self.rect()).adjusted(12, 12, -12, -12)
+        T = self.T
+        if T is not None and T.sides and T.split is not None:
+            out = []
+            for s in T.sides:
+                o = self.mapFromGlobal(s.mapToGlobal(QPoint(0, 0))); g = QRectF(o.x(), o.y(), s.width(), s.height()) if s.isVisible() else QRectF()
+                out.append(g.adjusted(6, 6, -6, -6))
+            return out
+        if self.vertical:
+            h = (r.height() - 12) / 2
+            return [QRectF(r.left(), r.top(), r.width(), h), QRectF(r.left(), r.top() + h + 12, r.width(), h)]
+        w = (r.width() - 12) / 2
+        return [QRectF(r.left(), r.top(), w, r.height()), QRectF(r.left() + w + 12, r.top(), w, r.height())]
+
+    def _zone_at(self, pos):
+        if self.msg:
+            return -1
+        for i, z in enumerate(self.zones()):
+            if z.contains(QPointF(pos)):
+                return i
+        return -1
+
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasFormat(TAB_MIME):
+            ev.acceptProposedAction(); self._move(ev)
+
+    def dragMoveEvent(self, ev):
+        if ev.mimeData().hasFormat(TAB_MIME):
+            self._move(ev)
+
+    def _move(self, ev):
+        z = self._zone_at(ev.position().toPoint())
+        if z >= 0:
+            ev.acceptProposedAction()
+        else:
+            ev.ignore()
+        if z != self.zone:
+            self.zone = z; self.update()
+
+    def dragLeaveEvent(self, ev):
+        self.zone = -1; self.update()
+
+    def dropEvent(self, ev):
+        z = self._zone_at(ev.position().toPoint()); T, t = self.T, self.t
+        if z < 0 or T is None or t is None:
+            ev.ignore(); return
+        ev.acceptProposedAction(); self.stop()
+        QTimer.singleShot(0, lambda: self.b.split_drop(T, t, z, self.vertical))
+
+    @staticmethod
+    def _title(tab):
+        if tab is None:
+            return ""
+        return tab.title_text or (host_of(tab.pending) if tab.pending else "Ekran główny")
+
+    def paintEvent(self, ev):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor(0, 0, 0, 150))
+        f = QFont(self.font()); f.setPixelSize(15); f.setWeight(QFont.Weight.DemiBold)
+        small = QFont(self.font()); small.setPixelSize(13)
+        if self.msg:
+            r = QRectF(self.rect()); box = QRectF(r.center().x() - 240, r.center().y() - 46, 480, 92)
+            p.setPen(QPen(QColor("#333333"), 1)); p.setBrush(QColor("#161616")); p.drawRoundedRect(box, 14, 14)
+            p.setPen(QColor("#ececec")); p.setFont(f)
+            p.drawText(box.adjusted(20, 14, -20, -40), Qt.AlignmentFlag.AlignCenter, "Nie można tu podzielić ekranu")
+            p.setPen(QColor("#9a9a9a")); p.setFont(small)
+            p.drawText(box.adjusted(20, 44, -20, -12), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.msg)
+            return
+        split = bool(self.T is not None and self.T.sides)
+        for i, z in enumerate(self.zones()):
+            if z.isEmpty():
+                continue
+            hot = i == self.zone
+            if hot:
+                p.setPen(QPen(QColor("#ececec"), 2)); p.setBrush(QColor(236, 236, 236, 34))
+            else:
+                pen = QPen(QColor(255, 255, 255, 60), 1.4); pen.setStyle(Qt.PenStyle.DashLine); p.setPen(pen)
+                p.setBrush(QColor(20, 20, 20, 150))
+            p.drawRoundedRect(z, 16, 16)
+            # treść strefy: ikona, tytuł, podpis
+            if hot:
+                head, sub = self._title(self.t), ("Upuść, aby zastąpić tę stronę" if split else "Upuść, aby otworzyć tutaj")
+                icon = tab_icon(self.t.icon if self.t else None)
+            elif split:
+                side = self.T.sides[i]; v = side.view
+                head, sub = (v.title() if v is not None else "Pusta strona"), "Przeciągnij tutaj, aby zastąpić"
+                icon = tab_icon(v.icon() if v is not None else None)
+            elif self.zone >= 0:
+                head, sub = self._title(self.T), "Obecna strona"
+                icon = tab_icon(self.T.icon)
+            else:
+                head, sub = ("Lewa strona" if not self.vertical else "Góra") if i == 0 else ("Prawa strona" if not self.vertical else "Dół"), \
+                    "Przeciągnij kartę na połowę ekranu"
+                icon = glyph("split", "#ececec")
+            c = z.center(); tile = QRectF(c.x() - 26, c.y() - 58, 52, 52)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#2a2a2a" if hot else "#1c1c1c")); p.drawRoundedRect(tile, 14, 14)
+            icon.paint(p, tile.adjusted(14, 14, -14, -14).toRect())
+            fm = QFontMetrics(f); w = int(min(z.width() - 40, 420))
+            p.setFont(f); p.setPen(QColor("#ffffff" if hot else "#c9c9c9"))
+            p.drawText(QRectF(c.x() - w / 2, c.y() + 6, w, 24), Qt.AlignmentFlag.AlignCenter, fm.elidedText(head, Qt.TextElideMode.ElideRight, w))
+            p.setFont(small); p.setPen(QColor("#b0b0b0" if hot else "#7d7d7d"))
+            p.drawText(QRectF(c.x() - w / 2, c.y() + 32, w, 20), Qt.AlignmentFlag.AlignCenter, sub)
 
 
 class TabBar(QTabBar):
@@ -12003,38 +12402,39 @@ class Browser(QMainWindow):
 
     def burger_menu(self):
         m = self.burger.menu(); m.clear(); web = self.web()
-        hidden = [k for k, _ in TOOL_ITEMS if k not in self.pins() and k != "gear"]
-        if hidden:   # ikony schowane z paska
+        menu_row_action(m, MenuSearch(lambda: (m.close(), QTimer.singleShot(0, self.palette))))
+        hidden = [k for k, _ in TOOL_ITEMS if k not in self.pins() and k not in ("gear", "split", "key", "reader")]
+        if hidden:   # ikony schowane z paska (podział, hasła i czytanie mają stałe miejsca niżej)
             names = dict(TOOL_ITEMS)
             for k in hidden:
                 if k == "shield":
                     sm = m.addMenu(glyph("shield"), names[k]); sm.aboutToShow.connect(lambda sm=sm: self.shield_menu(sm))
-                elif k == "key":
-                    pass   # w sekcji „Hasła i autouzupełnianie”
                 elif k == "google" and self.host.google is not None:
                     sm = m.addMenu(google_g_icon(), names[k]); sm.aboutToShow.connect(lambda sm=sm: self.build_account_menu(sm))
-                elif k == "split":
-                    on = bool(self.cur() and self.cur().sides)
-                    self.act(m, "split", "Zakończ podział ekranu" if on else "Podziel ekran", self.split_current, "Ctrl+\\",
-                             on or web is not None)
                 elif k == "star":
                     self.act(m, "star", "Dodaj do ekranu głównego", self.pin_current, "Ctrl+D", web is not None)
-                elif k == "reader":
-                    pass   # w sekcji „widok”
                 elif k == "ai" and self.store.feature("assistant"):
                     self.act(m, "assistant", "Asystent AI", self.toggle_assistant, "Ctrl+J")
-            if not m.isEmpty():
-                m.addSeparator()
+                elif k == "apps" and self.store.feature("webapps"):
+                    self.act(m, "chat", "Panel aplikacji", self.toggle_webapps, "Ctrl+Shift+K")
         # 1. karty i okna
+        menu_section(m, "Karty i okna")
         self.act(m, "plus", "Nowa karta", self.new_tab, "Ctrl+T")
-        self.act(m, "search", "Szukaj w kartach…", self.search_tabs, "Ctrl+Shift+Space")
         self.act(m, "window", "Nowe okno", self.new_window, "Ctrl+N")
         self.act(m, "private", "Nowe okno prywatne", lambda: self.new_window(True), "Ctrl+Shift+N")
-        m.addSeparator()
-        # 2. narzędzia
-        self.act(m, "grid", "Rynek Widgetów", self.open_market, "Ctrl+Shift+E")
-        pw = m.addMenu(glyph("key"), "Hasła i autouzupełnianie")
-        pw.aboutToShow.connect(lambda: self.key_menu(pw))
+        self.act(m, "search", "Szukaj w kartach…", self.search_tabs, "Ctrl+Shift+Space")
+        on = bool(self.cur() and self.cur().sides)
+        self.act(m, "split", "Zakończ podział ekranu" if on else "Podziel ekran",
+                 self.split_current, "Ctrl+\\", on or web is not None)
+        if SYNC and SYNC[0].enabled() and SYNC[0].remote:
+            om = m.addMenu(glyph("window"), "Karty z innych komputerów")
+            for name, ts, tabs in SYNC[0].other_tabs():
+                sm_ = om.addMenu(f"{name} ({len(tabs)})")
+                for d_ in tabs[:40]:
+                    sm_.addAction(mini_icon(d_.get("title") or d_["url"], d_["url"]), (d_.get("title") or d_["url"])[:60]).triggered.connect(
+                        lambda _=False, u=d_["url"]: self.open_url_new_tab(u))
+        # 2. twoje rzeczy
+        menu_section(m, "Twoje rzeczy")
         hm = m.addMenu(glyph("history"), "Historia")
         self.act(hm, "history", "Pełna historia…", self.show_history, "Ctrl+H")
         self.act(hm, "reload", "Przywróć zamkniętą kartę", self.restore_closed, "Ctrl+Shift+T", bool(self._closed))
@@ -12067,19 +12467,12 @@ class Browser(QMainWindow):
                         lambda _=False, u=b_["url"]: self.open_url_new_tab(u))
         bm.addSeparator(); self.act(bm, "download", "Importuj z innej przeglądarki…", lambda: ImportDialog(self).exec())
         rl = m.addMenu(glyph("book"), "Do przeczytania"); rl.aboutToShow.connect(lambda: self.read_later_menu(rl))
-        if SYNC and SYNC[0].enabled() and SYNC[0].remote:
-            om = m.addMenu(glyph("window"), "Karty z innych komputerów")
-            for name, ts, tabs in SYNC[0].other_tabs():
-                sm_ = om.addMenu(f"{name} ({len(tabs)})")
-                for d_ in tabs[:40]:
-                    sm_.addAction(mini_icon(d_.get("title") or d_["url"], d_["url"]), (d_.get("title") or d_["url"])[:60]).triggered.connect(
-                        lambda _=False, u=d_["url"]: self.open_url_new_tab(u))
         self.act(m, "edit", "Zakreślenia i notatki…", self.show_highlights)
         self.act(m, "download", "Pobrane pliki", self.show_downloads, "Ctrl+Shift+Y")
-        em = m.addMenu(glyph("puzzle"), "Rozszerzenia"); em.aboutToShow.connect(lambda: self.extensions_menu(em))
-        self.act(m, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
-        m.addSeparator()
-        # 3. widok
+        pw = m.addMenu(glyph("key"), "Hasła i autouzupełnianie")
+        pw.aboutToShow.connect(lambda: self.key_menu(pw))
+        # 3. ta strona
+        menu_section(m, "Ta strona")
         zr = MenuRow("zoom", "Powiększ")
         zr.button(kind="min", tip="Pomniejsz (Ctrl+-)", fn=lambda: self.zoom(-1))
         self._zoom_lbl = zr.button(f"{round((web.zoomFactor() if web else 1) * 100)}%", tip="Przywróć 100% (Ctrl+0)",
@@ -12095,20 +12488,12 @@ class Browser(QMainWindow):
         self.act(m, "swap", "Pokaż oryginał strony" if tr_on else "Przetłumacz stronę na polski", self.translate_page,
                  "Ctrl+Shift+L", web is not None)
         self.act(m, "external", "Obraz w obrazie (film w okienku)", self.pip, "Ctrl+Shift+P", web is not None)
-        cp = self.act(m, "eye", "Tryb kompaktowy (pasek adresu schowany)", self.toggle_compact, "Ctrl+Shift+F")
-        cp.setCheckable(True); cp.setChecked(bool(self.store.settings.get("compact")))
         dk = self.act(m, "moon", "Ciemny tryb stron", self.toggle_dark, "Ctrl+Shift+D")
         dk.setCheckable(True); dk.setChecked(self.store.feature("dark_pages"))
         if web is not None and self.store.feature("dark_pages"):
             dom = base_domain(web.url().host())
             ex = self.act(m, "sun", f"Bez ciemnego trybu na {dom}", lambda d=dom: self.set_dark_except(d, d not in DARK["except"]))
             ex.setCheckable(True); ex.setChecked(dom in DARK["except"])
-        pm = m.addMenu(glyph("pin"), "Ikony na pasku")
-        for key, name in TOOL_ITEMS:
-            a = pm.addAction(name); a.setCheckable(True); a.setChecked(key in self.pins())
-            a.toggled.connect(lambda on, k=key: self.set_pin(k, on))
-        m.addSeparator()
-        # 4. akcje strony
         self.act(m, "print", "Drukuj…", self.print_page, "Ctrl+P", web is not None)
         fm = m.addMenu(glyph("search"), "Znajdź i edytuj"); fm.setEnabled(web is not None)
         self.act(fm, "search", "Znajdź na stronie…", self.find_bar.open, "Ctrl+F")
@@ -12119,7 +12504,7 @@ class Browser(QMainWindow):
                                            ("paste", "Wklej", QWebEnginePage.WebAction.Paste, "Ctrl+V"),
                                            ("select", "Zaznacz wszystko", QWebEnginePage.WebAction.SelectAll, "Ctrl+A")):
                 self.act(fm, kind, text, lambda a=action: web.page().triggerAction(a), sc)
-        sm = m.addMenu(glyph("share"), "Zapisz i udostępnij"); sm.setEnabled(web is not None)
+        sm = m.addMenu(glyph("share"), "Zapisz, zrzut ekranu, udostępnij"); sm.setEnabled(web is not None)
         self.act(sm, "save", "Zapisz stronę jako…", self.save_page, "Ctrl+S")
         self.act(sm, "print", "Zapisz jako PDF…", self.save_pdf)
         self.act(sm, "copy", "Kopiuj link", lambda: web and QGuiApplication.clipboard().setText(web.url().toString()))
@@ -12127,18 +12512,32 @@ class Browser(QMainWindow):
         self.act(sm, "copy", "Zrzut: widoczna część", lambda: self.screenshot("visible"))
         self.act(sm, "copy", "Zrzut: cała strona", lambda: self.screenshot("full"))
         self.act(sm, "copy", "Zrzut: zaznaczony fragment…", lambda: self.screenshot("region"), "Ctrl+Shift+S")
+        # 4. luna
+        menu_section(m, "Dostosuj Lunę")
+        self.act(m, "grid", "Rynek Widgetów", self.open_market, "Ctrl+Shift+E")
+        em = m.addMenu(glyph("puzzle"), "Rozszerzenia"); em.aboutToShow.connect(lambda: self.extensions_menu(em))
+        cp = self.act(m, "eye", "Tryb kompaktowy (pasek adresu schowany)", self.toggle_compact, "Ctrl+Shift+F")
+        cp.setCheckable(True); cp.setChecked(bool(self.store.settings.get("compact")))
+        pm = m.addMenu(glyph("pin"), "Ikony na pasku")
+        for key, name in TOOL_ITEMS:
+            a = pm.addAction(name); a.setCheckable(True); a.setChecked(key in self.pins())
+            a.toggled.connect(lambda on, k=key: self.set_pin(k, on))
         tm = m.addMenu(glyph("tools"), "Więcej narzędzi")
         self.act(tm, "tools", "Menedżer zadań", self.task_manager, "Shift+Esc")
+        self.act(tm, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
         self.act(tm, "save", "Kopia zapasowa…", lambda: BackupDialog(self).exec())
         self.act(tm, "download", "Importuj z innej przeglądarki…", lambda: ImportDialog(self).exec())
-        self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
-        self.act(tm, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U", web is not None)
+        tm.addSeparator()
         self.act(tm, "tabs", "Karty i grupy", self.toggle_tab_popup, "Ctrl+Shift+A")
         self.act(tm, "layers", "Przestrzenie robocze…", lambda: self.open_settings("tabs"))
         self.act(tm, "shield", "Prywatność…", lambda: self.open_settings("privacy"))
+        tm.addSeparator()
+        self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
+        self.act(tm, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U", web is not None)
         m.addSeparator()
         # 5. systemowe
         hp = m.addMenu(glyph("help"), "Pomoc")
+        self.act(hp, "search", "Wszystkie polecenia…", self.palette, "Ctrl+K")
         self.act(hp, "app", "Skróty klawiszowe", lambda: self.open_settings("keys"))
         self.act(hp, "help", "O Lunie", self.about)
         self.act(hp, "shield", "Polityka prywatności", lambda: self.open_url_new_tab(PRIVACY_URL))
@@ -12626,9 +13025,7 @@ class Browser(QMainWindow):
             self.open_url_new_tab("view-source:" + web.url().toString(), self.cur().container)
 
     def about(self):
-        from PyQt6.QtWebEngineCore import qWebEngineChromiumVersion
-        QMessageBox.about(self, "O Lunie", "<h3>Luna</h3><p>Lekka przeglądarka z kafelkami, widgetami i asystentem AI.</p>"
-                          f"<p style='color:#9a9a9a'>Silnik: Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)</p>")
+        AboutDialog(self).exec()
 
     def open_google(self, url):
         """Strony Google: w karcie Luny, gdy jest tam sesja Google; inaczej w zwykłej przeglądarce (Google blokuje logowanie
@@ -12753,8 +13150,30 @@ class Browser(QMainWindow):
         pm = th.scaledToWidth(180, Qt.TransformationMode.SmoothTransformation) if th is not None and not th.isNull() \
             else self.bar.grab(self.bar.tabRect(i))
         d.setPixmap(pm); d.setHotSpot(QPoint(pm.width() // 2, 10))
-        d.exec(Qt.DropAction.MoveAction)
+        if getattr(self, "_split_ov", None) is None:
+            self._split_ov = SplitDropOverlay(self)
+        self._split_ov.start(self.cur(), t)   # podgląd: na którą połowę ekranu trafi karta
+        try:
+            d.exec(Qt.DropAction.MoveAction)
+        finally:
+            self._split_ov.stop()
         QTimer.singleShot(50, lambda: setattr(self, "_dragging", None))   # po obsłudze upuszczenia (singleShot 0)
+
+    def split_drop(self, T, t, zone, vertical=False):
+        """Karta t upuszczona na połowę ekranu karty T (0 – lewa/górna, 1 – prawa/dolna)."""
+        tabs = self.all_tabs()
+        if T not in tabs or t not in tabs or T is t:
+            return
+        if T.sides:
+            T.adopt_tab(T.sides[min(zone, len(T.sides) - 1)], t); return
+        T.split_with("", vertical)
+        if not T.sides:
+            return
+        T.adopt_tab(T.sides[1], t)
+        if t in self.all_tabs():   # nie udało się przenieść – bez pustej połowy
+            T.close_side(T.sides[1]); return
+        if zone == 0:
+            T.swap_split()
 
     def tab_from_mime(self, md):
         try:
