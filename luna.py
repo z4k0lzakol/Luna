@@ -2625,7 +2625,7 @@ class Background:
         while f is not None and not isinstance(f, BgFrame):   # tło okna, w którym jest widget
             f = f.parentWidget()
         if f is not None and f.page_color is not None:     # na stronie WWW: pod szkłem kolor strony
-            p.fillRect(widget.rect(), f.page_color); return
+            p.fillRect(widget.rect(), f.color_for(widget)); return
         entry = self.cache.get(getattr(f, "key", None)) if f is not None else None
         if entry is None:
             return
@@ -2639,7 +2639,7 @@ class Background:
         f = widget.parentWidget()
         while f is not None and not isinstance(f, BgFrame):
             f = f.parentWidget()
-        c = getattr(f, "page_color", None)
+        c = f.color_for(widget) if isinstance(f, BgFrame) else None
         return c is not None and c.lightnessF() > 0.55
 
 
@@ -2653,6 +2653,7 @@ class BgFrame(QWidget):
         super().__init__()
         self.setObjectName("bgframe"); self.key = None
         self.page_color = None   # kolor tła otwartej strony WWW (None = tło Luny, np. na ekranie głównym)
+        self.page_color_r = None  # podział ekranu w poziomie: kolor strony po prawej (prawy panel); None = jak page_color
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self._recompute)
 
     def _recompute(self):
@@ -2666,16 +2667,29 @@ class BgFrame(QWidget):
             self.key = BG.prepare(self.size(), self)
         super().showEvent(ev)
 
-    def set_page_color(self, color):
-        if color != self.page_color:
-            self.page_color = color; self.update()
+    def set_page_color(self, color, right=None):
+        if right is not None and color is not None and right == color:
+            right = None
+        if color != self.page_color or right != self.page_color_r:
+            self.page_color, self.page_color_r = color, (right if color is not None else None); self.update()
             for w in self.findChildren(WidgetFrame):
                 w.update()
+
+    def color_for(self, widget):
+        """Kolor tła pod widgetem: przy podziale ekranu lewa połowa okna – lewa strona, prawa – prawa."""
+        if self.page_color_r is None or widget is None:
+            return self.page_color
+        x = widget.mapTo(self, QPoint(widget.width() // 2, 0)).x() if widget is not self else 0
+        return self.page_color if x < self.width() / 2 else self.page_color_r
 
     def paintEvent(self, ev):
         p = QPainter(self)
         if self.page_color is not None:   # panele boczne na stronie: to samo tło co strona, nic nie odstaje
-            p.fillRect(self.rect(), self.page_color); return
+            if self.page_color_r is None:
+                p.fillRect(self.rect(), self.page_color); return
+            half = self.width() // 2
+            p.fillRect(0, 0, half, self.height(), self.page_color)
+            p.fillRect(half, 0, self.width() - half, self.height(), self.page_color_r); return
         p.fillRect(self.rect(), QColor("#111111"))
         if self.key != BG.wanted_key(self.size(), self):
             self._t.start(90)          # trwa zmiana rozmiaru – rysujemy stary cache, nowy po 90 ms ciszy
@@ -10513,7 +10527,8 @@ class SplitSide(QFrame):
         self.title = QLabel("Nowa strona"); self.title.setObjectName("splittitle")
         self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         h.addWidget(self.ic); h.addSpacing(6); h.addWidget(self.title, 1)
-        self.b_swap = self._b(h, "swap", "Zamień strony miejscami", lambda: tab.swap_split())
+        self.b_add = self._b(h, "plus", "Dodaj trzecią stronę", lambda: tab.add_side())
+        self.b_swap = self._b(h, "swap", "Zamień strony miejscami", lambda: tab.swap_split(self))
         self.b_turn = self._b(h, "splitv", "Układ pionowy / poziomy", lambda: tab.turn_split())
         self.b_out = self._b(h, "external", "Odłącz do osobnej karty", lambda: tab.detach_side(self))
         self._b(h, "close", "Zamknij tę stronę", lambda: tab.close_side(self))
@@ -10565,7 +10580,12 @@ class SplitSide(QFrame):
         self.title.setText(t or "Nowa strona"); self.title.setToolTip(t)
         ic = w.icon() if w is not None else QIcon()
         self.ic.setPixmap((ic if not ic.isNull() else glyph("app", "#6f6f6f")).pixmap(32, 32))
-        self.b_swap.setEnabled(all(s.view is not None for s in self.tab.sides or []))
+        sides = self.tab.sides or []
+        i = sides.index(self) if self in sides else 0; j = i + 1 if i + 1 < len(sides) else i - 1
+        self.b_swap.setEnabled(0 <= j < len(sides) and self.view is not None and sides[j].view is not None)
+        self.b_swap.setToolTip("Zamień strony miejscami" if len(sides) < 3 else
+                               ("Zamień z prawą stroną" if j > i else "Zamień z lewą stroną"))
+        self.b_add.setVisible(len(sides) < Tab.MAX_SIDES and self is sides[-1] if sides else False)
         vert = self.tab.split is not None and self.tab.split.orientation() == Qt.Orientation.Vertical
         self.b_turn.setIcon(glyph("split" if vert else "splitv", "#9a9a9a")); self.b_out.setVisible(w is not None)
 
@@ -11050,12 +11070,12 @@ class Tab(QStackedWidget):
         gdy aktywna strona podziału jest jeszcze pusta, polecenia (drukuj, powiększ, czytanie…) działają na drugą."""
         if not self.sides:
             return self._main
-        v = self.sides[self._act].view
-        return v if v is not None else self.sides[1 - self._act].view
+        v = self.sides[self._act].view if 0 <= self._act < len(self.sides) else None
+        return v if v is not None else next((s.view for s in self.sides if s.view is not None), None)
 
     def side_empty(self):
         """Aktywna strona podziału czeka na wybór (pasek adresu pokazuje wtedy puste pole)."""
-        return bool(self.sides) and self.sides[self._act].view is None
+        return bool(self.sides) and 0 <= self._act < len(self.sides) and self.sides[self._act].view is None
 
     def _web_widget(self):
         return self.split if self.split is not None else self._main
@@ -11155,6 +11175,35 @@ class Tab(QStackedWidget):
             s.refresh()
         self.browser.sync_address(); self.browser.update_sidebars_soon(); self.browser.decorate(self)
 
+    MAX_SIDES = 3   # podział ekranu: 2 albo 3 strony
+
+    def add_side(self, url=""):
+        """Kolejna (trzecia) strona podziału: pusta (wybór karty / adres) albo od razu z adresem."""
+        if self.split is None or not self.sides or len(self.sides) >= self.MAX_SIDES:
+            return None
+        s = SplitSide(self); self.sides.append(s); self.split.addWidget(s)
+        self.split.setSizes([10000] * len(self.sides)); self._act = -1; self.set_active_side(s)
+        if url:
+            self.load_side(s, url)
+        for x in self.sides:
+            x.refresh()
+        self.browser.sync_address(); self.browser.update_sidebars_soon(); self.browser.decorate(self)
+        return s
+
+    def _drop_side(self, side):
+        """Usuwa (już pustą) stronę podziału; gdy zostaje jedna strona – koniec podziału."""
+        if len(self.sides) <= 2:
+            self._dissolve(self._other(side)); return
+        i = self.sides.index(side)
+        cur = self.sides[self._act] if 0 <= self._act < len(self.sides) else None
+        self.sides.remove(side); side.setParent(None); side.deleteLater()
+        self.split.setSizes([10000] * len(self.sides))
+        self._act = -1; self.set_active_side(cur if cur in self.sides else self.sides[max(0, i - 1)])
+        self._sync_main()
+        for s in self.sides:
+            s.refresh()
+        b = self.browser; b.sync_address(); b.decorate(self); b.update_sidebars_soon(); b.update_page_bg()
+
     def set_active_side(self, side):
         if not self.sides or side not in self.sides:
             return
@@ -11213,20 +11262,20 @@ class Tab(QStackedWidget):
     def detach_side(self, side):
         if not self.sides or side not in self.sides:
             return
-        v = side.take_view(); self._dissolve(self._other(side))
+        v = side.take_view(); self._drop_side(side)
         if v is not None:
             self._to_new_tab(v)
 
     def close_side(self, side):
         if not self.sides or side not in self.sides:
             return
-        v = side.take_view(); self._dissolve(self._other(side))
+        v = side.take_view(); self._drop_side(side)
         if v is not None:
             v.deleteLater()
 
     def unsplit(self):
         if self.sides:
-            self.close_side(self.sides[1])
+            self.close_side(self.sides[-1])
 
     def _dissolve(self, keep_side):
         sp, keep = self.split, keep_side.take_view()
@@ -11241,11 +11290,21 @@ class Tab(QStackedWidget):
             b.set_tab_text(self, "Ekran główny")
         b.decorate(self); b.sync_address(); b.update_sidebars_soon(); b.tabs_changed()
 
-    def swap_split(self):
-        if not self.sides or any(s.view is None for s in self.sides):
+    def swap_split(self, side=None):
+        """Zamienia stronę miejscami z sąsiednią (przy dwóch stronach – po prostu obie)."""
+        if not self.sides:
             return
-        sz = self.split.sizes(); self.split.insertWidget(0, self.sides[1]); self.split.setSizes(sz)
-        self.sides.reverse(); self._act = 1 - self._act; self._main = self.sides[0].view
+        i = self.sides.index(side) if side in self.sides else 0
+        j = i + 1 if i + 1 < len(self.sides) else i - 1
+        if j < 0 or self.sides[i].view is None or self.sides[j].view is None:
+            return
+        cur = self.sides[self._act] if 0 <= self._act < len(self.sides) else None
+        sz = self.split.sizes()
+        self.sides[i], self.sides[j] = self.sides[j], self.sides[i]
+        for k, s in enumerate(self.sides):
+            self.split.insertWidget(k, s)
+        self.split.setSizes(sz)
+        self._act = self.sides.index(cur) if cur in self.sides else 0; self._main = self.sides[0].view
         self.browser.on_title(self, self._main.title()); self.browser.on_icon(self, self._main.icon())
         self.browser.decorate(self)
 
@@ -11253,7 +11312,7 @@ class Tab(QStackedWidget):
         if self.split is not None:
             h = self.split.orientation() == Qt.Orientation.Horizontal
             self.split.setOrientation(Qt.Orientation.Vertical if h else Qt.Orientation.Horizontal)
-            self.split.setSizes([10000, 10000])
+            self.split.setSizes([10000] * len(self.sides))
             for s in self.sides:
                 s.refresh()
 
@@ -11261,7 +11320,8 @@ class Tab(QStackedWidget):
         """Do zapisu sesji: adres drugiej strony i układ (pionowy?)."""
         if self.sides and self.sides[1].view is not None:
             u = self.sides[1].view.url().toString()
-            return {"url": u, "v": self.split.orientation() == Qt.Orientation.Vertical} if u else None
+            more = [s.view.url().toString() for s in self.sides[2:] if s.view is not None]
+            return {"url": u, "more": [m for m in more if m], "v": self.split.orientation() == Qt.Orientation.Vertical} if u else None
         return self.pending_split
 
     # --- usypianie (zwalnia RAM; strona wczyta się ponownie po powrocie) ---
@@ -11288,6 +11348,8 @@ class Tab(QStackedWidget):
             ps, self.pending_split = self.pending_split, None
             if isinstance(ps, dict) and ps.get("url"):   # przywrócony podział ekranu z poprzedniej sesji
                 self.split_with(ps["url"], bool(ps.get("v")))
+                for u in (ps.get("more") or [])[:self.MAX_SIDES - 2]:
+                    self.add_side(u)
                 if self.sides:
                     self.set_active_side(self.sides[0])
         if self.asleep:
@@ -11605,37 +11667,56 @@ class SplitDropOverlay(QWidget):
     def stop(self):
         self.hide(); self.T = self.t = None; self.zone = -1
 
-    def zones(self):
-        r = QRectF(self.rect()).adjusted(12, 12, -12, -12)
+    def _vert(self):
         T = self.T
         if T is not None and T.sides and T.split is not None:
+            return T.split.orientation() == Qt.Orientation.Vertical
+        return self.vertical
+
+    def zones(self):
+        """Strefy (prostokąt, rodzaj): ("half", i) bez podziału; ("side", i) – zastąp stronę i; ("add", n) – dodaj stronę."""
+        r = QRectF(self.rect()).adjusted(12, 12, -12, -12)
+        T = self.T; vert = self._vert()
+        if T is not None and T.sides and T.split is not None:
             out = []
-            for s in T.sides:
-                o = self.mapFromGlobal(s.mapToGlobal(QPoint(0, 0))); g = QRectF(o.x(), o.y(), s.width(), s.height()) if s.isVisible() else QRectF()
-                out.append(g.adjusted(6, 6, -6, -6))
+            for i, s in enumerate(T.sides):
+                o = self.mapFromGlobal(s.mapToGlobal(QPoint(0, 0)))
+                out.append((QRectF(o.x(), o.y(), s.width(), s.height()).adjusted(6, 6, -6, -6), ("side", i)))
+            if len(T.sides) < Tab.MAX_SIDES:   # pasek na końcu: „dodaj jako trzecią stronę”
+                last, k = out[-1]
+                if vert:
+                    hh = max(90.0, r.height() * 0.24)
+                    add = QRectF(r.left(), r.bottom() - hh, r.width(), hh)
+                    last = QRectF(last.left(), last.top(), last.width(), max(0.0, add.top() - 12 - last.top()))
+                else:
+                    ww = max(150.0, r.width() * 0.24)
+                    add = QRectF(r.right() - ww, r.top(), ww, r.height())
+                    last = QRectF(last.left(), last.top(), max(0.0, add.left() - 12 - last.left()), last.height())
+                out[-1] = (last, k); out.append((add, ("add", len(T.sides))))
             return out
-        if self.vertical:
+        if vert:
             h = (r.height() - 12) / 2
-            return [QRectF(r.left(), r.top(), r.width(), h), QRectF(r.left(), r.top() + h + 12, r.width(), h)]
+            return [(QRectF(r.left(), r.top(), r.width(), h), ("half", 0)), (QRectF(r.left(), r.top() + h + 12, r.width(), h), ("half", 1))]
         w = (r.width() - 12) / 2
-        return [QRectF(r.left(), r.top(), w, r.height()), QRectF(r.left() + w + 12, r.top(), w, r.height())]
+        return [(QRectF(r.left(), r.top(), w, r.height()), ("half", 0)), (QRectF(r.left() + w + 12, r.top(), w, r.height()), ("half", 1))]
 
     def _zone_at(self, pos):
-        """Strefa pod kursorem – cała połowa (bez martwych marginesów: kursor wjeżdża od góry, z paska kart)."""
+        """Indeks strefy pod kursorem – strefy obejmują całą szerokość/wysokość (bez martwych marginesów: kursor
+        wjeżdża od góry, z paska kart); granica między strefami w połowie odstępu."""
         if self.msg or not self.rect().contains(pos):
             return -1
-        zs = self.zones()
-        if self.T is not None and self.T.sides and self.T.split is not None:
-            vert = self.T.split.orientation() == Qt.Orientation.Vertical
-        else:
-            vert = self.vertical
-        if len(zs) < 2 or zs[1].isEmpty():
-            return 0 if zs and not zs[0].isEmpty() else -1
-        if zs[0].isEmpty():
-            return 1
-        if vert:
-            return 0 if pos.y() < (zs[0].bottom() + zs[1].top()) / 2 else 1
-        return 0 if pos.x() < (zs[0].right() + zs[1].left()) / 2 else 1
+        zs = [z for z, _ in self.zones()]
+        vert = self._vert(); c = pos.y() if vert else pos.x()
+        best = -1
+        for i, z in enumerate(zs):
+            if z.isEmpty():
+                continue
+            lo, hi = (z.top(), z.bottom()) if vert else (z.left(), z.right())
+            nxt = next((zs[j] for j in range(i + 1, len(zs)) if not zs[j].isEmpty()), None)
+            if nxt is None or c < (hi + ((nxt.top() if vert else nxt.left()))) / 2:
+                return i
+            best = i
+        return best
 
     def dragEnterEvent(self, ev):
         # wejście trzeba przyjąć zawsze – odrzucone wejście = Qt nie przyśle już ruchów ani upuszczenia
@@ -11659,11 +11740,12 @@ class SplitDropOverlay(QWidget):
         self.zone = -1; self.update()
 
     def dropEvent(self, ev):
-        z = self._zone_at(ev.position().toPoint()); T, t = self.T, self.t
-        if z < 0 or T is None or t is None:
+        i = self._zone_at(ev.position().toPoint()); T, t = self.T, self.t
+        if i < 0 or T is None or t is None:
             ev.ignore(); return
-        ev.acceptProposedAction(); self.stop()
-        QTimer.singleShot(0, lambda: self.b.split_drop(T, t, z, self.vertical))
+        z = self.zones()[i][1][1]
+        ev.acceptProposedAction(); vert = self.vertical; self.stop()
+        QTimer.singleShot(0, lambda: self.b.split_drop(T, t, z, vert))
 
     @staticmethod
     def _title(tab):
@@ -11685,7 +11767,8 @@ class SplitDropOverlay(QWidget):
             p.drawText(box.adjusted(20, 44, -20, -12), Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.msg)
             return
         split = bool(self.T is not None and self.T.sides)
-        for i, z in enumerate(self.zones()):
+        names = (["Góra", "Dół"] if self._vert() else ["Lewa strona", "Prawa strona"])
+        for i, (z, kind) in enumerate(self.zones()):
             if z.isEmpty():
                 continue
             hot = i == self.zone
@@ -11697,23 +11780,26 @@ class SplitDropOverlay(QWidget):
             p.drawRoundedRect(z, 16, 16)
             # treść strefy: ikona, tytuł, podpis
             if hot:
-                head, sub = self._title(self.t), ("Upuść, aby zastąpić tę stronę" if split else "Upuść, aby otworzyć tutaj")
+                head = self._title(self.t)
+                sub = ("Upuść, aby dodać jako trzecią stronę" if kind[0] == "add" else
+                       "Upuść, aby zastąpić tę stronę" if split else "Upuść, aby otworzyć tutaj")
                 icon = tab_icon(self.t.icon if self.t else None)
+            elif kind[0] == "add":
+                head, sub, icon = "Trzecia strona", "Upuść tutaj, aby dodać", glyph("plus", "#ececec")
             elif split:
-                side = self.T.sides[i]; v = side.view
+                side = self.T.sides[kind[1]]; v = side.view
                 head, sub = (v.title() if v is not None else "Pusta strona"), "Przeciągnij tutaj, aby zastąpić"
                 icon = tab_icon(v.icon() if v is not None else None)
             elif self.zone >= 0:
                 head, sub = self._title(self.T), "Obecna strona"
                 icon = tab_icon(self.T.icon)
             else:
-                head, sub = ("Lewa strona" if not self.vertical else "Góra") if i == 0 else ("Prawa strona" if not self.vertical else "Dół"), \
-                    "Przeciągnij kartę na połowę ekranu"
+                head, sub = names[kind[1]], "Przeciągnij kartę na połowę ekranu"
                 icon = glyph("split", "#ececec")
             c = z.center(); tile = QRectF(c.x() - 26, c.y() - 58, 52, 52)
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#2a2a2a" if hot else "#1c1c1c")); p.drawRoundedRect(tile, 14, 14)
             icon.paint(p, tile.adjusted(14, 14, -14, -14).toRect())
-            fm = QFontMetrics(f); w = int(min(z.width() - 40, 420))
+            fm = QFontMetrics(f); w = int(max(60, min(z.width() - 24, 420)))
             p.setFont(f); p.setPen(QColor("#ffffff" if hot else "#c9c9c9"))
             p.drawText(QRectF(c.x() - w / 2, c.y() + 6, w, 24), Qt.AlignmentFlag.AlignCenter, fm.elidedText(head, Qt.TextElideMode.ElideRight, w))
             p.setFont(small); p.setPen(QColor("#b0b0b0" if hot else "#7d7d7d"))
@@ -12232,22 +12318,36 @@ class Browser(QMainWindow):
         return keep
 
     def update_page_bg(self):
-        """Na stronie WWW tło pod panelami bocznymi przyjmuje kolor strony; na ekranie głównym zostaje tło Luny."""
+        """Na stronie WWW tło pod panelami bocznymi przyjmuje kolor strony; na ekranie głównym zostaje tło Luny.
+        Podział ekranu w poziomie: lewy panel – kolor lewej strony, prawy – prawej (nie aktywnej)."""
         t = self.cur()
         web = t.web if t is not None and t.web is not None and not t.on_home() else None
         if web is None or not self.store.feature("panel_page_bg"):
             self.bgframe.set_page_color(None); return
+        views = [web]
+        if t.sides and t.split is not None and t.split.orientation() == Qt.Orientation.Horizontal:
+            ends = [s.view for s in (t.sides[0], t.sides[-1])]
+            views = [v if v is not None else web for v in ends]
+        got_c = [None] * len(views); self._bg_req = req = object()
 
-        def got(v):
+        def fix(v, val):
+            c = css_color(val)
+            if dark_for(v.url().toString()) and c.lightnessF() > 0.5:
+                c = QColor("#121212")   # tak silnik maluje jasne tło w ciemnym trybie
+            return c
+
+        def got(k, v, val):
             try:
-                if t is self.cur() and not t.on_home():
-                    c = css_color(v)
-                    if dark_for(web.url().toString()) and c.lightnessF() > 0.5:
-                        c = QColor("#121212")   # tak silnik maluje jasne tło w ciemnym trybie
-                    self.bgframe.set_page_color(c)
+                if req is not self._bg_req or t is not self.cur() or t.on_home():
+                    return
+                got_c[k] = fix(v, val)
+                if all(c is not None for c in got_c):
+                    self.bgframe.set_page_color(got_c[0], got_c[-1] if len(got_c) > 1 else None)
             except RuntimeError:   # okno zamknięte, zanim strona odpowiedziała
                 pass
-        web.page().runJavaScript(PAGE_BG_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld, got)
+        for k, v in enumerate(views):
+            v.page().runJavaScript(PAGE_BG_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld,
+                                   lambda val, k=k, v=v: got(k, v, val))
 
     def toggle_sidebar(self, side):
         sb = self.host.left if side == "left" else self.host.right
@@ -13175,7 +13275,11 @@ class Browser(QMainWindow):
         if T not in tabs or t not in tabs or T is t:
             return
         if T.sides:
-            T.adopt_tab(T.sides[min(zone, len(T.sides) - 1)], t); return
+            if zone >= len(T.sides):   # „dodaj jako trzecią stronę”
+                self.add_tab_as_side(T, t)
+            else:
+                T.adopt_tab(T.sides[zone], t)
+            return
         T.split_with("", vertical)
         if not T.sides:
             return
@@ -13790,8 +13894,9 @@ class Browser(QMainWindow):
             tip += f"\nGrupa: {t.group}"
         if t.container:
             tip += f"\nKontener: {self.container_name(t.container)}"
-        if t.sides and t.sides[1].view is not None:
-            tip += f"\nPodzielony ekran z: {t.sides[1].view.title() or host_of(t.sides[1].view.url().toString())}"
+        if t.sides and any(s.view is not None for s in t.sides[1:]):
+            tip += "\nPodzielony ekran z: " + ", ".join(s.view.title() or host_of(s.view.url().toString())
+                                                       for s in t.sides[1:] if s.view is not None)
         if t.asleep or t.pending:
             tip += "\nUśpiona – wybudzi się po kliknięciu"
         self.bar.setTabToolTip(i, tip)
@@ -14120,12 +14225,20 @@ class Browser(QMainWindow):
         for o, url in cands:
             sm.addAction(tab_icon(o.icon), (o.title_text or url)[:40], lambda _=False, o=o: self.split_with_tab(t, o))
         if t.sides:
+            if len(t.sides) < Tab.MAX_SIDES:
+                am = sm.addMenu(glyph("plus"), "Dodaj trzecią stronę")
+                am.addAction("Wybierz stronę…", lambda: (self.activate(t), t.add_side()))
+                if cands:
+                    am.addSeparator()
+                for o, url in cands:
+                    am.addAction(tab_icon(o.icon), (o.title_text or url)[:40], lambda _=False, o=o: self.add_tab_as_side(t, o))
             sm.addSeparator()
             sm.addAction(glyph("swap"), "Zamień strony miejscami", t.swap_split)
             sm.addAction(glyph("splitv"), "Układ pionowy / poziomy", t.turn_split)
-            if t.sides[1].view is not None:
-                sm.addAction(glyph("external"), "Odłącz drugą stronę do karty", lambda: t.detach_side(t.sides[1]))
-            sm.addAction(glyph("close"), "Zamknij drugą stronę", t.unsplit)
+            last = t.sides[-1]; nm = "trzecią" if len(t.sides) > 2 else "drugą"
+            if last.view is not None:
+                sm.addAction(glyph("external"), f"Odłącz {nm} stronę do karty", lambda: t.detach_side(last))
+            sm.addAction(glyph("close"), f"Zamknij {nm} stronę", t.unsplit)
         z = m.addAction("Uśpij teraz", lambda: self.sleep_now(t)); z.setEnabled(t is not self.cur() and t.web is not None and not t.asleep)
         m.addSeparator(); m.addAction("Zamknij kartę", lambda: self.close_tab(t))
         m.exec(pos)
@@ -14149,7 +14262,7 @@ class Browser(QMainWindow):
         if t is None:
             return
         if t.sides:
-            s = t.sides[1]
+            s = t.sides[-1]
             t.detach_side(s) if s.view is not None else t.close_side(s)
         elif t.main is not None and not t.on_home():
             t.split_with("")
@@ -14158,8 +14271,18 @@ class Browser(QMainWindow):
         self.activate(t)
         if t.split is None:
             t.split_with("")
-        if t.sides:
-            t.adopt_tab(t.sides[1], o)
+        if t.sides:   # pusta strona podziału, jeśli jest – inaczej druga
+            t.adopt_tab(next((s for s in t.sides[1:] if s.view is None), t.sides[1]), o)
+
+    def add_tab_as_side(self, t, o):
+        """Karta o jako kolejna (trzecia) strona podziału karty t."""
+        self.activate(t)
+        s = t.add_side() if t.sides else None
+        if s is None:
+            return self.split_with_tab(t, o)
+        t.adopt_tab(s, o)
+        if o in self.all_tabs() and s in (t.sides or []) and s.view is None:   # nie udało się – bez pustej strony
+            t.close_side(s)
 
     def split_candidates(self, tab):
         """Karty, które można dołożyć do podziału: z bieżącej przestrzeni, ze stroną i bez własnego podziału."""
@@ -14454,6 +14577,8 @@ class Browser(QMainWindow):
             self.update_shield(); self.update_page_bg()
             if ok:
                 self.offer_translation(view)
+        elif tab is self.cur() and tab.sides:   # inna strona podziału – jej kolor ma swój panel boczny
+            self.update_page_bg()
         if ok and view is not None and view.url().scheme() in ("http", "https", "file"):
             apply_highlights(view)
             self.apply_site_zoom(view)
