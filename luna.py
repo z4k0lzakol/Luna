@@ -11621,26 +11621,36 @@ class SplitDropOverlay(QWidget):
         return [QRectF(r.left(), r.top(), w, r.height()), QRectF(r.left() + w + 12, r.top(), w, r.height())]
 
     def _zone_at(self, pos):
-        if self.msg:
+        """Strefa pod kursorem – cała połowa (bez martwych marginesów: kursor wjeżdża od góry, z paska kart)."""
+        if self.msg or not self.rect().contains(pos):
             return -1
-        for i, z in enumerate(self.zones()):
-            if z.contains(QPointF(pos)):
-                return i
-        return -1
+        zs = self.zones()
+        if self.T is not None and self.T.sides and self.T.split is not None:
+            vert = self.T.split.orientation() == Qt.Orientation.Vertical
+        else:
+            vert = self.vertical
+        if len(zs) < 2 or zs[1].isEmpty():
+            return 0 if zs and not zs[0].isEmpty() else -1
+        if zs[0].isEmpty():
+            return 1
+        if vert:
+            return 0 if pos.y() < (zs[0].bottom() + zs[1].top()) / 2 else 1
+        return 0 if pos.x() < (zs[0].right() + zs[1].left()) / 2 else 1
 
     def dragEnterEvent(self, ev):
+        # wejście trzeba przyjąć zawsze – odrzucone wejście = Qt nie przyśle już ruchów ani upuszczenia
         if ev.mimeData().hasFormat(TAB_MIME):
-            ev.acceptProposedAction(); self._move(ev)
+            ev.acceptProposedAction(); self._move(ev, True)
 
     def dragMoveEvent(self, ev):
         if ev.mimeData().hasFormat(TAB_MIME):
             self._move(ev)
 
-    def _move(self, ev):
+    def _move(self, ev, enter=False):
         z = self._zone_at(ev.position().toPoint())
         if z >= 0:
             ev.acceptProposedAction()
-        else:
+        elif not enter:
             ev.ignore()
         if z != self.zone:
             self.zone = z; self.update()
