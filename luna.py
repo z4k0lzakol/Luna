@@ -26,7 +26,7 @@ from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRect, QRec
                           QEasingCurve, QElapsedTimer,
                           QPropertyAnimation, pyqtSignal)
 from PyQt6.QtGui import (QGuiApplication, QImage, QCursor, QBrush, QRadialGradient, QLinearGradient, QIcon, QPixmap, QPainter, QColor, QFont,
-                         QFontDatabase, QPen, QPolygonF, QKeySequence, QShortcut, QActionGroup, QTextDocument,
+                         QFontDatabase, QFontMetrics, QPen, QPolygonF, QKeySequence, QShortcut, QActionGroup, QTextDocument,
                          QPalette, QPainterPath, QDesktopServices)
 from PyQt6.QtNetwork import (QNetworkAccessManager, QNetworkRequest, QNetworkReply, QTcpServer, QHostAddress,
                              QNetworkCookieJar)
@@ -707,7 +707,7 @@ QWidget#strip { background:#0a0a0a; }
 QToolButton#winclose:hover { background:#b3352c; }
 QWidget#tool { background:#111111; border-bottom:1px solid #1e1e1e; }
 QTabBar { background:transparent; }
-QTabBar::tab { background:transparent; color:#8c8c8c; height:30px; padding:0 9px 0 14px; margin:1px 2px;
+QTabBar::tab { background:transparent; color:#8c8c8c; height:30px; padding:0 2px 0 14px; margin:1px 2px;
                border-radius:15px; max-width:190px; font-size:13px; }
 QTabBar::tab:hover:!selected { background:#1a1a1a; color:#d4d4d4; }
 QTabBar::tab:selected { background:#ececec; color:#111111; font-weight:600; }
@@ -11355,9 +11355,20 @@ class TabBar(QTabBar):
             return True
         return super().event(ev)
 
+    CLOSE_W = 26     # krzyżyk 18 px + 8 px odstępu od prawej krawędzi karty
+    MAX_W = 194      # jak max-width w arkuszu stylów (190) + marginesy
+
     def tabSizeHint(self, i):
         s = super().tabSizeHint(i)
-        return QSize(44, s.height()) if self.pinned_fn is not None and self.pinned_fn(i) else s
+        if self.pinned_fn is not None and self.pinned_fn(i):
+            return QSize(44, s.height())
+        # szerokość z faktycznego tekstu (pogrubionego, jak na aktywnej karcie) + ikona + krzyżyk – bez pustego miejsca
+        # między tytułem a krzyżykiem (Qt centrował tekst w nadmiarowej szerokości)
+        f = QFont(self.font()); f.setWeight(QFont.Weight.DemiBold)
+        tw = QFontMetrics(f).horizontalAdvance(self.tabText(i))
+        btn = self.tabButton(i, QTabBar.ButtonPosition.RightSide)
+        w = 14 + (22 if not self.tabIcon(i).isNull() else 0) + tw + 8 + (btn.width() if btn is not None else 10) + 4
+        return QSize(max(60, min(self.MAX_W, w)), s.height())
 
     def minimumTabSizeHint(self, i):
         s = super().minimumTabSizeHint(i)
@@ -11878,7 +11889,8 @@ class Browser(QMainWindow):
     def refresh_close_icons(self):
         cur = self.bar.currentIndex()
         for i in range(self.bar.count()):
-            b = self.bar.tabButton(i, QTabBar.ButtonPosition.RightSide)
+            h = self.bar.tabButton(i, QTabBar.ButtonPosition.RightSide)
+            b = h.findChild(QToolButton) if h is not None else None   # krzyżyk w opakowaniu z marginesem
             if b is not None:
                 b.setIcon(glyph("close", "#2a2a2a" if i == cur else "#8c8c8c"))
 
@@ -12645,12 +12657,17 @@ class Browser(QMainWindow):
         i = self.stack.indexOf(t)
         if i < 0:
             return
-        cb = None
+        holder = None
         if on:
-            cb = QToolButton(); cb.setObjectName("tabclose"); cb.setFixedSize(18, 18); cb.setIconSize(QSize(12, 12))
+            # Qt stawia przycisk karty przy samej zewnętrznej krawędzi (ignoruje padding) – opakowanie z marginesem
+            # przesuwa krzyżyk do środka zaokrąglonego końca karty, więc nie wystaje
+            holder = QWidget(); holder.setObjectName("clear"); holder.setFixedSize(TabBar.CLOSE_W, 18)
+            holder.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            cb = QToolButton(holder); cb.setObjectName("tabclose"); cb.setFixedSize(18, 18); cb.setIconSize(QSize(12, 12))
+            cb.move(0, 0)
             cb.setIcon(glyph("close", "#8c8c8c")); cb.setCursor(Qt.CursorShape.PointingHandCursor); cb.setToolTip("Zamknij kartę")
             cb.clicked.connect(lambda: self.close_tab(t))
-        self.bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, cb)
+        self.bar.setTabButton(i, QTabBar.ButtonPosition.RightSide, holder)
 
     def set_tab_text(self, t, text):
         """Tytuł na pasku kart; przypięta karta pokazuje samą ikonę (tytuł w podpowiedzi)."""
