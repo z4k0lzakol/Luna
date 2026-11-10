@@ -24,6 +24,7 @@ if os.environ.get("LUNA_TEST_DICTS"):   # słowniki obecne już przy starcie (ja
         if os.path.isfile(_src):
             shutil.copy(_src, os.path.join(HOMEDIR, ".luna_slowniki", _l + ".bdic"))
 os.environ["USERPROFILE"] = os.environ["HOME"] = HOMEDIR
+os.environ["LUNA_NO_WELCOME"] = "1"   # bez przewodnika powitalnego (okno modalne przy pierwszym uruchomieniu)
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
 RES = {"checks": 0, "fail": []}
 

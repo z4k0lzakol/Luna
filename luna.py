@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget,
                              QScrollArea, QPlainTextEdit, QGraphicsOpacityEffect, QButtonGroup, QToolTip, QComboBox,
                              QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy, QMessageBox, QStyledItemDelegate, QStyle,
                              QGraphicsDropShadowEffect, QSplitter, QSplitterHandle, QTreeWidget, QTreeWidgetItem, QWidgetAction,
-                             QSizeGrip, QFileIconProvider)
+                             QSizeGrip, QFileIconProvider, QRadioButton, QGridLayout)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
@@ -55,11 +55,28 @@ except Exception:
     _SMTC = _SMTC_STATUS = _DataReader = None
 import adblock   # wbudowana blokada reklam (adblock/); rejestruje własny schemat – musi być przed QApplication
 
-HOME = Path.home()
+def _profile_arg():
+    for a in sys.argv[1:]:
+        if a.startswith("--luna-profile="):
+            return a.split("=", 1)[1]
+    return os.environ.get("LUNA_PROFILE", "")
+
+
+# Profile (jak w Chrome / Edge): osobna Luna – własne kafelki, karty, hasła, historia, logowania i ustawienia. Każdy profil
+# działa we własnym procesie (--luna-profile=Nazwa); wspólne są tylko pobierane zasoby (słowniki, czcionki, listy reklam).
+PROFILE = re.sub(r"[^\w \-]", "", _profile_arg()).strip()[:40]
+BASE_HOME = Path.home()
+PROFILES_DIR = BASE_HOME / ".luna_profile_uzytkownikow"
+HOME = PROFILES_DIR / PROFILE if PROFILE else BASE_HOME
+if PROFILE:
+    try:
+        HOME.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
 DATA = HOME / ".luna.json"
 # słowniki sprawdzania pisowni (format Chromium .bdic, pobierane przy pierwszym uruchomieniu – nie w repozytorium);
 # ścieżka musi być ustawiona przed utworzeniem QApplication
-DICT_DIR = HOME / ".luna_slowniki"
+DICT_DIR = BASE_HOME / ".luna_slowniki"
 try:   # katalog musi istnieć przy starcie silnika, inaczej Qt nie użyje słowników w tej sesji
     DICT_DIR.mkdir(exist_ok=True)
 except OSError:
@@ -68,8 +85,9 @@ os.environ.setdefault("QTWEBENGINE_DICTIONARIES_PATH", str(DICT_DIR))
 RECENT = HOME / ".luna_ostatnie.json"
 HIST = HOME / ".luna_historia.json"
 SETTINGS = HOME / ".luna_ustawienia.json"
-ICONS = HOME / ".luna_ikony"
-FONT_DIR = HOME / ".luna_fonty"
+ICONS = BASE_HOME / ".luna_ikony"
+FONT_DIR = BASE_HOME / ".luna_fonty"
+FIRST_RUN = not SETTINGS.exists()   # pierwsze uruchomienie (tego profilu) – przewodnik powitalny
 FONT_URLS = {
     "Inter.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf",
     "PlayfairDisplay.ttf": "https://raw.githubusercontent.com/google/fonts/main/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf",
@@ -658,6 +676,10 @@ QLabel#menusec { color:#6f6f6f; font-size:11px; font-weight:600; letter-spacing:
 QFrame#menusearchrow { background:#111111; border:1px solid #2a2a2a; border-radius:8px; margin:2px 2px 4px 2px; }
 QFrame#menusearchrow:hover { border:1px solid #474747; background:#151515; }
 QSizeGrip { background:transparent; width:16px; height:16px; }
+QRadioButton { background:transparent; spacing:8px; }
+QRadioButton::indicator { width:12px; height:12px; border-radius:8px; border:2px solid #5a5a5a; background:transparent; }
+QRadioButton::indicator:hover { border:2px solid #8a8a8a; }
+QRadioButton::indicator:checked { border:4px solid #ececec; background:#111111; width:8px; height:8px; }
 QToolButton#splitbtn[on="true"] { background:#2e2e2e; border-radius:6px; }
 QListWidget#nav { background:#0d0d0d; border-right:1px solid #1e1e1e; padding:10px 8px; }
 QListWidget#nav::item { padding:10px 12px; border-radius:10px; color:#9a9a9a; margin:1px 0; }
@@ -1986,7 +2008,7 @@ class Store(QObject):
         self.weather = {}
         GLASS_ALPHA[0] = int(self.settings.get("glass", 168)); BG.store = self
         self.bump_day(emit=False)  # samo uruchomienie przeglądarki liczy się do serii
-        SHIELD.append(adblock.AdBlock(self, home=HOME, legacy_domains=TRACKERS, legacy_file=BLOCKLIST))
+        SHIELD.append(adblock.AdBlock(self, home=BASE_HOME, legacy_domains=TRACKERS, legacy_file=BLOCKLIST))
         VAULT.append(Vault()); DOWNLOADS.append(DownloadManager())   # przed pierwszym profilem
         self.session = SessionBridge(self)  # logowania z kart Luny dostępne dla widgetów i kafelków
 
@@ -5770,7 +5792,7 @@ def page_keys(dlg):
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
-                 ("Ctrl + S", "Zapisz stronę"), ("Ctrl + Shift + Y", "Pobrane pliki"), ("Ctrl + Shift + B", "Menedżer zakładek"), ("Ctrl + Shift + Del", "Usuń dane przeglądania"),
+                 ("Ctrl + S", "Zapisz stronę"), ("Ctrl + Shift + Y", "Pobrane pliki"), ("Ctrl + Shift + B", "Menedżer zakładek"), ("Ctrl + Shift + X", "Szukaj obrazem"), ("Ctrl + Shift + Del", "Usuń dane przeglądania"),
                  ("F12 / Ctrl + U", "Narzędzia deweloperskie / źródło strony"),
                  ("Środkowy przycisk na karcie", "Zamyka kartę"), ("Środkowy przycisk na pustym pasku", "Nowa karta")):
         row = QHBoxLayout(); a = lbl(k, "h3"); b = lbl(d, "muted2")
@@ -7007,10 +7029,16 @@ class HomePage(QWidget):
         self.grid.model().rowsMoved.connect(self.reordered)
         center.addWidget(self.grid, 3)
 
-        h2 = QLabel("Ostatnie"); h2.setObjectName("h1"); center.addWidget(h2)
+        seg = QHBoxLayout(); seg.setSpacing(6); self.seg_btns = {}; sg = QButtonGroup(self)
+        for key, text in (("recent", "Ostatnie"), ("closed", "Ostatnio zamknięte"), ("reading", "Kontynuuj czytanie")):
+            b = QToolButton(); b.setObjectName("aipick"); b.setCheckable(True); b.setText(text)
+            b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, k=key: self.set_list_mode(k))
+            sg.addButton(b); seg.addWidget(b); self.seg_btns[key] = b
+        seg.addStretch(); center.addLayout(seg)
+        self.br = None; self.list_mode = store.settings.get("home_list", "recent")
         self.recent = QListWidget(); self.recent.setObjectName("recent")
         self.recent.setIconSize(QSize(38, 38)); self.recent.setSpacing(6)
-        self.recent.itemClicked.connect(lambda it: it.data(Qt.ItemDataRole.UserRole) and self.opened.emit(it.data(Qt.ItemDataRole.UserRole)))
+        self.recent.itemClicked.connect(self.recent_clicked)
         center.addWidget(self.recent, 2)
 
         self.grid.viewport().setAutoFillBackground(False); self.recent.viewport().setAutoFillBackground(False)
@@ -7028,6 +7056,7 @@ class HomePage(QWidget):
             self._dirty = True
 
     def attach_suggest(self, browser):
+        self.br = browser
         self.sugg = SuggestController(self.search, browser)
         self.search.returnPressed.connect(lambda: self.sugg.hide())
 
@@ -7035,6 +7064,60 @@ class HomePage(QWidget):
         super().showEvent(ev)
         if self._dirty:
             self.refresh()
+        elif self.list_mode != "recent":   # zamknięte karty i lista do przeczytania zmieniają się poza ekranem głównym
+            self.fill_list()
+
+    def set_list_mode(self, key):
+        self.list_mode = key; self.store.settings["home_list"] = key; self.store.save_soon(); self.fill_list()
+
+    def recent_clicked(self, it):
+        d = it.data(Qt.ItemDataRole.UserRole)
+        if not d:
+            return
+        if isinstance(d, tuple) and d[0] == "closed" and self.br is not None:
+            idx = next((i for i, c in enumerate(self.br._closed) if id(c) == d[1]), None)
+            if idx is not None:
+                self.br.restore_closed(idx)
+        elif isinstance(d, tuple) and d[0] == "read" and self.br is not None:
+            item = next((x for x in ReadLater.get().items if x["id"] == d[1]), None)
+            if item is not None:
+                self.br.open_read_later(item)
+        elif isinstance(d, str):
+            self.opened.emit(d)
+
+    def fill_list(self):
+        """Lista pod kafelkami: ostatnio odwiedzone, ostatnio zamknięte karty albo niedokończone „Do przeczytania”."""
+        mode = self.list_mode if self.list_mode in self.seg_btns else "recent"
+        self.seg_btns[mode].setChecked(True)
+        closed = list(reversed(self.br._closed)) if self.br is not None else []
+        reading = [x for x in sorted(ReadLater.get().items, key=lambda x: -x.get("t", 0)) if not x.get("read")]
+        self.seg_btns["closed"].setText(f"Ostatnio zamknięte · {len(closed)}" if closed else "Ostatnio zamknięte")
+        self.seg_btns["reading"].setText(f"Kontynuuj czytanie · {len(reading)}" if reading else "Kontynuuj czytanie")
+        self.recent.clear()
+
+        def add(icon, title, sub, data, tip=""):
+            it = QListWidgetItem(icon, f"{title}\n{sub}"); it.setData(Qt.ItemDataRole.UserRole, data)
+            it.setSizeHint(QSize(0, 60)); it.setToolTip(tip); self.recent.addItem(it)
+        if mode == "recent":
+            for r in self.store.recent:
+                add(make_icon(r["name"], r["url"]), r["name"], host_of(r["url"]), r["url"], r["url"])
+            empty = "Tu pojawią się ostatnio odwiedzane strony."
+            n = len(self.store.recent)
+        elif mode == "closed":
+            for c in closed:
+                title = c.get("title") or c["url"]
+                add(make_icon(title, c["url"]), title, host_of(c["url"]) + "  ·  kliknij, aby przywrócić", ("closed", id(c)), c["url"])
+            empty = "Brak zamkniętych kart w tej sesji. Przywracanie: Ctrl+Shift+T."
+            n = len(closed)
+        else:
+            for x in reading[:12]:
+                when = datetime.fromtimestamp(x.get("t", 0)).strftime("%d.%m")
+                add(make_icon(x["title"], x["url"]), x["title"], f"{host_of(x['url'])}  ·  odłożone {when}", ("read", x["id"]), x["url"])
+            empty = "Nic nie czeka na przeczytanie – odłóż stronę skrótem Ctrl+Shift+O."
+            n = len(reading)
+        if not n:
+            it = QListWidgetItem(empty); it.setFlags(Qt.ItemFlag.NoItemFlags)
+            it.setForeground(QColor("#6f6f6f")); self.recent.addItem(it)
 
     def refresh(self):
         self._dirty = False
@@ -7049,15 +7132,7 @@ class HomePage(QWidget):
             it.setToolTip(b["url"])
             self.grid.addItem(it)
         self.grid.blockSignals(False)
-        self.recent.clear()
-        for r in self.store.recent:
-            it = QListWidgetItem(make_icon(r["name"], r["url"]), f'{r["name"]}\n{host_of(r["url"])}')
-            it.setData(Qt.ItemDataRole.UserRole, r["url"])
-            it.setSizeHint(QSize(0, 60)); it.setToolTip(r["url"])
-            self.recent.addItem(it)
-        if not self.store.recent:
-            it = QListWidgetItem("Tu pojawią się ostatnio odwiedzane strony."); it.setFlags(Qt.ItemFlag.NoItemFlags)
-            it.setForeground(QColor("#6f6f6f")); self.recent.addItem(it)
+        self.fill_list()
 
     def resizeEvent(self, ev):
         super().resizeEvent(ev)   # pole wyszukiwania: szerokie, ale z marginesem po bokach
@@ -8819,6 +8894,224 @@ class WhatsNewDialog(LunaDialog):
         self.footer(right=[("Świetnie", self.accept, True)])
 
 
+class WelcomeWizard(LunaDialog):
+    """Przewodnik przy pierwszym uruchomieniu (i z menu Pomoc): przeniesienie danych, wyszukiwarka, prywatność, wygląd,
+    widgety, AI i komunikatory, najważniejsze skróty. Każda zmiana działa od razu; „Pomiń” niczego nie psuje."""
+    WIDGET_PICK = ["weather", "clock", "todo", "notes", "pomodoro", "markets", "currency", "rss", "parcels", "audio",
+                   "system", "calc", "countdown", "translate"]
+
+    def __init__(self, browser):
+        super().__init__(browser, "Witaj w Lunie" if not PROFILE else f"Witaj w profilu „{PROFILE}”", "help", (760, 600))
+        self.b, self.st = browser, browser.store
+        self.stack = QStackedWidget(); self.stack.setObjectName("clear"); self.body.addWidget(self.stack, 1)
+        self.pages = []
+        for fn in (self.p_welcome, self.p_import, self.p_search, self.p_privacy, self.p_look, self.p_widgets, self.p_ai, self.p_done):
+            title, w = fn(); self.pages.append(title)
+            sc = QScrollArea(); sc.setWidgetResizable(True); sc.setFrameShape(QFrame.Shape.NoFrame); sc.setWidget(w)
+            self.stack.addWidget(sc)
+        self.dots = QLabel(); self.dots.setTextFormat(Qt.TextFormat.RichText)
+        self.skip, self.back, self.next = self.footer(left=[("Pomiń przewodnik", self.finish), self.dots],
+                                                      right=[("Wstecz", lambda: self.go(-1)), ("Dalej", lambda: self.go(1), True)])
+        self.go(0)
+
+    # --- nawigacja ---
+    def go(self, d):
+        i = max(0, min(len(self.pages) - 1, self.stack.currentIndex() + d)) if d else 0
+        self.stack.setCurrentIndex(i)
+        last = i == len(self.pages) - 1
+        self.back.setVisible(i > 0); self.next.setText("Zaczynamy" if last else "Dalej")
+        self.next.clicked.disconnect(); self.next.clicked.connect(self.finish if last else (lambda: self.go(1)))
+        self.skip.setVisible(not last)
+        self.sub.setText(f"Krok {i + 1} z {len(self.pages)}  ·  {self.pages[i]}"); self.sub.setVisible(True)
+        self.dots.setText("".join(f"<span style='color:{'#ececec' if k == i else '#3a3a3a'}; font-size:16px'>●</span> "
+                                  for k in range(len(self.pages))))
+
+    def finish(self):
+        self.st.settings["onboarded"] = True; self.st.save_settings()
+        if getattr(self, "sync_after", None) is not None and self.sync_after.isChecked():
+            QTimer.singleShot(0, lambda: self.b.open_settings("sync"))
+        self.accept()
+
+    # --- elementy stron ---
+    @staticmethod
+    def _page(heading, text=""):
+        w = QWidget(); w.setObjectName("clear"); v = QVBoxLayout(w); v.setContentsMargins(4, 6, 12, 6); v.setSpacing(10)
+        v.addWidget(lbl(heading, "h1"))
+        if text:
+            v.addWidget(lbl(text, "muted2", wrap=True))
+        return w, v
+
+    def _check(self, v, title, hint, on, fn):
+        box = QVBoxLayout(); box.setSpacing(0)
+        cb = QCheckBox(title); cb.setChecked(on); cb.toggled.connect(fn); box.addWidget(cb)
+        if hint:
+            h = lbl(hint, "muted", wrap=True); h.setContentsMargins(30, 0, 0, 4); box.addWidget(h)
+        v.addLayout(box)
+        return cb
+
+    def _feature(self, v, key, title, hint):
+        return self._check(v, title, hint, self.st.feature(key), lambda on, k=key: self.st.set_feature(k, on))
+
+    def _card(self, icon, title, text):
+        c = QFrame(); c.setObjectName("optcard"); cv = QVBoxLayout(c); cv.setContentsMargins(14, 12, 14, 12); cv.setSpacing(4)
+        top = QHBoxLayout(); ti = QLabel(); ti.setObjectName("tileicon"); ti.setFixedSize(34, 34); ti.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ti.setPixmap(glyph(icon, "#ececec").pixmap(18, 18)); top.addWidget(ti); top.addSpacing(6); top.addWidget(lbl(title, "h3"), 1)
+        cv.addLayout(top); cv.addWidget(lbl(text, "muted2", wrap=True))
+        return c
+
+    # --- strony ---
+    def p_welcome(self):
+        w, v = self._page("")
+        v.takeAt(0).widget().deleteLater(); v.addStretch(1)
+        lg = QLabel(); lg.setPixmap(logo_pixmap(72)); lg.setFixedSize(72, 72); v.addWidget(lg, 0, Qt.AlignmentFlag.AlignHCenter)
+        t = lbl("Witaj w Lunie" if not PROFILE else f"Nowy profil: {PROFILE}", "h1"); t.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(t)
+        s = lbl("Lekka, ciemna przeglądarka z kafelkami, widgetami, podziałem ekranu, blokadą reklam i asystentem AI. "
+                "Ustawmy ją w minutę – wszystko zmienisz później w Ustawieniach.", "muted2", wrap=True)
+        s.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(s); v.addSpacing(10)
+        grid = QGridLayout(); grid.setSpacing(10)
+        for i, (ic, ti, tx) in enumerate((("download", "Przenieś dane", "Zakładki, historia i hasła z innej przeglądarki."),
+                                          ("shield", "Prywatnie", "Blokada reklam i śledzenia od pierwszej strony."),
+                                          ("grid", "Po Twojemu", "Wygląd, widgety, AI i komunikatory."))):
+            grid.addWidget(self._card(ic, ti, tx), 0, i)
+        v.addLayout(grid); v.addStretch(2)
+        return "Powitanie", w
+
+    def p_import(self):
+        w, v = self._page("Przenieś swoje dane", "Luna zabierze zakładki, historię i hasła z przeglądarki, której używasz "
+                                                 "teraz. Dane zostają na tym komputerze; hasła są od razu szyfrowane.")
+        self.imp = ImportDialog(self.b); self.imp.hide()
+        v.addWidget(lbl("Z PRZEGLĄDARKI NA TYM KOMPUTERZE", "seclabel"))
+        combo = QComboBox()
+        for label, _r, _p in self.imp.profiles:
+            combo.addItem(label)
+        if not self.imp.profiles:
+            combo.addItem("Nie znaleziono Brave, Chrome, Edge, Vivaldi ani Opery"); combo.setEnabled(False)
+        combo.currentIndexChanged.connect(self.imp.combo.setCurrentIndex); v.addWidget(combo)
+        row = QHBoxLayout()
+        for key, text in (("bookmarks", "Zakładki"), ("history", "Historia"), ("passwords", "Hasła")):
+            c = QCheckBox(text); c.setChecked(self.imp.cb[key].isChecked()); c.setEnabled(self.imp.cb[key].isEnabled())
+            c.toggled.connect(self.imp.cb[key].setChecked); row.addWidget(c)
+        row.addStretch(); v.addLayout(row)
+        go = QPushButton("Importuj teraz"); go.setObjectName("primary"); go.setEnabled(bool(self.imp.profiles))
+        self.imp_out = lbl("Najlepiej zamknij tamtą przeglądarkę przed importem.", "muted", wrap=True)
+
+        def run():
+            go.setEnabled(False); self.imp.run(); self.imp_out.setText(self.imp.out.text()); go.setText("Zaimportowano"); self.b.store.changed.emit()
+        go.clicked.connect(run); v.addWidget(go, 0, Qt.AlignmentFlag.AlignLeft); v.addWidget(self.imp_out)
+        v.addSpacing(6); v.addWidget(lbl("Z PLIKU ZAKŁADEK (HTML)", "seclabel"))
+        v.addWidget(lbl("Eksport zakładek z Firefoksa, Safari albo innej Luny.", "muted2", wrap=True))
+        fb = QPushButton("Wybierz plik zakładek…")
+        fb.clicked.connect(lambda: (BookmarksDialog(self.b).import_file()))
+        v.addWidget(fb, 0, Qt.AlignmentFlag.AlignLeft)
+        v.addSpacing(6); v.addWidget(lbl("Z INNEGO KOMPUTERA Z LUNĄ", "seclabel"))
+        self.sync_after = QCheckBox("Po przewodniku otwórz ustawienia synchronizacji (folder OneDrive / Dysku Google)")
+        v.addWidget(self.sync_after); v.addStretch(1)
+        return "Przeniesienie danych", w
+
+    def p_search(self):
+        w, v = self._page("Wyszukiwarka", "Używana w pasku adresu i na ekranie głównym. Wskazówka: „yt koncert”, „sp lofi” "
+                                          "albo „ig #morze” szuka od razu w aplikacji.")
+        grp = QButtonGroup(w)
+        descr = {"Brave": "prywatna, bez profilowania", "Google": "najpopularniejsza", "DuckDuckGo": "prywatna",
+                 "Bing": "Microsoft", "Startpage": "wyniki Google bez śledzenia", "Ecosia": "sadzi drzewa"}
+        for name in ENGINES:
+            rb = QRadioButton(f"{name}" + (f"  –  {descr[name]}" if name in descr else "")); rb.setChecked(name == CURRENT[0])
+            rb.toggled.connect(lambda on, n=name: on and (self.st.set_engine(n), self.st.changed.emit()))
+            grp.addButton(rb); v.addWidget(rb)
+        v.addSpacing(8)
+        self._feature(v, "suggest_net", "Podpowiedzi z sieci", "Wpisywany tekst trafia do wyszukiwarki po propozycje. Wyłącz dla pełnej prywatności.")
+        v.addStretch(1)
+        return "Wyszukiwarka", w
+
+    def p_privacy(self):
+        w, v = self._page("Prywatność i bezpieczeństwo", "Domyślne ustawienia chronią dobrze – możesz je tu dopasować.")
+        self._feature(v, "adblock", "Blokada reklam i śledzenia", "Wbudowana – bez wtyczek. Wyjątki ustawisz dla pojedynczych stron tarczą na pasku.")
+        self._feature(v, "passwords", "Menedżer haseł", "Proponuje zapis po zalogowaniu i sam wypełnia formularze; hasła szyfrowane na tym komputerze.")
+        self._feature(v, "translate_offer", "Propozycja tłumaczenia stron", "Strona w obcym języku → pytanie, czy przetłumaczyć na polski.")
+        self._feature(v, "sleep_tabs", "Usypianie nieużywanych kart", "Zwalnia pamięć; karta wraca po kliknięciu.")
+        v.addWidget(lbl("Luna zawsze ostrzega przed fałszywymi stronami logowania (podróbki banków i serwisów) – tego nie da się wyłączyć.",
+                        "muted", wrap=True))
+        v.addStretch(1)
+        return "Prywatność", w
+
+    def p_look(self):
+        w, v = self._page("Wygląd i układ", "Wybierz, gdzie mają być karty, i jak ma wyglądać okno.")
+        row = QHBoxLayout(); row.setSpacing(12); grp = QButtonGroup(w); vt = self.st.feature("vertical_tabs")
+        for key, (ic, ti, tx) in (("top", ("tabs", "Karty u góry", "Klasyczny pasek kart nad paskiem adresu.")),
+                                  ("side", ("sidebar", "Karty z boku", "Lista kart z grupami po lewej – wygodna przy wielu kartach."))):
+            c = self._card(ic, ti, tx); rb = QRadioButton("Ten układ"); rb.setChecked(vt == (key == "side"))
+            rb.toggled.connect(lambda on, k=key: on and self.st.set_feature("vertical_tabs", k == "side"))
+            grp.addButton(rb); c.layout().addWidget(rb); row.addWidget(c, 1)
+        v.addLayout(row); v.addSpacing(6)
+        self._feature(v, "dark_pages", "Ciemny tryb stron", "Jasne strony wyświetlają się w ciemnych kolorach, jak Luna.")
+        self._check(v, "Tryb kompaktowy", "Pasek adresu schowany – pojawia się po najechaniu na karty (Ctrl+Shift+F).",
+                    bool(self.st.settings.get("compact")), lambda on: self.b.set_compact(on))
+        self._feature(v, "workspaces", "Przestrzenie robocze", "Osobne zestawy kart, np. Praca, Zakupy, Hobby.")
+        self._feature(v, "panel_page_bg", "Panele w kolorze strony", "Panele boczne przyjmują kolor otwartej strony.")
+        v.addStretch(1)
+        return "Wygląd", w
+
+    def p_widgets(self):
+        w, v = self._page("Widgety w panelach bocznych", "Zaznacz, co chcesz mieć pod ręką. Więcej znajdziesz w Rynku Widgetów (Ctrl+Shift+E).")
+        grid = QGridLayout(); grid.setSpacing(8)
+        for i, wid in enumerate([x for x in self.WIDGET_PICK if x in WIDGETS]):
+            ic, _cat, desc = WIDGET_INFO.get(wid, ("app", "", ""))
+            b = QToolButton(); b.setObjectName("aipick"); b.setCheckable(True); b.setChecked(self.st.wcfg(wid)["on"])
+            b.setText("  " + WIDGETS[wid][0]); b.setIcon(glyph(ic)); b.setIconSize(QSize(18, 18)); b.setToolTip(desc)
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon); b.setMinimumHeight(40)
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed); b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.toggled.connect(lambda on, k=wid: self.st.set_wcfg(k, on=on))
+            grid.addWidget(b, i // 3, i % 3)
+        v.addLayout(grid); v.addSpacing(6)
+        self._feature(v, "everywhere", "Panele także na stronach", "Domyślnie widgety są tylko na ekranie głównym.")
+        v.addStretch(1)
+        return "Widgety", w
+
+    def p_ai(self):
+        w, v = self._page("Asystent AI i komunikatory", "Panele z boku okna – logujesz się raz, Luna pamięta sesję.")
+        self._feature(v, "assistant", "Asystent AI (Ctrl+J)", "ChatGPT, Claude, Gemini albo DeepSeek obok strony; „Podsumuj stronę” jednym kliknięciem.")
+        row = QHBoxLayout(); grp = QButtonGroup(w); cur = self.st.settings.get("ai_provider", "ChatGPT")
+        for name in PROVIDERS:
+            rb = QRadioButton(name); rb.setChecked(name == cur); grp.addButton(rb); row.addWidget(rb)
+            rb.toggled.connect(lambda on, n=name: on and (self.st.settings.__setitem__("ai_provider", n), self.st.save_soon()))
+        row.addStretch(); rw = QWidget(); rw.setObjectName("clear"); rw.setLayout(row); row.setContentsMargins(30, 0, 0, 6); v.addWidget(rw)
+        self._feature(v, "webapps", "Panel komunikatorów (Ctrl+Shift+K)", "Wiadomości obok przeglądanej strony. Zaznacz, które chcesz mieć:")
+        have = {n for n, _u in (self.st.settings.get("webapps") or WEBAPPS_DEFAULT)}
+        row2 = QHBoxLayout(); row2.setContentsMargins(30, 0, 0, 0)
+        for name, url in WEBAPPS_DEFAULT:
+            c = QCheckBox(name); c.setChecked(name in have); row2.addWidget(c)
+            c.toggled.connect(lambda on, n=name, u=url: self._webapp(n, u, on))
+        row2.addStretch(); v.addLayout(row2); v.addStretch(1)
+        return "AI i komunikatory", w
+
+    def _webapp(self, name, url, on):
+        lst = [list(x) for x in (self.st.settings.get("webapps") or WEBAPPS_DEFAULT)]
+        lst = [x for x in lst if x[0] != name] + ([[name, url]] if on else [])
+        self.st.settings["webapps"] = lst; self.st.settings.setdefault("webapps_known", []).extend(
+            [n for n in WEBAPPS_ADDED if n not in self.st.settings.get("webapps_known", [])])
+        self.st.save_soon()
+        try:
+            self.b.webapps.build_picks()
+        except Exception:
+            pass
+
+    def p_done(self):
+        w, v = self._page("Gotowe! Kilka rzeczy, które warto znać", "")
+        grid = QGridLayout(); grid.setSpacing(10)
+        tips = (("search", "Ctrl+K – wszystko w jednym", "Polecenia, karty, historia i ustawienia – wpisz, czego szukasz."),
+                ("split", "Podział ekranu", "Przeciągnij kartę na stronę – dwie albo trzy strony obok siebie."),
+                ("external", "Szukanie w aplikacjach", "„yt koncert”, „sp lofi”, „tt @nazwa” wpisane w pasek adresu."),
+                ("bookmark", "Zakładki", "Ctrl+Shift+B – menedżer, eksport i przeniesienie na inne urządzenie."),
+                ("zoom", "Szukaj obrazem", "Ctrl+Shift+X – zaznacz fragment strony: Google Lens albo pytanie do AI."),
+                ("window", "Profile", "Osobna Luna do pracy i domu – menu Luny → Profile."))
+        for i, (ic, ti, tx) in enumerate(tips):
+            grid.addWidget(self._card(ic, ti, tx), i // 2, i % 2)
+        v.addLayout(grid)
+        v.addWidget(lbl("Ten przewodnik otworzysz ponownie w menu Luny: Pomoc → Przewodnik po Lunie.", "muted", wrap=True))
+        v.addStretch(1)
+        return "Gotowe", w
+
+
 class Updater(QObject):
     """Aktualizacje Luny uruchamianej z repozytorium git (python luna.py): w tle `git fetch` (bez okienek logowania),
     a gdy na GitHubie są nowe zmiany – pasek „Dostępna nowa wersja” i aktualizacja jednym kliknięciem (git pull
@@ -8941,17 +9234,80 @@ def updater():
     return UPDATER[0]
 
 
-def restart_luna(browser):
-    """Nowy proces Luny (bez okna konsoli) i zamknięcie bieżącego."""
-    from PyQt6.QtCore import QProcess
+def luna_command(profile=None):
+    """(program, argumenty) do uruchomienia Luny – ten sam profil albo wskazany ("" = główny)."""
     if getattr(sys, "frozen", False):
         prog, args = sys.executable, sys.argv[1:]
     else:
         exe = Path(sys.executable); w = exe.with_name("pythonw.exe")
         prog, args = (str(w) if w.exists() else str(exe)), [str(Path(sys.argv[0]).resolve())] + sys.argv[1:]
-    args = [a for a in args if not a.startswith("--luna-wait=")] + [f"--luna-wait={os.getpid()}"]   # poczeka na ten proces
-    QProcess.startDetached(prog, args)
+    args = [a for a in args if not a.startswith("--luna-wait=")]
+    if profile is not None:
+        args = [a for a in args if not a.startswith("--luna-profile=")] + ([f"--luna-profile={profile}"] if profile else [])
+    return prog, args
+
+
+def restart_luna(browser):
+    """Nowy proces Luny (bez okna konsoli) i zamknięcie bieżącego."""
+    from PyQt6.QtCore import QProcess
+    prog, args = luna_command()
+    QProcess.startDetached(prog, args + [f"--luna-wait={os.getpid()}"])   # poczeka na ten proces
     browser.quit_all()
+
+
+PROFILE_COLORS = ["#7aa2ff", "#3ddc84", "#f0b232", "#ff7a9a", "#b48cff", "#4dd0e1", "#ff9f5a"]
+
+
+def profile_meta():
+    try:
+        d = json.loads((PROFILES_DIR / "profile.json").read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def list_profiles():
+    """["" (główny), "Praca", …] – profile z folderu ~/.luna_profile_uzytkownikow."""
+    names = []
+    try:
+        names = sorted(p.name for p in PROFILES_DIR.iterdir() if p.is_dir())
+    except OSError:
+        pass
+    return [""] + names
+
+
+def profile_color(name):
+    if not name:
+        return "#c9c9c9"
+    c = profile_meta().get(name, {}).get("color")
+    return c or PROFILE_COLORS[sum(map(ord, name)) % len(PROFILE_COLORS)]
+
+
+def profile_icon(name, size=32):
+    """Kółko w kolorze profilu z pierwszą literą (główny profil – księżyc Luny)."""
+    S = 64; pm = QPixmap(S, S); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(profile_color(name))); p.drawEllipse(4, 4, S - 8, S - 8)
+    if name:
+        f = QFont(); f.setPixelSize(30); f.setBold(True); p.setFont(f); p.setPen(QColor("#111111"))
+        p.drawText(QRect(0, 0, S, S), Qt.AlignmentFlag.AlignCenter, name[:1].upper())
+    else:
+        p.drawPixmap(QRect(14, 14, S - 28, S - 28), logo_pixmap(36))
+    p.end()
+    return QIcon(pm)
+
+
+def profile_lock(name):
+    from PyQt6.QtCore import QLockFile
+    home = PROFILES_DIR / name if name else BASE_HOME
+    lk = QLockFile(str(home / ".luna.lock")); lk.setStaleLockTime(0)
+    return lk
+
+
+def open_profile(name):
+    from PyQt6.QtCore import QProcess
+    prog, args = luna_command(name)
+    QProcess.startDetached(prog, args)
 
 
 class TaskManager(LunaDialog):
@@ -10271,6 +10627,13 @@ class Tab(QStackedWidget):
         self.setCurrentWidget(self._web_widget())
         self.browser.update_sidebars_soon()
 
+    def load_request(self, req):
+        """Strona z zapytaniem POST (np. obraz do Google Lens)."""
+        self.pending = ""
+        if self._main is None:
+            self._main = self._new_view(); self.addWidget(self._main)
+        self._main.load(req); self.setCurrentWidget(self._main); self.browser.update_sidebars_soon()
+
     def adopt_view(self, v):
         """Przyjmuje gotową stronę z innej karty (bez przeładowania)."""
         v.owner = self; self._main = v; self.addWidget(v); self.setCurrentWidget(v)
@@ -11110,7 +11473,8 @@ class Browser(QMainWindow):
         self._prev_tab, self._ws_last, self._last_user, self._pw_pending, self._popup_from = None, {}, {}, None, None
         self._closed = []   # ostatnio zamknięte karty (uśpione widoki z historią) – Ctrl+Shift+T
         self._on_batt = has_battery() and not power_status()[1]
-        self.setWindowTitle("Luna – okno prywatne" if private else "Luna"); self.setWindowIcon(app_icon())
+        self.setWindowTitle("Luna – okno prywatne" if private else (f"Luna – {PROFILE}" if PROFILE else "Luna"))
+        self.setWindowIcon(app_icon())
         scr = cur_screen().availableGeometry()   # rozmiar w pikselach logicznych (z uwzględnieniem skalowania)
         # okno ~82% ekranu (duże monitory nie dostają „okienka”), małe ekrany – prawie cały ekran
         self.resize(min(1680, int(scr.width() * (0.96 if scr.width() < 1400 else 0.82))),
@@ -11210,6 +11574,12 @@ class Browser(QMainWindow):
         tl.addWidget(self.apps_btn)
         self.gear_btn = self.btn("gear", "Ustawienia (Ctrl+,)", self.open_settings)
         tl.addWidget(self.gear_btn)
+        self.prof_btn = QToolButton(); self.prof_btn.setObjectName("acct"); self.prof_btn.setIcon(profile_icon(PROFILE))
+        self.prof_btn.setIconSize(QSize(22, 22)); self.prof_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.prof_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.prof_btn.setToolTip(f"Profil: {PROFILE or 'Główny'}")
+        pmn = QMenu(self.prof_btn); pmn.aboutToShow.connect(lambda: self.profiles_menu(pmn)); self.prof_btn.setMenu(pmn)
+        self.prof_btn.setVisible(bool(PROFILE) or len(list_profiles()) > 1); tl.addWidget(self.prof_btn)
         self.dl_btn = self.btn("menu", "Pobrane pliki", lambda: None)   # pojawia się przy pierwszym pobraniu w tej sesji
         self.dl_btn.setObjectName("acct"); self.dl_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         dmn = QMenu(self.dl_btn); dmn.aboutToShow.connect(self.downloads_menu); self.dl_btn.setMenu(dmn)
@@ -11284,6 +11654,11 @@ class Browser(QMainWindow):
             SYNC.append(SyncManager(self.store)); QTimer.singleShot(5000, SYNC[0].start)
         up = updater()
         up.result.connect(self.on_update_result)
+        if self.primary and not self.store.settings.get("onboarded"):   # przewodnik – tylko przy pierwszym uruchomieniu
+            if FIRST_RUN and not os.environ.get("LUNA_NO_WELCOME"):
+                QTimer.singleShot(900, self.show_welcome)
+            else:
+                self.store.settings["onboarded"] = True; self.store.save_soon()
         if self.primary and len(WINDOWS) <= 1 and up.available():   # po aktualizacji: „Co nowego” (raz na wersję)
             up.news.connect(self._startup_news)
             QTimer.singleShot(3000, lambda: up.changes_since(self.store.settings.get("seen_head", "")))
@@ -11300,6 +11675,11 @@ class Browser(QMainWindow):
             self.notice.ask(f"Luna została zaktualizowana – {n} {'nowa zmiana' if n == 1 else ('nowe zmiany' if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else 'nowych zmian')}.",
                             [("Co nowego?", lambda: WhatsNewDialog(self, changes, up.version()).exec(), True), ("Później", None, False)],
                             icon="star")
+
+    def show_welcome(self):
+        d = WelcomeWizard(self); d.open()
+        self._welcome = d
+        return d
 
     def show_whats_new(self):
         up = updater()
@@ -11368,7 +11748,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
-                ("Ctrl+Shift+L", self.translate_page), ("Ctrl+Shift+K", self.toggle_webapps), ("Ctrl+K", self.palette), ("Ctrl+Shift+B", self.show_bookmarks), ("Ctrl+Shift+O", self.read_later_add),
+                ("Ctrl+Shift+L", self.translate_page), ("Ctrl+Shift+K", self.toggle_webapps), ("Ctrl+K", self.palette), ("Ctrl+Shift+B", self.show_bookmarks), ("Ctrl+Shift+X", self.image_search), ("Ctrl+Shift+O", self.read_later_add),
                 ("Ctrl+Shift+Space", self.search_tabs), ("Shift+Esc", self.task_manager),
                 ("Ctrl+Shift+S", lambda: self.screenshot("region")), ("Ctrl+Shift+P", self.pip),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
@@ -11690,6 +12070,8 @@ class Browser(QMainWindow):
         on = bool(self.cur() and self.cur().sides)
         self.act(m, "split", "Zakończ podział ekranu" if on else "Podziel ekran",
                  self.split_current, "Ctrl+\\", on or web is not None)
+        pf = m.addMenu(profile_icon(PROFILE), f"Profile (teraz: {PROFILE or 'Główny'})")
+        pf.aboutToShow.connect(lambda: self.profiles_menu(pf)); self.profiles_menu(pf)
         lm = m.addMenu(glyph("layouts"), "Układy podziału"); lm.aboutToShow.connect(lambda: self.layouts_menu(lm))
         self.layouts_menu(lm)
         if SYNC and SYNC[0].enabled() and SYNC[0].remote:
@@ -11763,6 +12145,7 @@ class Browser(QMainWindow):
             dom = base_domain(web.url().host())
             ex = self.act(m, "sun", f"Bez ciemnego trybu na {dom}", lambda d=dom: self.set_dark_except(d, d not in DARK["except"]))
             ex.setCheckable(True); ex.setChecked(dom in DARK["except"])
+        self.act(m, "search", "Szukaj obrazem (zaznacz fragment)", self.image_search, "Ctrl+Shift+X", web is not None)
         self.act(m, "print", "Drukuj…", self.print_page, "Ctrl+P", web is not None)
         fm = m.addMenu(glyph("search"), "Znajdź i edytuj"); fm.setEnabled(web is not None)
         self.act(fm, "search", "Znajdź na stronie…", self.find_bar.open, "Ctrl+F")
@@ -11806,6 +12189,7 @@ class Browser(QMainWindow):
         m.addSeparator()
         # 5. systemowe
         hp = m.addMenu(glyph("help"), "Pomoc")
+        self.act(hp, "help", "Przewodnik po Lunie", self.show_welcome)
         self.act(hp, "star", "Co nowego w Lunie", self.show_whats_new)
         self.act(hp, "search", "Wszystkie polecenia…", self.palette, "Ctrl+K")
         self.act(hp, "app", "Skróty klawiszowe", lambda: self.open_settings("keys"))
@@ -12154,6 +12538,74 @@ class Browser(QMainWindow):
                 out = QPixmap.fromImage(st["img"]); out.setDevicePixelRatio(dpr); self._shot_done(out); return
             st["y"] += inner; step()
         step()
+
+    # --- szukanie obrazem: zaznaczony fragment strony albo obraz ze strony → Google Lens albo pytanie do AI ---
+    def image_search(self):
+        web = self.web()
+        if web is None:
+            self.notice.info("Otwórz stronę, aby zaznaczyć na niej fragment do wyszukania.", 4000, "search"); return
+        pm = web.grab(); r = QRect(web.mapToGlobal(QPoint(0, 0)), web.size())
+        self._picker = RegionPicker(pm, r); self._picker.picked.connect(self._image_picked)
+        self._picker.show(); self._picker.activateWindow(); self._picker.setFocus()
+
+    def _image_picked(self, pm):
+        if pm is None or pm.isNull():
+            return
+        m = QMenu(self)
+        self.act(m, "search", "Szukaj w Google Lens", lambda: self.lens_search(pm))
+        if self.store.feature("assistant"):
+            self.act(m, "assistant", "Zapytaj AI o ten fragment", lambda: self.ai_image(pm))
+        self.act(m, "copy", "Kopiuj obraz", lambda: QGuiApplication.clipboard().setPixmap(pm))
+        m.exec(QCursor.pos())
+
+    def lens_search(self, pm):
+        """Wysyła obraz do Google Lens (jak „Szukaj obrazem” w Chrome) i otwiera wyniki w nowej karcie."""
+        from PyQt6.QtCore import QBuffer, QIODevice
+        from PyQt6.QtWebEngineCore import QWebEngineHttpRequest
+        if max(pm.width(), pm.height()) > 1600:
+            pm = pm.scaled(1600, 1600, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        buf = QBuffer(); buf.open(QIODevice.OpenModeFlag.WriteOnly); pm.save(buf, "PNG"); data = bytes(buf.data())
+        bnd = "----LunaLens" + secrets.token_hex(8)
+        body = (f'--{bnd}\r\nContent-Disposition: form-data; name="encoded_image"; filename="luna.png"\r\n'
+                f"Content-Type: image/png\r\n\r\n").encode() + data + f"\r\n--{bnd}--\r\n".encode()
+        req = QWebEngineHttpRequest(QUrl(f"https://lens.google.com/v3/upload?hl=pl&st={int(time.time() * 1000)}"),
+                                    QWebEngineHttpRequest.Method.Post)
+        req.setHeader(b"Content-Type", f"multipart/form-data; boundary={bnd}".encode()); req.setPostData(body)
+        t = self.new_tab(); t.load_request(req); v = t.main; st = {"consent": False}
+
+        def after_consent(u, v=v):
+            """Google najpierw pyta o zgodę na ciasteczka (nowy profil) – potem wraca do Lens już bez obrazu,
+            więc po zgodzie wysyłamy obraz jeszcze raz."""
+            h = u.host()
+            if h.startswith("consent.google."):
+                st["consent"] = True
+            elif st["consent"] and h == "lens.google.com" and u.path().startswith("/v3/upload"):
+                st["consent"] = False; safe_disconnect(v.urlChanged, after_consent); v.load(req)
+            elif h and not h.endswith("google.com") and not h.startswith("consent.google."):
+                safe_disconnect(v.urlChanged, after_consent)
+        v.urlChanged.connect(after_consent); t._lens_hook = after_consent
+
+    def lens_url(self, url):
+        self.open_url_new_tab("https://lens.google.com/uploadbyurl?hl=pl&url=" + quote(url, safe=""))
+
+    def ai_image(self, pm):
+        if not self.store.feature("assistant"):
+            self.notice.info("Asystent AI jest wyłączony (Ustawienia → Funkcje).", 4000, "assistant"); return
+        self._ai_send("", False, image=pm)
+
+    def _clip_image_then(self, view, fn):
+        """Kopiuje obraz spod kursora (menu strony) i przekazuje go dalej, gdy trafi do schowka."""
+        view.page().triggerAction(QWebEnginePage.WebAction.CopyImageToClipboard)
+
+        def check(tries=0):
+            pm = QGuiApplication.clipboard().pixmap()
+            if not pm.isNull():
+                fn(pm)
+            elif tries < 10:
+                QTimer.singleShot(150, lambda: check(tries + 1))
+            else:
+                self.notice.info("Nie udało się skopiować tego obrazu.", 4000, "copy")
+        QTimer.singleShot(150, check)
 
     def _shot_done(self, pm):
         if pm is None or pm.isNull():
@@ -12613,7 +13065,7 @@ class Browser(QMainWindow):
                 self._ai_send(AI_PROMPTS[mode].format(**d), mode != "ask")
         _safe_js(web, PAGE_TEXT_JS % 14000, got)
 
-    def _ai_send(self, text, submit):
+    def _ai_send(self, text, submit, image=None):
         """Wkleja tekst w pole czatu otwartej usługi AI (prawdziwe wklejenie – działa w ChatGPT, Claude, Gemini,
         DeepSeek) i opcjonalnie wysyła Enterem. Bez kluczy API: używa Twojej sesji w panelu."""
         if not self.assistant.isVisible():
@@ -12625,14 +13077,18 @@ class Browser(QMainWindow):
         cb = QGuiApplication.clipboard(); old = cb.text()
 
         def fail():
-            cb.setText(text)
-            self.notice.info("Nie znalazłem pola czatu – zaloguj się w panelu AI. Treść strony jest w schowku (Ctrl+V).",
+            cb.setPixmap(image) if image is not None else cb.setText(text)
+            self.notice.info("Nie znalazłem pola czatu – zaloguj się w panelu AI. " +
+                             ("Obraz jest w schowku (Ctrl+V)." if image is not None else "Treść strony jest w schowku (Ctrl+V)."),
                              8000, "assistant")
 
         def paste(ok):
             if not ok:
                 fail(); return
-            cb.setText(text); v.setFocus(); v.page().triggerAction(QWebEnginePage.WebAction.Paste)
+            cb.setPixmap(image) if image is not None else cb.setText(text)
+            v.setFocus(); v.page().triggerAction(QWebEnginePage.WebAction.Paste)
+            if image is not None:
+                self.notice.info("Obraz wklejony do czatu – dopisz pytanie i wyślij.", 5000, "assistant"); return
             if submit:
                 QTimer.singleShot(700, lambda: self._ai_enter(v))
             QTimer.singleShot(2000, lambda: cb.text() == text and cb.setText(old))   # przywróć schowek
@@ -12701,6 +13157,12 @@ class Browser(QMainWindow):
             self.act(m, "save", "Zapisz obraz jako…", trig(A.DownloadImageToDisk))
             self.act(m, "copy", "Kopiuj obraz", trig(A.CopyImageToClipboard))
             self.act(m, "copy", "Kopiuj adres obrazu", trig(A.CopyImageUrlToClipboard))
+            mu = d["media_url"]
+            self.act(m, "search", "Szukaj tym obrazem (Google Lens)",
+                     (lambda: self.lens_url(mu)) if mu.startswith(("http://", "https://")) else
+                     (lambda: self._clip_image_then(view, self.lens_search)))
+            if self.store.feature("assistant"):
+                self.act(m, "assistant", "Zapytaj AI o ten obraz", lambda: self._clip_image_then(view, self.ai_image))
             m.addSeparator()
         if d["video"]:
             self.act(m, "play", "Odtwórz / wstrzymaj", trig(A.ToggleMediaPlayPause))
@@ -12841,6 +13303,9 @@ class Browser(QMainWindow):
                 ("history", "Historia", "Ctrl+H", self.show_history),
                 ("bookmark", "Menedżer zakładek – eksport, import, przeniesienie", "Ctrl+Shift+B", self.show_bookmarks),
                 ("plus", "Dodaj stronę do zakładek", "", self.bookmark_current),
+                ("search", "Szukaj obrazem (Google Lens / AI)", "Ctrl+Shift+X", self.image_search),
+                ("help", "Przewodnik po Lunie", "", lambda: self.show_welcome()),
+                ("plus", "Nowy profil", "", self.new_profile),
                 ("layouts", "Zapisz układ podziału ekranu", "", self.save_layout),
                 ("star", "Co nowego w Lunie", "", lambda: self.show_whats_new()),
                 ("download", "Pobrane pliki", "Ctrl+Shift+Y", self.show_downloads),
@@ -13454,6 +13919,68 @@ class Browser(QMainWindow):
         if o in self.all_tabs() and s in (t.sides or []) and s.view is None:   # nie udało się – bez pustej strony
             t.close_side(s)
 
+    # --- profile: osobne Luny (praca / dom) – każdy w swoim oknie i procesie ---
+    def profiles_menu(self, m):
+        m.clear()
+        for name in list_profiles():
+            label = name or "Główny"
+            if name == PROFILE:
+                a = m.addAction(profile_icon(name), f"{label}  (to okno)"); a.setEnabled(False)
+            else:
+                m.addAction(profile_icon(name), f"Otwórz profil „{label}”", lambda n=name: self.switch_profile(n))
+        m.addSeparator()
+        self.act(m, "plus", "Nowy profil…", self.new_profile)
+        others = [n for n in list_profiles() if n and n != PROFILE]
+        if others:
+            dm = m.addMenu(glyph("trash"), "Usuń profil")
+            for n in others:
+                dm.addAction(profile_icon(n), n, lambda n=n: self.delete_profile(n))
+
+    def switch_profile(self, name):
+        lk = profile_lock(name)
+        if name != PROFILE and not lk.tryLock(0):
+            self.notice.info(f"Profil „{name or 'Główny'}” jest już otwarty w innym oknie.", 5000, "window"); return
+        lk.unlock(); open_profile(name)
+        self.notice.info(f"Otwieram profil „{name or 'Główny'}” w nowym oknie…", 4000, "window")
+
+    def new_profile(self):
+        name = luna_prompt(self, "Nowy profil", "Nazwa profilu (np. Praca, Dom, Szkoła). Nowy profil ma własne kafelki, karty, "
+                           "hasła, historię i logowania – jak osobna przeglądarka.", "", "plus")
+        if not name:
+            return
+        name = re.sub(r"[^\w \-]", "", name).strip()[:40]
+        if not name or name.lower() in ("główny", "glowny") or name in list_profiles():
+            self.notice.info("Taki profil już istnieje albo nazwa jest niepoprawna.", 5000, "plus"); return
+        try:
+            (PROFILES_DIR / name).mkdir(parents=True, exist_ok=True)
+            meta = profile_meta(); used = {v.get("color") for v in meta.values() if isinstance(v, dict)}
+            meta[name] = {"color": next((c for c in PROFILE_COLORS if c not in used), PROFILE_COLORS[len(meta) % len(PROFILE_COLORS)])}
+            (PROFILES_DIR / "profile.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        except OSError as e:
+            self.notice.info(f"Nie udało się utworzyć profilu: {e}", 6000, "plus"); return
+        self.prof_btn.setVisible(True); open_profile(name)
+        self.notice.info(f"Utworzono profil „{name}” – otwiera się w nowym oknie z krótkim przewodnikiem.", 5000, "plus")
+
+    def delete_profile(self, name):
+        if not name or name == PROFILE:
+            return
+        if not luna_confirm(self, f"Usunąć profil „{name}”?", "Wszystkie dane tego profilu – kafelki, karty, historia, hasła, "
+                            "zakładki i logowania do stron – zostaną usunięte z tego komputera. Nie da się tego cofnąć.", "Usuń profil", "trash"):
+            return
+        lk = profile_lock(name)
+        if not lk.tryLock(0):
+            self.notice.info(f"Profil „{name}” jest otwarty – zamknij jego okno i spróbuj ponownie.", 6000, "trash"); return
+        lk.unlock()
+        import shutil
+        try:
+            shutil.rmtree(PROFILES_DIR / name)
+            meta = profile_meta(); meta.pop(name, None)
+            (PROFILES_DIR / "profile.json").write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
+        except OSError as e:
+            self.notice.info(f"Nie udało się usunąć wszystkich plików profilu: {e}", 6000, "trash"); return
+        self.prof_btn.setVisible(bool(PROFILE) or len(list_profiles()) > 1)
+        self.notice.info(f"Profil „{name}” został usunięty.", 4000, "trash")
+
     # --- zapisane układy podziału („Praca: Gmail + Kalendarz + Notion”) – jedno kliknięcie otwiera wszystkie strony ---
     def layouts(self):
         lst = self.store.settings.get("layouts")
@@ -13927,11 +14454,15 @@ if __name__ == "__main__":
     if sys.platform == "win32":  # własna ikona na pasku zadań (a nie ikona Pythona)
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pl.luna.browser")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("pl.luna.browser" + ("." + PROFILE if PROFILE else ""))
         except Exception:
             pass
     install_error_guard()
     app = QApplication(sys.argv)
+    _lock = profile_lock(PROFILE)   # ten sam profil w dwóch procesach zepsułby dane przeglądarki
+    if not _lock.tryLock(200):
+        QMessageBox.information(None, "Luna", f"Profil „{PROFILE or 'Główny'}” jest już otwarty w innym oknie Luny.")
+        sys.exit(0)
     migrate_old_data()
     load_local_fonts()
     app.setApplicationName("Luna"); app.setWindowIcon(app_icon())
