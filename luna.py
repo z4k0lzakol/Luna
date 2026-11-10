@@ -5770,7 +5770,7 @@ def page_keys(dlg):
                  ("Ctrl + Shift + G", "Dodaj kartę do grupy"), ("Ctrl + Shift + A / klik w logo", "Lista kart i grup"),
                  ("Ctrl + N / Ctrl + Shift + N", "Nowe okno / okno prywatne"), ("Ctrl + Shift + E", "Rynek Widgetów"), ("Ctrl + H", "Historia"), ("Ctrl + Shift + D", "Ciemny tryb stron"), ("Ctrl + F", "Znajdź na stronie"),
                  ("Ctrl + + / − / 0", "Powiększenie"), ("F11", "Pełny ekran"), ("Ctrl + P", "Drukuj"),
-                 ("Ctrl + S", "Zapisz stronę"), ("Ctrl + Shift + Y", "Pobrane pliki"), ("Ctrl + Shift + Del", "Usuń dane przeglądania"),
+                 ("Ctrl + S", "Zapisz stronę"), ("Ctrl + Shift + Y", "Pobrane pliki"), ("Ctrl + Shift + B", "Menedżer zakładek"), ("Ctrl + Shift + Del", "Usuń dane przeglądania"),
                  ("F12 / Ctrl + U", "Narzędzia deweloperskie / źródło strony"),
                  ("Środkowy przycisk na karcie", "Zamyka kartę"), ("Środkowy przycisk na pustym pasku", "Nowa karta")):
         row = QHBoxLayout(); a = lbl(k, "h3"); b = lbl(d, "muted2")
@@ -6407,7 +6407,7 @@ class RowDelegate(QStyledItemDelegate):
         p.save(); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setPen(Qt.PenStyle.NoPen)
         r = QRectF(opt.rect).adjusted(2, 1, -2, -1); title = idx.data(Qt.ItemDataRole.DisplayRole) or ""
         if idx.data(ROW_HEAD):
-            f = _font_step(opt.font, 2); f.setBold(True); f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 108)
+            f = _font_step(opt.font, 2); f.setBold(True); f.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, 0.6)
             p.setFont(f); p.setPen(QColor("#7d7d7d"))
             p.drawText(r.adjusted(12, 8, -12, 0), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title.upper())
             p.restore(); return
@@ -8058,13 +8058,219 @@ class Bookmarks:
         for b in new:
             if b["url"] not in have:
                 cls.items().append(b); have.add(b["url"]); n += 1
+        cls.save()
+        return n
+
+    @classmethod
+    def save(cls):
         try:
             tmp = BOOKMARKS.with_suffix(".tmp"); tmp.write_text(json.dumps(cls.items(), ensure_ascii=False), encoding="utf-8")
             tmp.replace(BOOKMARKS)
         except OSError:
             pass
         sync_touch()
-        return n
+
+    @classmethod
+    def add(cls, title, url, folder="Luna"):
+        """Dodaje stronę (albo zmienia folder istniejącej); zwraca True, gdy to nowa zakładka."""
+        cur = next((b for b in cls.items() if b["url"] == url), None)
+        if cur is not None:
+            cur.update(title=title or cur.get("title", url), folder=folder); cls.save(); return False
+        cls.items().append({"title": title or url, "url": url, "folder": folder}); cls.save()
+        return True
+
+    @classmethod
+    def remove(cls, urls):
+        urls = set(urls); cls._items = [b for b in cls.items() if b["url"] not in urls]; cls.save()
+
+    @classmethod
+    def has(cls, url):
+        return any(b["url"] == url for b in cls.items())
+
+
+HOME_FOLDER = "Ekran główny Luny"   # folder w pliku zakładek: kafelki ekranu głównego
+
+
+def bookmarks_html(tiles, bookmarks):
+    """Plik zakładek w standardowym formacie (Netscape Bookmark File) – czytają go Chrome, Edge, Firefox, Brave, Opera,
+    Safari i Luna; kafelki ekranu głównego trafiają do osobnego folderu."""
+    esc = lambda s: html.escape(s or "", quote=True)
+    out = ["<!DOCTYPE NETSCAPE-Bookmark-file-1>", '<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">',
+           "<TITLE>Bookmarks</TITLE>", "<H1>Bookmarks</H1>", "<DL><p>"]
+    now = int(time.time())
+    groups = {HOME_FOLDER: [(t.get("name", ""), t["url"]) for t in tiles if t.get("url")]}
+    for b in bookmarks:
+        groups.setdefault(b.get("folder") or "Zakładki", []).append((b.get("title", ""), b["url"]))
+    for folder, items in groups.items():
+        if not items:
+            continue
+        out.append(f'    <DT><H3 ADD_DATE="{now}">{esc(folder)}</H3>'); out.append("    <DL><p>")
+        for title, url in items:
+            out.append(f'        <DT><A HREF="{esc(url)}" ADD_DATE="{now}">{esc(title or url)}</A>')
+        out.append("    </DL><p>")
+    out.append("</DL><p>")
+    return "\n".join(out) + "\n"
+
+
+def parse_bookmarks_html(text):
+    """Zakładki z pliku HTML (eksport z dowolnej przeglądarki): [{title, url, folder}] – foldery zagnieżdżone jako „A / B”."""
+    from html.parser import HTMLParser
+
+    class P(HTMLParser):
+        def __init__(self):
+            super().__init__(); self.out, self.stack, self.pending, self.mode, self.buf, self.href = [], [], None, "", "", ""
+
+        def handle_starttag(self, tag, attrs):
+            a = dict(attrs)
+            if tag == "h3":
+                self.mode, self.buf = "h3", ""
+            elif tag == "a":
+                self.mode, self.buf, self.href = "a", "", a.get("href", "")
+            elif tag == "dl":
+                self.stack.append(self.pending or ""); self.pending = None
+
+        def handle_endtag(self, tag):
+            if tag == "h3" and self.mode == "h3":
+                self.pending, self.mode = self.buf.strip(), ""
+            elif tag == "a" and self.mode == "a":
+                if self.href.startswith(("http://", "https://")):
+                    folder = " / ".join(f for f in self.stack if f)
+                    self.out.append({"title": self.buf.strip() or self.href, "url": self.href, "folder": folder})
+                self.mode = ""
+            elif tag == "dl" and self.stack:
+                self.stack.pop()
+
+        def handle_data(self, data):
+            if self.mode:
+                self.buf += data
+    p = P(); p.feed(text); p.close()
+    return p.out
+
+
+class BookmarksDialog(LunaDialog):
+    """Menedżer zakładek: wyszukiwanie, foldery, otwieranie i usuwanie; przenoszenie między urządzeniami –
+    synchronizacja przez folder w chmurze albo plik HTML (eksport / import, zgodny z innymi przeglądarkami)."""
+
+    def __init__(self, browser):
+        super().__init__(browser, "Zakładki", "bookmark", (760, 620))
+        self.b = browser
+        self.search = QLineEdit(); self.search.setObjectName("glassin"); self.search.setPlaceholderText("Szukaj w zakładkach…")
+        self.search.setClearButtonEnabled(True); self.search.textChanged.connect(lambda _: self.fill()); self.head_widget(self.search, True)
+        self.sync_row = QHBoxLayout(); self.sync_lbl = lbl("", "muted2", wrap=True); self.sync_row.addWidget(self.sync_lbl, 1)
+        self.sync_btn = QPushButton(); self.sync_btn.setCursor(Qt.CursorShape.PointingHandCursor); self.sync_btn.clicked.connect(self.sync_action)
+        self.sync_row.addWidget(self.sync_btn); self.body.addLayout(self.sync_row)
+        self.list = row_list(True); self.list.itemActivated.connect(lambda it: self.open([it]))
+        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.menu)
+        self.HINT = ("Dodaj stronę z menu (Zakładki i listy → Dodaj do zakładek), zaimportuj plik HTML "
+                     "albo zakładki z innej przeglądarki.")
+        self.panel(self.list, "bookmark", "Brak zakładek", self.HINT)
+        self.footer(left=[("Otwórz", lambda: self.open(self.selected()), True), ("Usuń", self.remove_selected)],
+                    right=[("Importuj plik…", self.import_file), ("Eksportuj plik…", self.export_file)])
+        QShortcut(QKeySequence("Delete"), self.list, self.remove_selected)
+        self.refresh_sync(); self.fill(); self.search.setFocus()
+
+    def refresh_sync(self):
+        s = SYNC[0] if SYNC else None
+        if s is not None and s.enabled():
+            self.sync_lbl.setText("Synchronizacja włączona – zakładki i kafelki przechodzą na Twoje pozostałe komputery z Luną "
+                                  "przez folder w chmurze.")
+            self.sync_btn.setText("Synchronizuj teraz")
+        else:
+            self.sync_lbl.setText("Na inne urządzenie: włącz synchronizację przez folder OneDrive / Dysku Google (inne komputery "
+                                  "z Luną) albo użyj „Eksportuj plik…” – plik HTML otworzy każda przeglądarka.")
+            self.sync_btn.setText("Włącz synchronizację…")
+
+    def sync_action(self):
+        s = SYNC[0] if SYNC else None
+        if s is not None and s.enabled():
+            s.touch(0); self.b.notice.info("Synchronizuję zakładki…", 3000, "reload")
+        else:
+            self.accept(); self.b.open_settings("sync")
+
+    def fill(self):
+        q = fold(self.search.text().strip()); words = q.split(); self.list.clear(); shown = 0
+        groups = {HOME_FOLDER: [(t.get("name", ""), t["url"], "tile") for t in self.b.store.items]}
+        for bm in Bookmarks.items():
+            groups.setdefault(bm.get("folder") or "Zakładki", []).append((bm.get("title", ""), bm["url"], "bm"))
+        for folder, items in groups.items():
+            items = [x for x in items if not words or all(w in fold(f"{x[0]} {x[1]} {folder}") for w in words)]
+            if not items:
+                continue
+            self.list.addItem(head_item(f"{folder}  ·  {len(items)}"))
+            for title, url, kind in items:
+                self.list.addItem(row_item(title or host_of(url), url.split("://", 1)[-1].rstrip("/"), "kafelek" if kind == "tile" else "",
+                                           mini_icon(title or url, url), (url, kind), url)); shown += 1
+        self.show_empty(not shown, "Brak wyników" if words else "Brak zakładek",
+                        "" if words else self.HINT)
+
+    def selected(self):
+        return [i for i in self.list.selectedItems() if i.data(Qt.ItemDataRole.UserRole)]
+
+    def open(self, items):
+        for it in items:
+            d = it.data(Qt.ItemDataRole.UserRole) if it is not None else None
+            if d:
+                self.b.open_url_new_tab(d[0])
+        if items:
+            self.accept()
+
+    def remove_selected(self):
+        sel = [i.data(Qt.ItemDataRole.UserRole) for i in self.selected()]
+        bms = [u for u, k in sel if k == "bm"]; tiles = {u for u, k in sel if k == "tile"}
+        if not sel:
+            return
+        if tiles and not luna_confirm(self, "Usunąć kafelki?", f"Zaznaczone kafelki ({len(tiles)}) znikną z ekranu głównego.", "Usuń", "trash"):
+            return
+        if bms:
+            Bookmarks.remove(bms)
+        if tiles:
+            st = self.b.store; st.items = [t for t in st.items if t["url"] not in tiles]; st.save()
+        self.fill()
+
+    def menu(self, pos):
+        it = self.list.itemAt(pos); d = it.data(Qt.ItemDataRole.UserRole) if it is not None else None
+        if not d:
+            return
+        if not it.isSelected():
+            self.list.clearSelection(); it.setSelected(True)
+        m = QMenu(self)
+        m.addAction(glyph("plus"), "Otwórz w nowej karcie", lambda: self.open([it]))
+        m.addAction(glyph("copy"), "Kopiuj link", lambda: QGuiApplication.clipboard().setText(d[0]))
+        m.addAction(glyph("qr"), "Kod QR (otwórz na telefonie)", lambda: show_qr(self, d[0]))
+        m.addSeparator(); m.addAction(glyph("trash"), "Usuń", self.remove_selected)
+        m.exec(self.list.viewport().mapToGlobal(pos))
+
+    def export_file(self):
+        name = f"Zakladki-Luna-{date.today().isoformat()}.html"
+        path, _ = QFileDialog.getSaveFileName(self, "Eksportuj zakładki", str(Path(DOWNLOADS[0].folder()) / name), "Plik zakładek (*.html)")
+        if not path:
+            return
+        try:
+            Path(path).write_text(bookmarks_html(self.b.store.items, Bookmarks.items()), encoding="utf-8")
+        except OSError as e:
+            self.b.notice.info(f"Nie udało się zapisać pliku: {e}", 6000, "save"); return
+        n = len(self.b.store.items) + len(Bookmarks.items())
+        self.b.notice.ask(f"Zapisano {n} zakładek do {Path(path).name}. Na innym urządzeniu: Luna → Zakładki → Importuj plik, "
+                          "albo import zakładek z pliku HTML w Chrome, Edge, Firefoksie.",
+                          [("Pokaż w folderze", lambda: show_in_folder(path), True), ("OK", None, False)], icon="bookmark")
+
+    def import_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Importuj zakładki", DOWNLOADS[0].folder(), "Plik zakładek (*.html *.htm)")
+        if not path:
+            return
+        try:
+            items = parse_bookmarks_html(Path(path).read_text(encoding="utf-8", errors="replace"))
+        except OSError as e:
+            self.b.notice.info(f"Nie udało się odczytać pliku: {e}", 6000, "bookmark"); return
+        st = self.b.store; have = {t["url"] for t in st.items}; tiles = 0
+        for x in [x for x in items if x["folder"].split(" / ")[-1] == HOME_FOLDER]:
+            if x["url"] not in have:
+                st.add(x["title"][:40], x["url"], save=False); have.add(x["url"]); tiles += 1
+        if tiles:
+            st.save()
+        n = Bookmarks.add_many([x for x in items if x["folder"].split(" / ")[-1] != HOME_FOLDER])
+        self.fill()
+        self.b.notice.info(f"Zaimportowano: zakładki {n} nowych, kafelki {tiles} (z {len(items)} w pliku).", 6000, "bookmark")
 
 
 class ImportDialog(LunaDialog):
@@ -11162,7 +11368,7 @@ class Browser(QMainWindow):
                 ("Ctrl+PgUp", lambda: self.cycle_tab(-1)), ("Ctrl+J", self.toggle_assistant),
                 ("Ctrl+,", self.open_settings), ("Ctrl+\\", self.split_current),
                 ("F9", self.toggle_reader), ("Ctrl+Alt+R", self.toggle_reader), ("Ctrl+Shift+T", self.restore_closed),
-                ("Ctrl+Shift+L", self.translate_page), ("Ctrl+Shift+K", self.toggle_webapps), ("Ctrl+K", self.palette), ("Ctrl+Shift+O", self.read_later_add),
+                ("Ctrl+Shift+L", self.translate_page), ("Ctrl+Shift+K", self.toggle_webapps), ("Ctrl+K", self.palette), ("Ctrl+Shift+B", self.show_bookmarks), ("Ctrl+Shift+O", self.read_later_add),
                 ("Ctrl+Shift+Space", self.search_tabs), ("Shift+Esc", self.task_manager),
                 ("Ctrl+Shift+S", lambda: self.screenshot("region")), ("Ctrl+Shift+P", self.pip),
                 ("Ctrl+Shift+G", lambda: self.group_dialog(self.cur())), ("Ctrl+Shift+A", self.toggle_tab_popup),
@@ -11510,6 +11716,8 @@ class Browser(QMainWindow):
             hm.addAction("Brak historii").setEnabled(False)
         hm.addSeparator(); self.act(hm, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
         bm = m.addMenu(glyph("bookmark"), "Zakładki i listy")
+        self.act(bm, "bookmark", "Menedżer zakładek…", self.show_bookmarks, "Ctrl+Shift+B")
+        self.act(bm, "plus", "Dodaj do zakładek", self.bookmark_current, "", web is not None)
         self.act(bm, "star", "Dodaj tę stronę do ekranu głównego", self.pin_current, "Ctrl+D", web is not None)
         bm.addSeparator()
         for it in self.store.items[:20]:
@@ -11526,6 +11734,7 @@ class Browser(QMainWindow):
                     fm_.addAction(mini_icon(b_["title"], b_["url"]), b_["title"][:70]).triggered.connect(
                         lambda _=False, u=b_["url"]: self.open_url_new_tab(u))
         bm.addSeparator(); self.act(bm, "download", "Importuj z innej przeglądarki…", lambda: ImportDialog(self).exec())
+        self.act(bm, "save", "Eksportuj / przenieś na inne urządzenie…", self.show_bookmarks)
         rl = m.addMenu(glyph("book"), "Do przeczytania"); rl.aboutToShow.connect(lambda: self.read_later_menu(rl))
         self.act(m, "edit", "Zakreślenia i notatki…", self.show_highlights)
         self.act(m, "download", "Pobrane pliki", self.show_downloads, "Ctrl+Shift+Y")
@@ -12630,6 +12839,8 @@ class Browser(QMainWindow):
                 ("reload", "Przywróć zamkniętą kartę", "Ctrl+Shift+T", self.restore_closed),
                 ("tabs", "Karty i grupy", "Ctrl+Shift+A", self.toggle_tab_popup),
                 ("history", "Historia", "Ctrl+H", self.show_history),
+                ("bookmark", "Menedżer zakładek – eksport, import, przeniesienie", "Ctrl+Shift+B", self.show_bookmarks),
+                ("plus", "Dodaj stronę do zakładek", "", self.bookmark_current),
                 ("layouts", "Zapisz układ podziału ekranu", "", self.save_layout),
                 ("star", "Co nowego w Lunie", "", lambda: self.show_whats_new()),
                 ("download", "Pobrane pliki", "Ctrl+Shift+Y", self.show_downloads),
@@ -13556,6 +13767,20 @@ class Browser(QMainWindow):
         text = self.address.text().strip()
         if text and not self.ai_login_link(text):
             self.cur().go(text)
+
+    def show_bookmarks(self):
+        BookmarksDialog(self).exec()
+
+    def bookmark_current(self):
+        t = self.cur(); web = t.web if t is not None and not t.on_home() else None
+        if web is None:
+            return
+        url = web.url().toString()
+        if not url.startswith(("http://", "https://")):
+            return
+        new = Bookmarks.add((web.title() or host_of(url))[:120], url)
+        self.notice.ask("Dodano do zakładek (folder „Luna”)." if new else "Ta strona jest już w zakładkach.",
+                        [("Menedżer zakładek", self.show_bookmarks, False), ("OK", None, False)], icon="bookmark")
 
     def pin_current(self):
         t = self.cur()
