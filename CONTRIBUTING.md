@@ -1,6 +1,8 @@
 # Jak pomóc w rozwoju Luny
 
-Dziękujemy, że chcesz pomóc! Każde zgłoszenie błędu, pomysł i poprawka się liczy. Biorąc udział w projekcie, przestrzegasz [kodeksu postępowania](CODE_OF_CONDUCT.md).
+Dziękujemy, że chcesz pomóc! Każde zgłoszenie błędu, pomysł i poprawka się liczy.
+
+**Luna to projekt jednoosobowy i „vibecoded”** – rozwija ją jedna osoba we współpracy z AI (Claude). Odpowiedź na zgłoszenie może więc chwilę potrwać. Zmiany przygotowane z pomocą AI też są mile widziane – ważne, żeby były sprawdzone w działaniu i przeszły testy. Biorąc udział w projekcie, przestrzegasz [kodeksu postępowania](CODE_OF_CONDUCT.md).
 
 ## Zgłoś błąd
 

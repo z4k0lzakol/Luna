@@ -46,7 +46,7 @@ Windows 11 Smart App Control blocks unsigned downloaded programs entirely (there
 Fully automated: a version tag `v*` triggers the GitHub Actions workflow, which builds with PyInstaller on Windows, Linux and macOS, runs a start-up smoke test of each build (and an install / launch / uninstall test of the Windows installer), and publishes a GitHub release. The signing steps are already prepared in the workflow (`signpath/github-action-submit-signing-request@v3`) and activate once the SignPath secrets are configured. Every release will be approved manually.
 
 **Team / roles:**
-Single maintainer: z4k0lzakol (author, committer, reviewer and approver). Pull requests from others are reviewed before merging. GitHub and SignPath accounts use multi-factor authentication.
+One-person project. Single maintainer: z4k0lzakol (author, committer, reviewer and approver). The code is largely written with AI assistance ("vibecoded" with Claude) under the maintainer's direction; all changes are tested automatically and every release is built and smoke-tested on GitHub-hosted runners. Pull requests from others are reviewed before merging. GitHub and SignPath accounts use multi-factor authentication.
 
 **Code signing policy:** https://z4k0lzakol.github.io/Luna/#podpis (also in README.md, section "Code signing policy")
 

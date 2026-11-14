@@ -9,6 +9,8 @@
   wbudowaną blokadą reklam i asystentem AI obok strony.
 </p>
 
+<p align="center"><sub>Projekt jednoosobowy · vibecoded – tworzony we współpracy z AI (Claude) · <a href="#o-projekcie">więcej</a></sub></p>
+
 <p align="center">
   <a href="https://github.com/z4k0lzakol/Luna/releases/latest"><b>Pobierz</b></a> ·
   <a href="#jak-zainstalować">Jak zainstalować</a> ·
@@ -168,7 +170,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 > **Stan:** zgłoszenie do SignPath Foundation jest w przygotowaniu – obecne wydania nie są jeszcze podpisane.
 
 - **Co jest podpisywane:** tylko pliki zbudowane automatycznie z kodu źródłowego tego repozytorium przez GitHub Actions (`.github/workflows/release.yml`): `Luna.exe` i instalator `Luna-…-Windows-Setup.exe`. Biblioteki innych projektów (np. Qt, PyQt6, Python) są dołączane bez zmian.
-- **Committers and reviewers:** [z4k0lzakol](https://github.com/z4k0lzakol) – zmiany od innych osób (pull requesty) są przeglądane przed włączeniem.
+- **Committers and reviewers:** [z4k0lzakol](https://github.com/z4k0lzakol) – Luna to projekt jednoosobowy; zmiany od innych osób (pull requesty) są przeglądane przed włączeniem.
 - **Approvers:** [z4k0lzakol](https://github.com/z4k0lzakol) – każde wydanie jest zatwierdzane do podpisu ręcznie.
 - **Prywatność:** Luna nie przesyła danych do innych systemów, poza usługami potrzebnymi do funkcji, których używasz – pełna lista, co trafia do której usługi i jak to wyłączyć, jest w [polityce prywatności](https://z4k0lzakol.github.io/Luna/privacy.html).
 - **Odinstalowanie:** w ustawieniach Windows (Aplikacje → Luna → Odinstaluj); dane użytkownika zostają w folderze domowym.
@@ -180,6 +182,12 @@ Luna jest wolnym oprogramowaniem na licencji **[GNU GPL v3](LICENSE)** – może
 Warunek dodatkowy (pkt 7 GPL v3): nazwa „Luna” i logo Luny nie są objęte licencją – zmienione wersje muszą być wyraźnie oznaczone i nie mogą być przedstawiane jako oficjalna Luna.
 
 Zasady korzystania: [regulamin](https://z4k0lzakol.github.io/Luna/regulamin.html) · licencje składników, list filtrów i źródła danych: [licencje](https://z4k0lzakol.github.io/Luna/licencje.html).
+
+## O projekcie
+
+**Luna to projekt jednoosobowy** – tworzy go jedna osoba, [z4k0lzakol](https://github.com/z4k0lzakol).
+
+**Luna jest „vibecoded”:** kod powstaje we współpracy z AI (Claude). Autor opisuje, co Luna ma robić i jak wyglądać, sprawdza efekty w działaniu i podejmuje decyzje, a większość kodu pisze model AI. Każda zmiana przechodzi automatyczne testy (prawdziwa Luna na tymczasowym profilu), a wydania są budowane i sprawdzane na GitHubie – ale to nie to samo co zespół programistów i przegląd kodu przez ludzi. Traktuj Lunę jako projekt hobbystyczny: [zgłaszaj](https://github.com/z4k0lzakol/Luna/issues/new/choose) błędy, a ważne dane trzymaj też w kopii zapasowej.
 
 ## Współpraca
 
