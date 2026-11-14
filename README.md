@@ -55,7 +55,7 @@
 - Ostatnio zamknięte karty wracają z historią (Ctrl+Shift+T), a ekran główny pokazuje je jednym kliknięciem.
 
 **Prywatność i bezpieczeństwo**
-- Blokada reklam i śledzenia (listy uBlock Origin, EasyList, polskie filtry), także reklam na YouTube i wyskakujących okien.
+- Blokada reklam i śledzenia (listy uBlock Origin, EasyList, polskie filtry), także reklam na YouTube i wyskakujących okien. Gdy YouTube po zablokowaniu reklamy każe czekać na start filmu, Luna od razu wczytuje go ponownie w trybie bez reklam (start po ok. 5 s zamiast 11 s), a filmy otwarte z paska adresu czy zakładki uruchamiają się same.
 - Pomijanie sponsorowanych wstawek na YouTube (SponsorBlock).
 - Menedżer haseł szyfrowany na komputerze, kody 2FA, adresy do formularzy.
 - Ostrzeżenie przed fałszywymi stronami logowania (podróbki banków i serwisów).

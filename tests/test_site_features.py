@@ -452,6 +452,17 @@ def memory_and_animations():
     check("widget collapse uses easing", wf and wf[0].anim.easingCurve().type() == E.InOutCubic)
     page = luna.scroll_page(luna.QWidget())
     check("settings pages scroll smoothly", isinstance(page, luna.SmoothScroll))
+    fa = luna.FluidAnimation(luna.QWidget(), b"maximumWidth")
+    check("animations tick at the screen refresh rate (4-16 ms)", 4 <= fa.frame_ms() <= 16)
+    # YouTube: autoodtwarzanie tylko na YouTube; skrypt szybszego startu filmu dla www.youtube.com
+    A = luna.QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture
+    pg = w.cur().main.page()
+    luna.yt_autoplay(pg, luna.QUrl("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
+    yt_on = not pg.settings().testAttribute(A)
+    luna.yt_autoplay(pg, luna.QUrl("https://example.com/"))
+    check("YouTube may autoplay, other sites still need a click", yt_on and pg.settings().testAttribute(A))
+    src = luna.adblock._yt_start_src()
+    check("YouTube fast-start script is bundled", "loadVideoById" in src and "oaeb" in src)
 
 
 def menu_texts(fn):

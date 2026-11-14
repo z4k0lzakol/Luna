@@ -248,6 +248,21 @@ class _PState:
         self.lru = OrderedDict()   # host -> [QWebEngineScript, ...]
 
 
+YT_START_HOSTS = {"www.youtube.com", "m.youtube.com"}
+_YT_START = []
+
+
+def _yt_start_src():
+    """Treść js/youtube_start.js (wczytywana raz) albo ""."""
+    if not _YT_START:
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "js", "youtube_start.js"), encoding="utf-8") as f:
+                _YT_START.append(f.read())
+        except OSError:
+            _YT_START.append("")
+    return _YT_START[0]
+
+
 def _mk_script(src, world):
     s = QWebEngineScript()
     s.setName("")
@@ -597,6 +612,12 @@ class AdBlock(QObject):
                                 "if(!a||!a.length)return;for(var i=0;i<a.length;i++){var h;try{h=new URL(a[i]).hostname;}"
                                 "catch(e){continue;}if(h===H||(h.length>H.length&&h.slice(-H.length-1)===\".\"+H)){k=true;break;}}"
                                 "if(!k)return;" + self._allow_guard(allow) + src + "})();\n//# sourceURL=<anonymous>"))
+            if host in YT_START_HOSTS:   # YouTube: przeładowanie filmu wstrzymanego po usunięciu reklamy (js/youtube_start.js)
+                yt = _yt_start_src()
+                if yt:
+                    out.append((QWebEngineScript.ScriptWorldId.MainWorld.value,
+                                "(function(){if(location.hostname!==" + _js(host) + ")return;" + self._allow_guard(allow)
+                                + yt + "})();\n//# sourceURL=<anonymous>"))
         # --- kosmetyka (świat 7)
         if own or flags:
             try:

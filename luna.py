@@ -1539,6 +1539,8 @@ class LunaPage(QWebEnginePage):
             self.apply_dark(url.toString())
         if SHIELD:   # skrypty blokady dla hosta – przed załadowaniem dokumentu (też nawigacje z service workera)
             SHIELD[0].prepare(self, url, is_main_frame)
+        if is_main_frame:   # autoodtwarzanie YouTube – ustawione przed wczytaniem dokumentu (później nie działa)
+            yt_autoplay(self, url)
         return super().acceptNavigationRequest(url, nav_type, is_main_frame)
 
     def javaScriptConsoleMessage(self, level, msg, line, src):
@@ -7733,6 +7735,25 @@ def apply_highlights(view):
         QTimer.singleShot(ms, lambda: _safe_js(view, src))
 
 
+AUTOPLAY_HOSTS = ("youtube.com", "youtube-nocookie.com")
+
+
+def yt_autoplay(view, u):
+    """YouTube może sam uruchomić film (jak w Chrome, który ma YouTube na liście stron z autoodtwarzaniem) – film otwarty
+    z paska adresu, zakładki albo linku spoza YouTube startuje bez klikania. Na innych stronach Qt nadal wymaga gestu."""
+    try:
+        h = (u.host() if hasattr(u, "host") else QUrl(str(u)).host()).lower()
+        on = any(h == d or h.endswith("." + d) for d in AUTOPLAY_HOSTS)
+        page = view.page() if hasattr(view, "page") else view
+        s = page.settings(); A = QWebEngineSettings.WebAttribute.PlaybackRequiresUserGesture
+        # ustawiamy zawsze (także tę samą wartość): Qt przekazuje ustawienia stronie dopiero przy wywołaniu, a wywołanie
+        # z samego początku nawigacji, zanim strona jest gotowa, bywa pomijane – drugie (przy zmianie adresu) dociera
+        if on or not s.testAttribute(A):
+            s.setAttribute(A, not on)
+    except (RuntimeError, AttributeError):
+        pass
+
+
 def _safe_js(view, src, cb=None):
     try:
         if cb is None:
@@ -12333,6 +12354,7 @@ class Browser(QMainWindow):
 
     # --- YouTube: SponsorBlock ---
     def on_view_url(self, view, u, reinject=False):
+        yt_autoplay(view, u)
         if not self.store.feature("sponsorblock"):
             return
         vid = youtube_id(u)
@@ -12435,7 +12457,7 @@ class Browser(QMainWindow):
             # wznowienie przychodzi z okienka, nie z kliknięcia na tej stronie – na chwilę zdejmujemy wymóg gestu
             A = QWebEngineSettings.WebAttribute; s = view.page().settings()
             s.setAttribute(A.PlaybackRequiresUserGesture, False)
-            QTimer.singleShot(3000, lambda: s.setAttribute(A.PlaybackRequiresUserGesture, True))
+            QTimer.singleShot(3000, lambda: (s.setAttribute(A.PlaybackRequiresUserGesture, True), yt_autoplay(view, view.url())))
             js = ("(function(t){ const v = document.querySelector('video[data-luna-pip]'); if (!v) return;"
                   " v.removeAttribute('data-luna-pip'); const yt = document.getElementById('movie_player');"
                   " if (yt && yt.seekTo && yt.playVideo) { if (t >= 0) yt.seekTo(t, true); yt.playVideo(); return; }"   # odtwarzacz YouTube

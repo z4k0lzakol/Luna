@@ -16,3 +16,7 @@ pudelek.pl##.rail-container div.sticky:has(span:has-text(/^REKLAMA$/)):style(vis
 ! Reklama wideo w prawej kolumnie strony głównej wp.pl – po zablokowaniu odtwarzacz pokazywał komunikat
 ! „Błąd: The VAST response document is empty. Kod: 1009”
 wp.pl###wp-live-tabs div.sticky:has(video):style(visibility: hidden !important)
+!
+! tvn24: puste miejsca po zablokowanych reklamach (pas 150 px nad nagłówkiem, szare prostokąty między artykułami) –
+! zwijamy je, bo element zastępczy zostaje w układzie strony z napisem „REKLAMA”
+tvn24.pl##ad-placeholder
