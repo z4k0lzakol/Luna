@@ -158,6 +158,10 @@ Warunek dodatkowy (pkt 7 GPL v3): nazwa „Luna” i logo Luny nie są objęte l
 
 Zasady korzystania: [regulamin](https://z4k0lzakol.github.io/Luna/regulamin.html) · licencje składników, list filtrów i źródła danych: [licencje](https://z4k0lzakol.github.io/Luna/licencje.html).
 
+## Współpraca
+
+Znalazłeś błąd albo masz pomysł? Otwórz [zgłoszenie](https://github.com/z4k0lzakol/Luna/issues/new/choose). Zasady: [jak pomóc](CONTRIBUTING.md) · [kodeks postępowania](CODE_OF_CONDUCT.md) · luki bezpieczeństwa zgłaszaj prywatnie – [bezpieczeństwo](SECURITY.md).
+
 ## Prywatność
 
 Luna działa w całości na Twoim komputerze i nie ma własnych serwerów. Logowania do stron zostają w lokalnym profilu, hasła są szyfrowane, a do zewnętrznych usług trafia tylko to, czego używasz (np. strona do tłumaczenia po kliknięciu „Przetłumacz”). Szczegóły: [polityka prywatności](https://z4k0lzakol.github.io/Luna/privacy.html).
