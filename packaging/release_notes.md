@@ -1,3 +1,8 @@
+## Co nowego w 1.0.3
+
+- **Szybsze wczytywanie stron** – Luna łączy się przez HTTP/3 (QUIC), gdy serwer go obsługuje (m.in. Google, YouTube, strony za Cloudflare).
+- **Płynniejsze animacje** – wysuwanie paneli, zwijanie widgetów, przewijanie i podpis na stronie startowej chodzą w rytmie odświeżania monitora (ok. 130 klatek/s na ekranie 144 Hz zamiast 64).
+
 ## Pobierz Lunę
 
 | System | Plik | Jak zainstalować |
