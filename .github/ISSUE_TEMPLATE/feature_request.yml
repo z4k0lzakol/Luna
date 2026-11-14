@@ -1,0 +1,35 @@
+name: Pomysł na funkcję
+description: Zaproponuj nową funkcję albo zmianę w Lunie.
+title: "[Pomysł] "
+labels: ["pomysł"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Luna ma być lekka, prywatna i prosta – napisz, jaki problem ma rozwiązać Twój pomysł.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Jaki problem rozwiąże ta funkcja?
+      placeholder: Przy wielu kartach trudno mi znaleźć…
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Jak powinna działać?
+      description: Opisz, co klikasz i co widzisz. Możesz dodać szkic albo zrzut z innej przeglądarki.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Czy próbowałeś czegoś innego?
+      description: Inne rozwiązania albo obejścia, które znasz.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Sprawdzenie
+      options:
+        - label: Sprawdziłem, że takiego pomysłu nie ma już na liście zgłoszeń.
+          required: true

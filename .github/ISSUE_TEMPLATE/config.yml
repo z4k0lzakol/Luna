@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Zgłoś lukę bezpieczeństwa (prywatnie)
+    url: https://github.com/z4k0lzakol/Luna/security/advisories/new
+    about: Luki bezpieczeństwa zgłaszaj prywatnie, nie w publicznym zgłoszeniu.
+  - name: Jak uruchomić Lunę
+    url: https://z4k0lzakol.github.io/Luna/#uruchom
+    about: Instrukcja instalacji krok po kroku.

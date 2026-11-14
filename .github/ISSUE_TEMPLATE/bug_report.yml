@@ -1,0 +1,66 @@
+name: Zgłoś błąd
+description: Coś w Lunie nie działa tak, jak powinno.
+title: "[Błąd] "
+labels: ["błąd"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Dziękujemy za zgłoszenie! **Luk bezpieczeństwa nie zgłaszaj tutaj** – użyj [prywatnego formularza](https://github.com/z4k0lzakol/Luna/security/advisories/new).
+        Nie wklejaj haseł, adresów e-mail ani innych danych prywatnych.
+  - type: textarea
+    id: what
+    attributes:
+      label: Co się stało?
+      description: Opisz błąd. Zrzut ekranu bardzo pomaga.
+      placeholder: Po przeciągnięciu karty na stronę podział ekranu się nie otwiera…
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Jak to powtórzyć?
+      description: Kroki, po których błąd się pojawia.
+      placeholder: |
+        1. Otwórz dwie karty
+        2. Przeciągnij drugą kartę na stronę
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Czego się spodziewałeś?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Wersja Luny
+      description: Menu Luny → Pomoc → O Lunie albo Ustawienia → Aktualizacje.
+      placeholder: np. 3701696 z 14.11.2026
+  - type: dropdown
+    id: os
+    attributes:
+      label: System
+      options:
+        - Windows 11
+        - Windows 10
+        - inny (napisz w opisie)
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Dziennik błędów (opcjonalnie)
+      description: Ostatnie wpisy z pliku `C:\Users\<Ty>\.luna_bledy.log`. Usuń z nich dane prywatne (adresy stron, nazwy kont).
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Sprawdzenie
+      options:
+        - label: Sprawdziłem, że tego błędu nie ma już na liście zgłoszeń.
+          required: true
+        - label: Zgłoszenie nie zawiera haseł ani innych danych prywatnych.
+          required: true
