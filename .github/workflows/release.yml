@@ -1,0 +1,143 @@
+name: Wydanie Luny
+
+# Tag v* (np. v1.0.0) → budowanie na Windows, Linuksie i macOS, test uruchomienia i wydanie na GitHubie.
+# Ręcznie (Actions → Wydanie Luny → Run workflow) – samo budowanie i test, pliki do pobrania w podsumowaniu.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Budowanie (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-22.04
+            name: Linux
+          - os: macos-14
+            name: macOS
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Biblioteki systemowe (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-xfixes0 libxcb-shape0 libxcb-xkb1 libegl1 \
+            libnss3 libxcomposite1 libxdamage1 libxrandr2 libxtst6 libasound2 libfuse2 libdbus-1-3 xvfb
+
+      - name: Biblioteki Pythona
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller pillow
+
+      - name: Numer wersji
+        id: ver
+        shell: bash
+        run: |
+          v=$(python -c "import re;print(re.search(r'^VERSION = \"([^\"]+)\"', open('luna.py', encoding='utf-8').read(), re.M).group(1))")
+          echo "v=$v" >> "$GITHUB_OUTPUT"
+          echo "Wersja: $v"
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF_NAME#v}" != "$v" ]]; then
+            echo "::error::Tag $GITHUB_REF_NAME nie zgadza się z VERSION = $v w luna.py"; exit 1
+          fi
+
+      - name: Budowanie aplikacji (PyInstaller)
+        run: python -m PyInstaller --noconfirm packaging/luna.spec
+
+      - name: Test uruchomienia
+        shell: bash
+        env:
+          LUNA_NO_WELCOME: "1"
+          QTWEBENGINE_DISABLE_SANDBOX: "1"
+        run: |
+          export HOME="$RUNNER_TEMP/luna-home" USERPROFILE="$RUNNER_TEMP/luna-home"
+          mkdir -p "$HOME"
+          case "$RUNNER_OS" in
+            Windows) ./dist/Luna/Luna.exe --luna-smoke-test ;;
+            Linux)   xvfb-run -a ./dist/Luna/Luna --luna-smoke-test ;;
+            macOS)   ./dist/Luna.app/Contents/MacOS/Luna --luna-smoke-test ;;
+          esac
+          echo "Luna uruchomiła się i zamknęła poprawnie."
+
+      - name: Instalator Windows (Inno Setup)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.v }} /DSourceDir=..\dist\Luna packaging\luna.iss
+          Compress-Archive -Path dist\Luna -DestinationPath dist\Luna-${{ steps.ver.outputs.v }}-Windows-portable.zip
+
+      - name: Test instalatora Windows (instalacja, uruchomienie, odinstalowanie)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = "dist\Luna-${{ steps.ver.outputs.v }}-Windows-Setup.exe"
+          Start-Process $setup -ArgumentList '/VERYSILENT', '/CURRENTUSER', '/NORESTART' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA "Programs\Luna\Luna.exe"
+          if (-not (Test-Path $exe)) { throw "Instalator nie zainstalował Luny w $exe" }
+          if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) "Luna.lnk"))) { throw "Brak skrótu w menu Start" }
+          $env:LUNA_NO_WELCOME = "1"; $env:USERPROFILE = "$env:RUNNER_TEMP\luna-home2"; New-Item -ItemType Directory -Force $env:USERPROFILE | Out-Null
+          $p = Start-Process $exe -ArgumentList '--luna-smoke-test' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Zainstalowana Luna nie uruchomiła się (kod $($p.ExitCode))" }
+          Start-Process (Join-Path $env:LOCALAPPDATA "Programs\Luna\unins000.exe") -ArgumentList '/VERYSILENT' -Wait
+          Start-Sleep 3
+          if (Test-Path $exe) { throw "Odinstalowanie nie usunęło Luny" }
+          Write-Host "Instalacja, uruchomienie i odinstalowanie działają."
+
+      - name: AppImage i archiwum (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          bash packaging/build_appimage.sh "${{ steps.ver.outputs.v }}"
+          tar -czf "dist/Luna-${{ steps.ver.outputs.v }}-Linux-x86_64.tar.gz" -C dist Luna
+
+      - name: Obraz DMG (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --deep --sign - dist/Luna.app
+          mkdir -p dist/dmg && cp -R dist/Luna.app dist/dmg/ && ln -s /Applications dist/dmg/Aplikacje
+          hdiutil create -volname "Luna" -srcfolder dist/dmg -ov -format UDZO "dist/Luna-${{ steps.ver.outputs.v }}-macOS-arm64.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Luna-${{ matrix.name }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.tar.gz
+            dist/*.dmg
+          if-no-files-found: error
+
+  release:
+    name: Wydanie na GitHubie
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: pliki
+          merge-multiple: true
+      - name: Utwórz wydanie
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la pliki
+          (cd pliki && sha256sum * > SHA256SUMS.txt)
+          gh release create "$GITHUB_REF_NAME" pliki/* --title "Luna ${GITHUB_REF_NAME#v}" --notes-file packaging/release_notes.md

@@ -55,6 +55,10 @@ except Exception:
     _SMTC = _SMTC_STATUS = _DataReader = None
 import adblock   # wbudowana blokada reklam (adblock/); rejestruje własny schemat – musi być przed QApplication
 
+VERSION = "1.0.0"   # wersja wydania (tag v1.0.0 na GitHubie); kopia z gita pokazuje dodatkowo commit
+RELEASES_API = "https://api.github.com/repos/z4k0lzakol/Luna/releases/latest"
+RELEASES_URL = "https://github.com/z4k0lzakol/Luna/releases/latest"
+
 def _profile_arg():
     for a in sys.argv[1:]:
         if a.startswith("--luna-profile="):
@@ -6034,20 +6038,30 @@ def page_updates(dlg):
     name, desc, _ = FEATURES["updates"]
     l.addWidget(switch_row(name, desc, st.feature("updates"), lambda v: st.set_feature("updates", v)))
     if not up.available():
-        l.addWidget(lbl("Ta kopia Luny nie jest uruchomiona z repozytorium git (albo nie znaleziono programu git), "
-                        "więc nie może się sama aktualizować.", "muted2", wrap=True))
+        l.addWidget(lbl(f"Bieżąca wersja: {VERSION}", "h3"))
+        l.addWidget(lbl("Luna sprawdza po starcie, czy na GitHubie jest nowsze wydanie, i proponuje jego pobranie. "
+                        "Nową wersję instalujesz tak samo jak pierwszą – Twoje dane zostają.", "muted2", wrap=True))
+        stat = lbl("", "muted2", wrap=True)
+        chk = QPushButton("Sprawdź teraz"); dl = QPushButton("Strona wydań")
+        row = QHBoxLayout(); row.addWidget(chk); row.addWidget(dl); row.addStretch(1); l.addLayout(row); l.addWidget(stat)
+        dl.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(RELEASES_URL)))
+
+        def check_now():
+            rc = ReleaseCheck(dlg); stat.setText("Sprawdzanie…")
+            rc.found.connect(lambda v, u: stat.setText(f"Dostępna wersja {v} – kliknij „Strona wydań”, aby ją pobrać."))
+            rc.check(); QTimer.singleShot(8000, lambda: stat.text() == "Sprawdzanie…" and stat.setText("Masz najnowszą wersję."))
+        chk.clicked.connect(check_now)
         l.addStretch(1)
         return scroll_page(w)
     ver = up.version()
-    l.addWidget(lbl("Bieżąca wersja: " + (ver or "nieznana"), "h3"))
+    l.addWidget(lbl(f"Bieżąca wersja: {VERSION}" + (f" (commit {ver})" if ver else ""), "h3"))
     stat = lbl("", "muted2", wrap=True); l.addWidget(stat)
     row = QHBoxLayout(); row.setSpacing(6)
     chk = QPushButton("Sprawdź teraz"); upd = QPushButton("Zaktualizuj i uruchom ponownie"); upd.setObjectName("primary")
     login = QPushButton("Zaloguj do GitHuba")
     row.addWidget(chk); row.addWidget(upd); row.addWidget(login); row.addStretch(1); l.addLayout(row)
-    l.addWidget(lbl("Repozytorium Luny jest prywatne, więc sprawdzanie wymaga jednorazowego logowania do GitHuba. "
-                    "„Zaloguj do GitHuba” otwiera bezpieczne logowanie Git Credential Manager w przeglądarce; dane "
-                    "logowania przechowuje Windows (Menedżer poświadczeń), nie Luna.", "muted", wrap=True))
+    l.addWidget(lbl("Gdy sprawdzanie zgłasza brak logowania, „Zaloguj do GitHuba” otwiera bezpieczne logowanie Git "
+                    "Credential Manager w przeglądarce; dane logowania przechowuje system, nie Luna.", "muted", wrap=True))
 
     def show(s=None):
         s = s or up.state
@@ -6399,7 +6413,7 @@ class AboutDialog(LunaDialog):
         lg = QLabel(); lg.setPixmap(logo_pixmap(64)); lg.setFixedSize(64, 64); self.body.addWidget(lg, 0, Qt.AlignmentFlag.AlignHCenter)
         t = lbl("Luna", "h1"); t.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(t)
         for text, cls in (("Lekka przeglądarka z kafelkami, widgetami, blokadą reklam i asystentem AI.", "muted2"),
-                          (f"Silnik: Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)", "muted"),
+                          (f"Wersja {VERSION}  ·  silnik Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)", "muted"),
                           ("Wolne oprogramowanie na licencji GNU GPL v3 – bez żadnej gwarancji. Korzystając z Luny, "
                            "akceptujesz regulamin.", "muted")):
             l_ = lbl(text, cls, wrap=True); l_.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(l_)
@@ -8993,6 +9007,32 @@ class Updater(QObject):
             return False, str(e)[:200]
 
 
+class ReleaseCheck(QObject):
+    """Zainstalowana Luna (plik .exe / AppImage / .app – bez gita): sprawdza najnowsze wydanie na GitHubie i proponuje
+    pobranie, gdy jest nowsze niż VERSION. Jedno zapytanie po starcie (i co 12 godzin), nic poza numerem wersji."""
+    found = pyqtSignal(str, str)   # wersja, adres strony wydania
+
+    def check(self):
+        import threading, urllib.request
+
+        def work():
+            try:
+                req = urllib.request.Request(RELEASES_API, headers={"Accept": "application/vnd.github+json",
+                                                                   "User-Agent": "Luna-browser"})
+                d = json.loads(urllib.request.urlopen(req, timeout=15).read().decode("utf-8"))
+                tag = str(d.get("tag_name", "")).lstrip("vV")
+                if tag and version_tuple(tag) > version_tuple(VERSION):
+                    self.found.emit(tag, d.get("html_url") or RELEASES_URL)
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
+
+
+def version_tuple(v):
+    return tuple(int(x) for x in re.findall(r"\d+", v)[:3]) or (0,)
+
+
+RELEASE_CHECK = []
 UPDATER = []
 
 
@@ -11434,6 +11474,10 @@ class Browser(QMainWindow):
             QTimer.singleShot(3000, lambda: up.changes_since(self.store.settings.get("seen_head", "")))
         if len(WINDOWS) <= 1 and self.store.feature("updates") and up.available() and not up.state:
             QTimer.singleShot(20000, lambda: self.store.feature("updates") and up.check())   # po starcie, w tle
+        elif self.primary and getattr(sys, "frozen", False) and not RELEASE_CHECK:   # zainstalowana Luna: wydania z GitHuba
+            rc = ReleaseCheck(QApplication.instance()); RELEASE_CHECK.append(rc); rc.found.connect(self.on_new_release)
+            t = QTimer(rc); t.timeout.connect(lambda: self.store.feature("updates") and rc.check()); t.start(12 * 3600 * 1000)
+            QTimer.singleShot(20000, lambda: self.store.feature("updates") and rc.check())
         self.store.ensure_fonts()
 
     def _startup_news(self, changes, head):
@@ -12091,6 +12135,12 @@ class Browser(QMainWindow):
             return
         self.notice.ask(f"Dostępna nowa wersja Luny ({n} {'zmiana' if n == 1 else 'zmian'}).",
                         [("Zaktualizuj i uruchom ponownie", self.apply_update, True), ("Później", None, False)], icon="app")
+
+    def on_new_release(self, ver, url):
+        if WINDOWS and WINDOWS[0] is not self:
+            return
+        self.notice.ask(f"Dostępna nowa wersja Luny: {ver} (masz {VERSION}).",
+                        [("Pobierz", lambda: QDesktopServices.openUrl(QUrl(url)), True), ("Później", None, False)], icon="app")
 
     def apply_update(self):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -14230,4 +14280,11 @@ if __name__ == "__main__":
     app.setApplicationName("Luna"); app.setWindowIcon(app_icon())
     app.setStyleSheet(full_style())
     w = Browser(); w.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True); w.show()
+    if "--luna-smoke-test" in sys.argv:   # budowanie wydania: start, wczytanie strony, zamknięcie (kod 0 = działa)
+        def _smoke_done():
+            t = w.cur()
+            ok = t is not None
+            print("LUNA SMOKE", "OK" if ok else "FAIL", VERSION, flush=True)
+            w.quit_all(); QTimer.singleShot(1500, lambda: os._exit(0 if ok else 1))
+        QTimer.singleShot(12000, _smoke_done)
     sys.exit(app.exec())

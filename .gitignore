@@ -2,3 +2,10 @@
 luna_oauth.json
 client_secret*.json
 __pycache__/
+
+# budowanie wydań (PyInstaller, instalatory)
+dist/
+build/
+packaging/build/
+appimagetool
+*.spec.bak

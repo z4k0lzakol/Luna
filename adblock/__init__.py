@@ -1138,7 +1138,13 @@ class AdBlock(QObject):
                                 e == QProcess.ProcessError.FailedToStart and self._compiled(p, -1, None, out, cfgp, sig, t0))
         p.start(prog, args)
 
-    def _compiled(self, p, code, status, out, cfgp, sig, t0):
+    def _compiled(self, *args):
+        try:
+            self._compiled_impl(*args)
+        except RuntimeError:   # Luna zamknięta w trakcie kompilacji list – obiekty Qt już usunięte, nic do zrobienia
+            pass
+
+    def _compiled_impl(self, p, code, status, out, cfgp, sig, t0):
         if self._proc is not p:
             return
         self._proc = None
@@ -1146,7 +1152,10 @@ class AdBlock(QObject):
             self.compile_log = bytes(p.readAll()).decode("utf-8", "replace")[-4000:]
         except Exception:
             self.compile_log = ""
-        p.deleteLater()
+        try:
+            p.deleteLater()
+        except RuntimeError:   # Luna zamykana w trakcie kompilacji – proces został już usunięty
+            pass
         self.compile_ms = int((time.time() - t0) * 1000)
         try:
             os.remove(cfgp)
