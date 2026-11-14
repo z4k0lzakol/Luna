@@ -21,6 +21,6 @@ Przy pierwszym uruchomieniu przewodnik przeniesie zakładki, historię i hasła 
 
 **Code signing policy:** [zasady podpisywania kodu](https://z4k0lzakol.github.io/Luna/#podpis) – free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org) (zgłoszenie w przygotowaniu; to wydanie nie jest jeszcze podpisane).
 
-Luna to projekt jednoosobowy i „vibecoded” – tworzony we współpracy z AI (Claude); każde wydanie przechodzi automatyczne testy. Luna jest wolnym oprogramowaniem na licencji GNU GPL v3, bez gwarancji – [regulamin](https://z4k0lzakol.github.io/Luna/regulamin.html) · [prywatność](https://z4k0lzakol.github.io/Luna/privacy.html) · [strona Luny](https://z4k0lzakol.github.io/Luna/).
+Luna to projekt jednoosobowy; każde wydanie przechodzi automatyczne testy. Luna jest wolnym oprogramowaniem na licencji GNU GPL v3, bez gwarancji – [regulamin](https://z4k0lzakol.github.io/Luna/regulamin.html) · [prywatność](https://z4k0lzakol.github.io/Luna/privacy.html) · [strona Luny](https://z4k0lzakol.github.io/Luna/).
 
 Linux i macOS to pierwsze wydania na tych systemach – jeśli coś nie działa, [zgłoś to](https://github.com/z4k0lzakol/Luna/issues/new/choose).

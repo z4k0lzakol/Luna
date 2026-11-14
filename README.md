@@ -9,7 +9,7 @@
   wbudowaną blokadą reklam i asystentem AI obok strony.
 </p>
 
-<p align="center"><sub>Projekt jednoosobowy · vibecoded – tworzony we współpracy z AI (Claude) · <a href="#o-projekcie">więcej</a></sub></p>
+<p align="center"><sub>Projekt jednoosobowy · <a href="#o-projekcie">więcej</a></sub></p>
 
 <p align="center">
   <a href="https://github.com/z4k0lzakol/Luna/releases/latest"><b>Pobierz</b></a> ·
@@ -185,9 +185,7 @@ Zasady korzystania: [regulamin](https://z4k0lzakol.github.io/Luna/regulamin.html
 
 ## O projekcie
 
-**Luna to projekt jednoosobowy** – tworzy go jedna osoba, [z4k0lzakol](https://github.com/z4k0lzakol).
-
-**Luna jest „vibecoded”:** kod powstaje we współpracy z AI (Claude). Autor opisuje, co Luna ma robić i jak wyglądać, sprawdza efekty w działaniu i podejmuje decyzje, a większość kodu pisze model AI. Każda zmiana przechodzi automatyczne testy (prawdziwa Luna na tymczasowym profilu), a wydania są budowane i sprawdzane na GitHubie – ale to nie to samo co zespół programistów i przegląd kodu przez ludzi. Traktuj Lunę jako projekt hobbystyczny: [zgłaszaj](https://github.com/z4k0lzakol/Luna/issues/new/choose) błędy, a ważne dane trzymaj też w kopii zapasowej.
+**Luna to projekt jednoosobowy** – tworzy go jedna osoba, [z4k0lzakol](https://github.com/z4k0lzakol). Każda zmiana przechodzi automatyczne testy (prawdziwa Luna na tymczasowym profilu), a wydania są budowane i sprawdzane na GitHubie – ale to projekt hobbystyczny, nie zespół programistów. [Zgłaszaj](https://github.com/z4k0lzakol/Luna/issues/new/choose) błędy, a ważne dane trzymaj też w kopii zapasowej.
 
 ## Współpraca
 

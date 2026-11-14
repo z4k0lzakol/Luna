@@ -2,7 +2,9 @@
 
 ## Nasze zobowiązanie
 
-Jako uczestnicy, współtwórcy i opiekunowie projektu Luna zobowiązujemy się, że udział w nim będzie wolny od nękania dla każdego – bez względu na wiek, wygląd, niepełnosprawność, pochodzenie etniczne, tożsamość i ekspresję płciową, poziom doświadczenia, wykształcenie, status społeczny i ekonomiczny, narodowość, rasę, religię czy orientację seksualną.
+Luna to projekt jednoosobowy – ma jednego opiekuna, [z4k0lzakol](https://github.com/z4k0lzakol), który odpowiada za przestrzeganie tego kodeksu. Kodeks dotyczy wszystkich, którzy biorą udział w projekcie: zgłaszają błędy, dyskutują albo proponują zmiany.
+
+Jako uczestnicy, współtwórcy i opiekun projektu Luna zobowiązujemy się, że udział w nim będzie wolny od nękania dla każdego – bez względu na wiek, wygląd, niepełnosprawność, pochodzenie etniczne, tożsamość i ekspresję płciową, poziom doświadczenia, wykształcenie, status społeczny i ekonomiczny, narodowość, rasę, religię czy orientację seksualną.
 
 Zobowiązujemy się działać i rozmawiać w sposób, który tworzy otwartą, przyjazną, różnorodną i zdrową społeczność.
 
@@ -26,7 +28,7 @@ Przykłady zachowań niedopuszczalnych:
 
 ## Egzekwowanie zasad
 
-Opiekunowie projektu odpowiadają za wyjaśnianie i egzekwowanie tych zasad. Mogą usuwać, edytować lub odrzucać komentarze, zmiany w kodzie, zgłoszenia i inne treści, które ich nie przestrzegają, i wyjaśnią powody takiej decyzji.
+Opiekun projektu odpowiada za wyjaśnianie i egzekwowanie tych zasad. Może usuwać, edytować lub odrzucać komentarze, zmiany w kodzie, zgłoszenia i inne treści, które ich nie przestrzegają, i wyjaśni powody takiej decyzji.
 
 Kodeks obowiązuje we wszystkich przestrzeniach projektu (zgłoszenia, dyskusje, zmiany w kodzie) oraz wtedy, gdy ktoś oficjalnie reprezentuje projekt.
 
@@ -44,4 +46,4 @@ Kodeks jest oparty na [Contributor Covenant](https://www.contributor-covenant.or
 
 ---
 
-**English:** This project follows the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). Be kind and respectful; harassment of any kind is not tolerated. Report problems privately via [GitHub's private reporting form](https://github.com/z4k0lzakol/Luna/security/advisories/new).
+**English:** Luna is a one-person project with a single maintainer. This project follows the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/). Be kind and respectful; harassment of any kind is not tolerated. Report problems privately via [GitHub's private reporting form](https://github.com/z4k0lzakol/Luna/security/advisories/new).
