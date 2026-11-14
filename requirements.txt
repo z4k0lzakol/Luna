@@ -1,0 +1,8 @@
+# Luna – wymagane
+PyQt6>=6.7
+PyQt6-WebEngine>=6.7
+
+# opcjonalne (Luna działa bez nich)
+psutil                              # widget „Monitor zasobów” i menedżer zadań
+winrt-Windows.Media.Control         # sterowanie Spotify i innymi odtwarzaczami (Windows)
+winrt-Windows.Storage.Streams       # okładki utworów w widgecie audio (Windows)
