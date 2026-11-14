@@ -103,11 +103,11 @@
 
 | System | Plik | Instalacja |
 |---|---|---|
-| **Windows 10 / 11** | `Luna-…-Windows-Setup.exe` | Uruchom i kliknij „Zainstaluj” – Luna pojawi się w menu Start. Bez uprawnień administratora. Wersja bez instalacji: `…-Windows-portable.zip`. |
+| **Windows 10 / 11** | `Luna-…-Windows.zip` | Rozpakuj (prawy przycisk → **Wyodrębnij wszystkie**) i uruchom `Luna.exe`. Luna sama zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. Jest też klasyczny instalator `…-Windows-Setup.exe` – ale gdy w Windows 11 jest włączona Inteligentna kontrola aplikacji, blokuje ona ten plik (brak podpisu), więc zalecamy `.zip`. |
 | **Linux** (x86_64) | `Luna-…-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. Jest też archiwum `.tar.gz`. |
 | **macOS** (Apple M1 i nowsze) | `Luna-…-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → **Otwórz**. |
 
-Luna nie ma jeszcze podpisu cyfrowego, więc przy pierwszym uruchomieniu Windows może pokazać „System Windows ochronił ten komputer” (kliknij **Więcej informacji → Uruchom mimo to**), a macOS – ostrzeżenie o nieznanym deweloperze.
+Luna nie ma jeszcze podpisu cyfrowego, więc Inteligentna kontrola aplikacji w Windows 11 blokuje instalator `Setup.exe` (plik `.zip` działa), a przy pierwszym uruchomieniu Windows może pokazać „System Windows ochronił ten komputer” (kliknij **Więcej informacji → Uruchom mimo to**), a macOS – ostrzeżenie o nieznanym deweloperze.
 
 Przy pierwszym uruchomieniu otworzy się **przewodnik**: przeniesie zakładki, historię i hasła z Chrome, Edge, Brave, Opery albo Vivaldi i pomoże ustawić wygląd, widgety i AI. Nowe wersje Luna wykryje sama i zaproponuje ich pobranie.
 

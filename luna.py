@@ -55,7 +55,7 @@ except Exception:
     _SMTC = _SMTC_STATUS = _DataReader = None
 import adblock   # wbudowana blokada reklam (adblock/); rejestruje własny schemat – musi być przed QApplication
 
-VERSION = "1.0.1"   # wersja wydania (tag vX.Y.Z na GitHubie musi się zgadzać); kopia z gita pokazuje dodatkowo commit
+VERSION = "1.0.2"   # wersja wydania (tag vX.Y.Z na GitHubie musi się zgadzać); kopia z gita pokazuje dodatkowo commit
 RELEASES_API = "https://api.github.com/repos/z4k0lzakol/Luna/releases/latest"
 RELEASES_URL = "https://github.com/z4k0lzakol/Luna/releases/latest"
 
@@ -11464,6 +11464,9 @@ class Browser(QMainWindow):
             SYNC.append(SyncManager(self.store)); QTimer.singleShot(5000, SYNC[0].start)
         up = updater()
         up.result.connect(self.on_update_result)
+        if self.primary and can_self_install() and not self.store.settings.get("install_never") \
+                and "--luna-smoke-test" not in sys.argv:
+            QTimer.singleShot(2500, self.offer_install)
         if self.primary and not self.store.settings.get("onboarded"):   # przewodnik – tylko przy pierwszym uruchomieniu
             if FIRST_RUN and not os.environ.get("LUNA_NO_WELCOME"):
                 QTimer.singleShot(900, self.show_welcome)
@@ -12135,6 +12138,35 @@ class Browser(QMainWindow):
             return
         self.notice.ask(f"Dostępna nowa wersja Luny ({n} {'zmiana' if n == 1 else 'zmian'}).",
                         [("Zaktualizuj i uruchom ponownie", self.apply_update, True), ("Później", None, False)], icon="app")
+
+    def offer_install(self):
+        """Luna z rozpakowanego .zip: propozycja instalacji (menu Start, pulpit, odinstalowanie w ustawieniach Windows)."""
+        self.notice.ask("Luna działa z rozpakowanego folderu. Zainstalować ją na tym komputerze? Dostaniesz skrót w menu "
+                        "Start i na pulpicie, a odinstalujesz ją w ustawieniach Windows.",
+                        [("Zainstaluj", self.do_install, True), ("Nie teraz", None, False),
+                         ("Nie pytaj więcej", lambda: (self.store.settings.__setitem__("install_never", True),
+                                                       self.store.save_settings()), False)], icon="download")
+
+    def do_install(self):
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.notice.info("Instaluję Lunę…", 60000, "download")
+        QApplication.processEvents()
+        try:
+            exe = self_install()
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            self.notice.info(f"Nie udało się zainstalować Luny: {e}", 8000, "download")
+            return
+        QApplication.restoreOverrideCursor()
+
+        def start_installed():
+            from PyQt6.QtCore import QProcess
+            QProcess.startDetached(str(exe), [a for a in sys.argv[1:] if not a.startswith("--luna-wait=")] +
+                                   [f"--luna-wait={os.getpid()}"])
+            self.quit_all()
+        self.notice.ask("Luna jest zainstalowana – skrót jest w menu Start i na pulpicie. Uruchomić zainstalowaną Lunę? "
+                        "Rozpakowany folder możesz potem usunąć.",
+                        [("Uruchom zainstalowaną", start_installed, True), ("Później", None, False)], icon="download")
 
     def on_new_release(self, ver, url):
         if WINDOWS and WINDOWS[0] is not self:
@@ -14232,6 +14264,101 @@ def wait_for_previous():
                 pass
 
 
+# ---------------------------------------------------------------- samoinstalacja (Windows, wersja z pliku .zip)
+# Inteligentna kontrola aplikacji (Windows 11) blokuje pobrane instalatory bez podpisu cyfrowego, ale Luna.exe
+# z rozpakowanego archiwum działa. Dlatego Luna instaluje się sama: kopiuje swój folder do folderu programów
+# użytkownika, dodaje skróty i pozycję „Odinstaluj” w ustawieniach Windows (ten sam klucz co instalator, więc nie
+# powstaje druga pozycja). Dane użytkownika (.luna* w folderze domowym) nie są ruszane.
+INSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F1B9C2E-3D4A-4E8B-9C7D-2A5E1F0B8C31}_is1"
+
+
+def install_dir():
+    return Path(os.environ.get("LUNA_INSTALL_DIR") or Path(os.environ.get("LOCALAPPDATA", str(BASE_HOME))) / "Programs" / "Luna")
+
+
+def app_dir():
+    return Path(sys.executable).resolve().parent
+
+
+def can_self_install():
+    """Zbudowana Luna na Windows, uruchomiona spoza folderu instalacji (np. z rozpakowanego .zip)."""
+    if not (getattr(sys, "frozen", False) and sys.platform == "win32"):
+        return False
+    try:
+        return app_dir() != install_dir().resolve()
+    except OSError:
+        return True
+
+
+def _shortcut_dirs():
+    if os.environ.get("LUNA_SHORTCUT_DIR"):   # testy: skróty w podanym folderze
+        d = Path(os.environ["LUNA_SHORTCUT_DIR"])
+        return d, d
+    appdata = Path(os.environ.get("APPDATA", str(BASE_HOME)))
+    return appdata / "Microsoft" / "Windows" / "Start Menu" / "Programs", Path(os.path.expanduser("~")) / "Desktop"
+
+
+def _make_shortcut(lnk, target):
+    """Skrót .lnk przez wbudowany w Windows PowerShell (WScript.Shell) – bez dodatkowych bibliotek."""
+    import subprocess
+    ps = ("$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:L_LNK);$s.TargetPath=$env:L_TGT;"
+          "$s.WorkingDirectory=$env:L_DIR;$s.IconLocation=$env:L_TGT+',0';$s.Description='Luna';$s.Save()")
+    env = dict(os.environ, L_LNK=str(lnk), L_TGT=str(target), L_DIR=str(Path(target).parent))
+    subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], env=env, timeout=60,
+                   creationflags=0x08000000, stdin=subprocess.DEVNULL, capture_output=True)
+
+
+def self_install(desktop=True):
+    """Kopiuje Lunę do folderu programów, tworzy skróty i wpis odinstalowania. Zwraca ścieżkę do Luna.exe."""
+    import shutil, winreg
+    src, dst = app_dir(), install_dir()
+    dst.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+    exe = dst / "Luna.exe"
+    start, desk = _shortcut_dirs()
+    start.mkdir(parents=True, exist_ok=True)
+    _make_shortcut(start / "Luna.lnk", exe)
+    if desktop:
+        _make_shortcut(desk / "Luna.lnk", exe)
+    size = sum(f.stat().st_size for f in dst.rglob("*") if f.is_file()) // 1024
+    key = os.environ.get("LUNA_INSTALL_REGKEY") or INSTALL_KEY
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key) as k:
+        for name, val in (("DisplayName", "Luna"), ("DisplayVersion", VERSION), ("Publisher", "Luna"),
+                          ("DisplayIcon", f"{exe},0"), ("InstallLocation", str(dst)),
+                          ("UninstallString", f'"{exe}" --luna-uninstall'),
+                          ("URLInfoAbout", "https://z4k0lzakol.github.io/Luna/"),
+                          ("HelpLink", "https://github.com/z4k0lzakol/Luna/issues")):
+            winreg.SetValueEx(k, name, 0, winreg.REG_SZ, val)
+        for name, val in (("NoModify", 1), ("NoRepair", 1), ("EstimatedSize", int(size))):
+            winreg.SetValueEx(k, name, 0, winreg.REG_DWORD, val)
+    return exe
+
+
+def self_uninstall(ask=True):
+    """Luna.exe --luna-uninstall (z ustawień Windows): pytanie, potem usunięcie skrótów, wpisu i folderu programu.
+    Dane użytkownika zostają. Folder znika po zamknięciu Luny (działający plik nie może usunąć sam siebie)."""
+    import subprocess, winreg
+    if ask and QMessageBox.question(None, "Odinstaluj Lunę", "Usunąć Lunę z tego komputera?\n\nTwoje dane (karty, zakładki, "
+                                    "hasła) zostaną w folderze użytkownika – po ponownej instalacji wrócą.") \
+            != QMessageBox.StandardButton.Yes:
+        return False
+    start, desk = _shortcut_dirs()
+    for lnk in (start / "Luna.lnk", desk / "Luna.lnk"):
+        try:
+            lnk.unlink()
+        except OSError:
+            pass
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, os.environ.get("LUNA_INSTALL_REGKEY") or INSTALL_KEY)
+    except OSError:
+        pass
+    d = app_dir()
+    # jeden napis, nie lista: przy liście Python zamienia cudzysłowy na \", których cmd nie rozumie
+    subprocess.Popen(f'cmd /c ping 127.0.0.1 -n 4 >nul & rmdir /s /q "{d}"', creationflags=0x08000000,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(d.parent))
+    return True
+
+
 ERROR_LOG = HOME / ".luna_bledy.log"
 
 
@@ -14271,6 +14398,16 @@ if __name__ == "__main__":
             pass
     install_error_guard()
     app = QApplication(sys.argv)
+    if "--luna-self-install" in sys.argv:   # instalacja bez okna (testy wydania, wiersz poleceń)
+        try:
+            print("LUNA INSTALLED", self_install("--no-desktop" not in sys.argv), flush=True)
+            sys.exit(0)
+        except Exception as e:
+            print("LUNA INSTALL FAILED", e, flush=True)
+            sys.exit(1)
+    if "--luna-uninstall" in sys.argv:   # „Odinstaluj” w ustawieniach Windows (Luna zainstalowana z .zip)
+        self_uninstall("--quiet" not in sys.argv)
+        sys.exit(0)
     _lock = profile_lock(PROFILE)   # ten sam profil w dwóch procesach zepsułby dane przeglądarki
     if not _lock.tryLock(200):
         QMessageBox.information(None, "Luna", f"Profil „{PROFILE or 'Główny'}” jest już otwarty w innym oknie Luny.")

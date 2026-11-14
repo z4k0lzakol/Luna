@@ -80,7 +80,7 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.v }} /DSourceDir=..\dist\Luna packaging\luna.iss
-          Compress-Archive -Path dist\Luna -DestinationPath dist\Luna-${{ steps.ver.outputs.v }}-Windows-portable.zip
+          Compress-Archive -Path dist\Luna -DestinationPath dist\Luna-${{ steps.ver.outputs.v }}-Windows.zip
 
       - name: Test instalatora Windows (instalacja, uruchomienie, odinstalowanie)
         if: runner.os == 'Windows'
@@ -98,6 +98,22 @@ jobs:
           Start-Sleep 3
           if (Test-Path $exe) { throw "Odinstalowanie nie usunęło Luny" }
           Write-Host "Instalacja, uruchomienie i odinstalowanie działają."
+
+      - name: Test samoinstalacji z pliku .zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $T = "$env:RUNNER_TEMP\selfinstall"; New-Item -ItemType Directory -Force "$T\sc", "$T\home" | Out-Null
+          $env:LUNA_INSTALL_DIR = "$T\Programs\Luna"; $env:LUNA_SHORTCUT_DIR = "$T\sc"; $env:LUNA_INSTALL_REGKEY = "Software\LunaInstallTest"
+          $env:LUNA_NO_WELCOME = "1"; $env:USERPROFILE = "$T\home"
+          $p = Start-Process dist\Luna\Luna.exe -ArgumentList '--luna-self-install' -PassThru -Wait
+          if ($p.ExitCode -ne 0 -or -not (Test-Path "$T\Programs\Luna\Luna.exe") -or -not (Test-Path "$T\sc\Luna.lnk")) { throw "Samoinstalacja nie zadziałała" }
+          $p = Start-Process "$T\Programs\Luna\Luna.exe" -ArgumentList '--luna-smoke-test' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "Zainstalowana Luna nie uruchomiła się" }
+          Start-Process "$T\Programs\Luna\Luna.exe" -ArgumentList '--luna-uninstall', '--quiet' -Wait
+          Start-Sleep 10
+          if ((Test-Path "$T\Programs\Luna") -or (Test-Path "HKCU:\Software\LunaInstallTest")) { throw "Odinstalowanie nie usunęło Luny" }
+          Write-Host "Samoinstalacja z .zip, uruchomienie i odinstalowanie działają."
 
       - name: AppImage i archiwum (Linux)
         if: runner.os == 'Linux'
