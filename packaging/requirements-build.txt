@@ -1,0 +1,14 @@
+# Biblioteki do budowania wydań – STAŁE wersje, sprawdzone na Windows 11 z włączoną Inteligentną kontrolą aplikacji
+# (Smart App Control). Ta funkcja blokuje niepodpisane pliki, których Microsoft jeszcze nie zna – świeżo wydane wersje
+# PyQt6 (np. 6.12 w dniu premiery) były blokowane. Podnoś wersje dopiero, gdy nowe pliki działają z tą funkcją.
+PyQt6==6.11.0
+PyQt6-Qt6==6.11.2
+PyQt6-WebEngine==6.11.0
+PyQt6-WebEngine-Qt6==6.11.2
+PyQt6-sip==13.13.0
+psutil
+keyring; sys_platform != "win32"
+winrt-Windows.Media.Control; sys_platform == "win32"
+winrt-Windows.Storage.Streams; sys_platform == "win32"
+pyinstaller==6.22.3
+pillow

@@ -4,8 +4,7 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-python -m pip install --upgrade pyinstaller pillow
-python -m pip install -r requirements.txt
+python -m pip install -r packaging\requirements-build.txt   # stałe, sprawdzone wersje (Smart App Control)
 python -m PyInstaller --noconfirm packaging\luna.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller zakończył się błędem" }
 
