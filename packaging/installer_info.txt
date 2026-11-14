@@ -1,0 +1,15 @@
+﻿Luna – prywatność
+
+Luna działa w całości na Twoim komputerze: nie ma kont, własnych serwerów, reklam ani analityki, a autor nie otrzymuje żadnych Twoich danych.
+
+Niektóre funkcje łączą się z usługami zewnętrznymi – tylko wtedy, gdy z nich korzystasz:
+- wyszukiwarka i podpowiedzi (wpisywany tekst),
+- tłumacz Google, Google Lens, panel AI i komunikatory (po Twoim poleceniu),
+- pogoda (Open-Meteo, przybliżona lokalizacja z adresu IP przez ipwho.is, gdy nie wybierzesz miasta),
+- notowania i kursy walut, śledzenie paczek, ikony stron,
+- pobieranie list blokady reklam, słowników pisowni i czcionek,
+- sprawdzanie nowych wersji na GitHubie.
+
+Każdą z tych funkcji wyłączysz w Ustawieniach (Funkcje) albo usuwając widget. Pełna lista – co trafia do której usługi i jak to wyłączyć – jest w polityce prywatności: https://z4k0lzakol.github.io/Luna/privacy.html
+
+Odinstalowanie: Ustawienia Windows → Aplikacje → Luna → Odinstaluj. Twoje dane (karty, zakładki, hasła) zostają w folderze użytkownika.

@@ -74,6 +74,39 @@ jobs:
           esac
           echo "Luna uruchomiła się i zamknęła poprawnie."
 
+      # Podpis cyfrowy (SignPath Foundation) – działa dopiero po akceptacji projektu i dodaniu w ustawieniach repozytorium
+      # sekretu SIGNPATH_API_TOKEN oraz zmiennych SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG.
+      # Każde wydanie trzeba zatwierdzić do podpisu w panelu SignPath (zasady „Code signing policy”).
+      - name: Luna.exe do podpisu (SignPath)
+        id: unsigned-exe
+        if: runner.os == 'Windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: Luna-exe-do-podpisu
+          path: dist/Luna/Luna.exe
+
+      - name: Podpis Luna.exe (SignPath)
+        if: runner.os == 'Windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: luna-exe
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/podpisane-exe
+
+      - name: Podpisany Luna.exe na miejsce
+        if: runner.os == 'Windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        shell: pwsh
+        run: |
+          Copy-Item dist/podpisane-exe/Luna.exe dist/Luna/Luna.exe -Force
+          $sig = Get-AuthenticodeSignature dist/Luna/Luna.exe
+          Write-Host "Podpis Luna.exe: $($sig.Status) – $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "Luna.exe nie ma poprawnego podpisu" }
+
       - name: Instalator Windows (Inno Setup)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -81,6 +114,42 @@ jobs:
           choco install innosetup -y --no-progress
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.v }} /DSourceDir=..\dist\Luna packaging\luna.iss
           Compress-Archive -Path dist\Luna -DestinationPath dist\Luna-${{ steps.ver.outputs.v }}-Windows.zip
+
+      - name: Instalator do podpisu (SignPath)
+        id: unsigned-setup
+        if: runner.os == 'Windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        shell: pwsh
+        run: Copy-Item dist\Luna-${{ steps.ver.outputs.v }}-Windows-Setup.exe dist\Luna-Setup.exe
+
+      - name: Instalator – przesłanie do podpisu
+        id: unsigned-setup-artifact
+        if: runner.os == 'Windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: Luna-Setup-do-podpisu
+          path: dist/Luna-Setup.exe
+
+      - name: Podpis instalatora (SignPath)
+        if: runner.os == 'Windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: luna-setup
+          github-artifact-id: ${{ steps.unsigned-setup-artifact.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/podpisany-setup
+
+      - name: Podpisany instalator na miejsce
+        if: runner.os == 'Windows' && vars.SIGNPATH_PROJECT_SLUG != ''
+        shell: pwsh
+        run: |
+          Copy-Item dist/podpisany-setup/Luna-Setup.exe dist\Luna-${{ steps.ver.outputs.v }}-Windows-Setup.exe -Force
+          Remove-Item dist\Luna-Setup.exe
+          $sig = Get-AuthenticodeSignature dist\Luna-${{ steps.ver.outputs.v }}-Windows-Setup.exe
+          if ($sig.Status -ne 'Valid') { throw "Instalator nie ma poprawnego podpisu" }
 
       - name: Test instalatora Windows (instalacja, uruchomienie, odinstalowanie)
         if: runner.os == 'Windows'

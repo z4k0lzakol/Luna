@@ -159,6 +159,20 @@ Plany na kolejne wersje:
 
 Instalacja wygląda tak: **pobierz → zainstaluj → przewodnik przenosi Twoje dane z poprzedniej przeglądarki** – i to wszystko.
 
+## Code signing policy
+
+Zasady podpisywania kodu (code signing policy) wydań Luny dla Windows.
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+> **Stan:** zgłoszenie do SignPath Foundation jest w przygotowaniu – obecne wydania nie są jeszcze podpisane.
+
+- **Co jest podpisywane:** tylko pliki zbudowane automatycznie z kodu źródłowego tego repozytorium przez GitHub Actions (`.github/workflows/release.yml`): `Luna.exe` i instalator `Luna-…-Windows-Setup.exe`. Biblioteki innych projektów (np. Qt, PyQt6, Python) są dołączane bez zmian.
+- **Committers and reviewers:** [z4k0lzakol](https://github.com/z4k0lzakol) – zmiany od innych osób (pull requesty) są przeglądane przed włączeniem.
+- **Approvers:** [z4k0lzakol](https://github.com/z4k0lzakol) – każde wydanie jest zatwierdzane do podpisu ręcznie.
+- **Prywatność:** Luna nie przesyła danych do innych systemów, poza usługami potrzebnymi do funkcji, których używasz – pełna lista, co trafia do której usługi i jak to wyłączyć, jest w [polityce prywatności](https://z4k0lzakol.github.io/Luna/privacy.html).
+- **Odinstalowanie:** w ustawieniach Windows (Aplikacje → Luna → Odinstaluj); dane użytkownika zostają w folderze domowym.
+
 ## Licencja
 
 Luna jest wolnym oprogramowaniem na licencji **[GNU GPL v3](LICENSE)** – możesz ją używać, zmieniać i udostępniać dalej na warunkach licencji. Program jest dostarczany **bez żadnej gwarancji**.

@@ -24,6 +24,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 LicenseFile=..\LICENSE
+InfoBeforeFile=installer_info.txt
 OutputDir=..\dist
 OutputBaseFilename=Luna-{#AppVersion}-Windows-Setup
 SetupIconFile=..\luna.ico

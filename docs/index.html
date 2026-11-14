@@ -294,12 +294,34 @@ python luna.py<button class="copy">Kopiuj</button></div>
   </div>
 </section>
 
+<section id="podpis">
+  <div class="wrap">
+    <h2>Code signing policy</h2>
+    <p class="sub">Zasady podpisywania kodu wydań Luny dla Windows.</p>
+    <div class="card" style="max-width:860px">
+      <p style="color:#d9d9d9">Free code signing provided by <a href="https://about.signpath.io">SignPath.io</a>, certificate by
+        <a href="https://signpath.org">SignPath Foundation</a>.</p>
+      <p><b style="color:#f0b232">Stan:</b> zgłoszenie do SignPath Foundation jest w przygotowaniu – obecne wydania nie są jeszcze podpisane.</p>
+      <ul style="color:#a9a9a9; font-size:15px; line-height:1.7; padding-left:20px">
+        <li><b>Co jest podpisywane:</b> tylko pliki zbudowane automatycznie z kodu źródłowego
+          <a href="https://github.com/z4k0lzakol/Luna">repozytorium Luny</a> przez GitHub Actions – <code>Luna.exe</code> i instalator
+          <code>Luna-…-Windows-Setup.exe</code>. Biblioteki innych projektów (Qt, PyQt6, Python) są dołączane bez zmian.</li>
+        <li><b>Committers and reviewers:</b> <a href="https://github.com/z4k0lzakol">z4k0lzakol</a> – zmiany od innych osób są przeglądane przed włączeniem.</li>
+        <li><b>Approvers:</b> <a href="https://github.com/z4k0lzakol">z4k0lzakol</a> – każde wydanie jest zatwierdzane do podpisu ręcznie.</li>
+        <li><b>Prywatność:</b> Luna nie przesyła danych do innych systemów, poza usługami potrzebnymi do funkcji, których używasz –
+          szczegóły i wyłączanie w <a href="privacy.html">polityce prywatności</a>.</li>
+        <li><b>Odinstalowanie:</b> w ustawieniach Windows (Aplikacje → Luna → Odinstaluj); dane użytkownika zostają.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
 <footer>
   <div class="wrap">
     <span class="brand" style="font-size:15px"><img src="img/logo.png" alt="" style="width:22px;height:22px">Luna</span>
     <span>Wolne oprogramowanie na licencji GNU GPL v3 – bez gwarancji.</span>
     <span style="margin-left:auto"><a href="privacy.html">Prywatność</a> · <a href="regulamin.html">Regulamin</a> ·
-      <a href="licencje.html">Licencje</a> · <a href="https://github.com/z4k0lzakol/Luna">GitHub</a></span>
+      <a href="licencje.html">Licencje</a> · <a href="#podpis">Code signing policy</a> · <a href="https://github.com/z4k0lzakol/Luna">GitHub</a></span>
   </div>
 </footer>
 

@@ -8748,6 +8748,10 @@ class WelcomeWizard(LunaDialog):
         s = lbl("Lekka, ciemna przeglądarka z kafelkami, widgetami, podziałem ekranu, blokadą reklam i asystentem AI. "
                 "Ustawmy ją w minutę – wszystko zmienisz później w Ustawieniach.", "muted2", wrap=True)
         s.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(s); v.addSpacing(10)
+        pv = lbl("Prywatność: Luna nie ma kont ani własnych serwerów. Z usługami zewnętrznymi (np. pogoda, tłumacz, AI, "
+                 "aktualizacje) łączy się tylko dla funkcji, których używasz – każdą wyłączysz w Ustawieniach. Pełna lista: "
+                 "menu Luny → Pomoc → Polityka prywatności.", "muted", wrap=True)
+        pv.setAlignment(Qt.AlignmentFlag.AlignCenter); v.addWidget(pv); v.addSpacing(6)
         grid = QGridLayout(); grid.setSpacing(10)
         for i, (ic, ti, tx) in enumerate((("download", "Przenieś dane", "Zakładki, historia i hasła z innej przeglądarki."),
                                           ("shield", "Prywatnie", "Blokada reklam i śledzenia od pierwszej strony."),
