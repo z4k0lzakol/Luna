@@ -103,11 +103,13 @@
 
 | System | Plik | Instalacja |
 |---|---|---|
-| **Windows 10 / 11** | `Luna-…-Windows.zip` | Rozpakuj (prawy przycisk → **Wyodrębnij wszystkie**) i uruchom `Luna.exe`. Luna sama zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. Jest też klasyczny instalator `…-Windows-Setup.exe` – ale gdy w Windows 11 jest włączona Inteligentna kontrola aplikacji, blokuje ona ten plik (brak podpisu), więc zalecamy `.zip`. |
+| **Windows 10 / 11** | `Luna-…-Windows.zip` | Rozpakuj (prawy przycisk → **Wyodrębnij wszystkie**) i uruchom `Luna.exe`. Luna sama zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. Jest też klasyczny instalator `…-Windows-Setup.exe`. |
 | **Linux** (x86_64) | `Luna-…-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. Jest też archiwum `.tar.gz`. |
 | **macOS** (Apple M1 i nowsze) | `Luna-…-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → **Otwórz**. |
 
-Luna nie ma jeszcze podpisu cyfrowego, więc Inteligentna kontrola aplikacji w Windows 11 blokuje instalator `Setup.exe` (plik `.zip` działa), a przy pierwszym uruchomieniu Windows może pokazać „System Windows ochronił ten komputer” (kliknij **Więcej informacji → Uruchom mimo to**), a macOS – ostrzeżenie o nieznanym deweloperze.
+**Inteligentna kontrola aplikacji (Windows 11):** jeśli jest u Ciebie włączona, Windows na razie zablokuje Lunę z wydania – ta funkcja nie pozwala uruchamiać nowych programów bez podpisu cyfrowego, a Luna jeszcze go nie ma (podpis jest w przygotowaniu). Do tego czasu uruchom Lunę z kodu źródłowego (poniżej) – tak działa bez blokady.
+
+Bez podpisu cyfrowego przy pierwszym uruchomieniu Windows może też pokazać „System Windows ochronił ten komputer” (kliknij **Więcej informacji → Uruchom mimo to**), a macOS – ostrzeżenie o nieznanym deweloperze.
 
 Przy pierwszym uruchomieniu otworzy się **przewodnik**: przeniesie zakładki, historię i hasła z Chrome, Edge, Brave, Opery albo Vivaldi i pomoże ustawić wygląd, widgety i AI. Nowe wersje Luna wykryje sama i zaproponuje ich pobranie.
 

@@ -3,12 +3,14 @@
 | System | Plik | Jak zainstalować |
 |---|---|---|
 | **Windows 10 / 11** (zalecane) | `Luna-…-Windows.zip` | Rozpakuj (prawy przycisk → Wyodrębnij wszystkie) i uruchom `Luna.exe`. Luna zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. |
-| Windows – klasyczny instalator | `Luna-…-Windows-Setup.exe` | Uruchom i kliknij „Zainstaluj”. **Na komputerach z włączoną Inteligentną kontrolą aplikacji Windows blokuje ten plik** (brak podpisu cyfrowego) – wtedy użyj pliku `.zip`. |
+| Windows – klasyczny instalator | `Luna-…-Windows-Setup.exe` | Uruchom i kliknij „Zainstaluj”. |
 | **Linux** (x86_64) | `Luna-…-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. |
 | Linux (archiwum) | `Luna-…-Linux-x86_64.tar.gz` | Rozpakuj i uruchom `Luna/Luna`. |
 | **macOS** (Apple M1 i nowsze) | `Luna-…-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk na Lunie → **Otwórz**. |
 
-**Ostrzeżenia przy pierwszym uruchomieniu.** Inteligentna kontrola aplikacji w Windows 11 blokuje pobrane instalatory bez podpisu – dlatego zalecamy plik `.zip`. Luna nie ma jeszcze podpisu cyfrowego, więc Windows może pokazać „System Windows ochronił ten komputer” (kliknij „Więcej informacji” → „Uruchom mimo to”), a macOS – informację o nieznanym deweloperze (prawy przycisk → Otwórz). Podpis jest w planach.
+**Inteligentna kontrola aplikacji (Windows 11).** Jeśli jest włączona, Windows na razie zablokuje Lunę z wydania – nie pozwala uruchamiać nowych programów bez podpisu cyfrowego, a podpis Luny jest w przygotowaniu. Do tego czasu uruchom Lunę z kodu źródłowego (instrukcja w README).
+
+**Ostrzeżenia przy pierwszym uruchomieniu.** Luna nie ma jeszcze podpisu cyfrowego, więc Windows może pokazać „System Windows ochronił ten komputer” (kliknij „Więcej informacji” → „Uruchom mimo to”), a macOS – informację o nieznanym deweloperze (prawy przycisk → Otwórz). Podpis jest w planach.
 
 Przy pierwszym uruchomieniu przewodnik przeniesie zakładki, historię i hasła z innej przeglądarki. Nowe wersje Luna wykryje sama i zaproponuje pobranie.
 
