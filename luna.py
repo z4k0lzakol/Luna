@@ -22,7 +22,7 @@ from urllib.parse import quote, quote_plus, urlencode
 from PyQt6.QtCore import (Qt, QUrl, QSize, QObject, QPoint, QPointF, QRect, QRectF, QEvent, QTimer, QLocale, QDateTime,
                           QFileInfo,
                           QEasingCurve, QElapsedTimer,
-                          QPropertyAnimation, pyqtSignal)
+                          QPropertyAnimation, QAbstractAnimation, pyqtSignal)
 from PyQt6.QtGui import (QGuiApplication, QImage, QCursor, QBrush, QRadialGradient, QLinearGradient, QIcon, QPixmap, QPainter, QColor, QFont,
                          QFontDatabase, QFontMetrics, QPen, QPolygonF, QKeySequence, QShortcut, QActionGroup, QTextDocument,
                          QPalette, QPainterPath, QDesktopServices)
@@ -2859,6 +2859,87 @@ WIDGET_MIME = "application/x-luna-widget"
 TAB_MIME = "application/x-luna-tab"
 
 
+class FluidAnimation(QObject):
+    """Animacja właściwości z częstotliwością ekranu. QPropertyAnimation w Qt odświeża się co 16 ms (~60 kl./s), więc
+    na monitorach 120/144 Hz panele i przewijanie wyglądały na „poszarpane”. Tu zegar (PreciseTimer) chodzi w rytmie
+    odświeżania ekranu, a postęp liczony jest z upływu czasu – spóźniona klatka nie spowalnia ruchu, tylko go dogania.
+    Interfejs jak w QPropertyAnimation (podzbiór używany w Lunie)."""
+    finished = pyqtSignal()
+    valueChanged = pyqtSignal(object)
+    State = QAbstractAnimation.State
+    _hires = 0   # ile animacji trwa – Windows: na ten czas dokładniejszy zegar systemowy (domyślnie tyka co 15,6 ms)
+
+    @classmethod
+    def _timer_res(cls, on):
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            if on:
+                cls._hires += 1
+                if cls._hires == 1:
+                    ctypes.windll.winmm.timeBeginPeriod(1)
+            elif cls._hires > 0:
+                cls._hires -= 1
+                if cls._hires == 0:
+                    ctypes.windll.winmm.timeEndPeriod(1)
+        except Exception:
+            pass
+
+    def __init__(self, target, prop, parent=None):
+        super().__init__(parent)
+        self._target, self._prop = target, bytes(prop).decode()
+        self._dur, self._curve = 250, QEasingCurve(QEasingCurve.Type.Linear)
+        self._a = self._b = 0
+        self._clock = QElapsedTimer()
+        self._timer = QTimer(self); self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._timer.timeout.connect(self._tick)
+
+    @staticmethod
+    def frame_ms():
+        scr = QGuiApplication.primaryScreen()
+        hz = scr.refreshRate() if scr else 60.0
+        return max(4, min(16, int(1000 / max(30.0, hz))))
+
+    def setDuration(self, ms): self._dur = max(1, int(ms))
+    def duration(self): return self._dur
+    def setEasingCurve(self, c): self._curve = QEasingCurve(c)
+    def easingCurve(self): return self._curve
+    def setStartValue(self, v): self._a = v
+    def setEndValue(self, v): self._b = v
+    def startValue(self): return self._a
+    def endValue(self): return self._b
+
+    def state(self):
+        return self.State.Running if self._timer.isActive() else self.State.Stopped
+
+    def start(self):
+        if not self._timer.isActive():
+            self._timer_res(True)
+        self._clock.start(); self._timer.start(self.frame_ms()); self._apply(0.0)
+
+    def stop(self):
+        if self._timer.isActive():
+            self._timer.stop(); self._timer_res(False)
+
+    def _apply(self, t):
+        k = self._curve.valueForProgress(t); a, b = self._a, self._b
+        v = a + (b - a) * k
+        if isinstance(a, int) and isinstance(b, int):
+            v = round(v)
+        try:
+            self._target.setProperty(self._prop, v)
+        except RuntimeError:   # obiekt docelowy już usunięty
+            self.stop(); return
+        self.valueChanged.emit(v)
+
+    def _tick(self):
+        t = min(1.0, self._clock.elapsed() / self._dur)
+        self._apply(t)
+        if t >= 1.0 and self._timer.isActive():
+            self.stop(); self.finished.emit()
+
+
 class WidgetFrame(QFrame):
     """Szklana ramka widgetu: nagłówek (tytuł, zwijanie, menu) + treść. Timery i sieć działają tylko, gdy
     widget jest widoczny i rozwinięty (start/stop); po wyłączeniu widget jest usuwany z pamięci."""
@@ -2892,7 +2973,7 @@ class WidgetFrame(QFrame):
         v.addWidget(self.body)
         self.collapsed = bool(store.wcfg(wid)["collapsed"])
         # zwijanie widgetu: łagodny start i koniec (InOutCubic) zamiast stałej prędkości – płynniejsze dla oka
-        self.anim = QPropertyAnimation(self.body, b"maximumHeight", self); self.anim.setDuration(200)
+        self.anim = FluidAnimation(self.body, b"maximumHeight", self); self.anim.setDuration(200)
         self.anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
         self.anim.finished.connect(self._anim_done)
         self.build()
@@ -2997,9 +3078,9 @@ class SmoothScroll(QScrollArea):
             return super().wheelEvent(ev)
         anim = getattr(self, "_anim", None)
         if anim is None:
-            anim = self._anim = QPropertyAnimation(sb, b"value", self); anim.setDuration(220)
+            anim = self._anim = FluidAnimation(sb, b"value", self); anim.setDuration(220)
             anim.setEasingCurve(QEasingCurve.Type.OutCubic); self._goal = sb.value()
-        base = self._goal if anim.state() == QPropertyAnimation.State.Running else sb.value()
+        base = self._goal if anim.state() == FluidAnimation.State.Running else sb.value()
         self._goal = max(sb.minimum(), min(sb.maximum(), base - d))
         anim.stop(); anim.setStartValue(sb.value()); anim.setEndValue(self._goal); anim.start(); ev.accept()
 
@@ -3052,7 +3133,7 @@ class Sidebar(QWidget):
             lay.addWidget(self.scroll); lay.addLayout(rb)
         else:
             lay.addLayout(rb); lay.addWidget(self.scroll)
-        self.anim = QPropertyAnimation(self.scroll, b"maximumWidth", self); self.anim.setDuration(220)
+        self.anim = FluidAnimation(self.scroll, b"maximumWidth", self); self.anim.setDuration(220)
         self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)   # wysuwanie/zwijanie panelu: szybki start, miękkie wyhamowanie
         self.anim.finished.connect(self._anim_done)
         self.user_collapsed = bool(store.settings.get("sidebar", {}).get(side, False))  # wybór użytkownika (zapisywany)
@@ -6484,7 +6565,7 @@ class Caption(QLabel):
         self.i = 0; self.phase = "idle"
         self.setText(self.pool[0])
         self.eff = QGraphicsOpacityEffect(self); self.setGraphicsEffect(self.eff)
-        self.anim = QPropertyAnimation(self.eff, b"opacity", self); self.anim.setDuration(380)
+        self.anim = FluidAnimation(self.eff, b"opacity", self); self.anim.setDuration(380)
         self.anim.setEasingCurve(QEasingCurve.Type.InOutSine)   # przenikanie podpisu bez „skoku” jasności
         self.anim.finished.connect(self._step)
         self.timer = QTimer(self); self.timer.timeout.connect(self.next)
@@ -14410,7 +14491,7 @@ if __name__ == "__main__":
     wait_for_previous()
     # rasteryzacja stron na GPU i przesyłanie bez kopiowania – płynniejsze przewijanie i animacje (można nadpisać zmienną)
     # --process-per-site: karty tej samej witryny dzielą jeden proces strony – wyraźnie mniej RAM przy wielu kartach
-    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-gpu-rasterization --enable-zero-copy --process-per-site")
+    os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--enable-gpu-rasterization --enable-zero-copy --process-per-site --enable-quic")
     if sys.platform == "win32":  # własna ikona na pasku zadań (a nie ikona Pythona)
         try:
             import ctypes

@@ -32,7 +32,7 @@
 
 - **Wszystko w jednym oknie.** Strony, komunikatory, asystent AI i widgety (pogoda, zadania, notatki, rynki) obok siebie – bez instalowania rozszerzeń.
 - **Prywatna od pierwszej strony.** Blokada reklam i śledzenia jest wbudowana, hasła są szyfrowane na Twoim komputerze, a Luna nie ma własnych serwerów i niczego o Tobie nie zbiera.
-- **Szybka i oszczędna.** Nieużywane karty usypiają się same, a na baterii Luna zatrzymuje filmy w tle i zwalnia pamięć.
+- **Szybka i oszczędna.** Strony wczytują się przez HTTP/3 (QUIC), gdy serwer go obsługuje, a animacje paneli i przewijania chodzą w rytmie odświeżania monitora (także 120/144 Hz). Nieużywane karty usypiają się same, a na baterii Luna zatrzymuje filmy w tle i zwalnia pamięć.
 - **Po polsku.** Cały interfejs, podpowiedzi, menu stron i przewodnik są po polsku; tłumaczenie stron z dowolnego języka jednym kliknięciem.
 
 ## Co potrafi
