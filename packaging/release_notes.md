@@ -1,7 +1,10 @@
-## Co nowego w 1.0.3
+## Co nowego w 1.0.4
 
-- **Szybsze wczytywanie stron** – Luna łączy się przez HTTP/3 (QUIC), gdy serwer go obsługuje (m.in. Google, YouTube, strony za Cloudflare).
-- **Płynniejsze animacje** – wysuwanie paneli, zwijanie widgetów, przewijanie i podpis na stronie startowej chodzą w rytmie odświeżania monitora (ok. 130 klatek/s na ekranie 144 Hz zamiast 64).
+- **YouTube: szybszy start filmów** – gdy YouTube po zablokowaniu reklamy każe czekać na film, Luna od razu wczytuje go ponownie w trybie bez reklam (start po ok. 5 s zamiast 11 s).
+- **YouTube: filmy startują same** – film otwarty z paska adresu, zakładki albo linku spoza YouTube uruchamia się bez klikania, jak w Chrome. Na innych stronach odtwarzanie nadal wymaga kliknięcia.
+- **tvn24.pl bez pustych miejsc po reklamach** – zniknął pas „REKLAMA” nad nagłówkiem i szare prostokąty między artykułami.
+
+W 1.0.3: szybsze wczytywanie stron (HTTP/3) i płynniejsze animacje na monitorach 120/144 Hz.
 
 ## Pobierz Lunę
 
