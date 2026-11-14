@@ -5,12 +5,13 @@
 <h1 align="center">Luna</h1>
 
 <p align="center">
-  <b>Lekka, ciemna przeglądarka dla Windows</b> – z kafelkami, widgetami, podziałem ekranu,<br>
+  <b>Lekka, ciemna przeglądarka dla Windows, Linuksa i macOS</b> – z kafelkami, widgetami, podziałem ekranu,<br>
   wbudowaną blokadą reklam i asystentem AI obok strony.
 </p>
 
 <p align="center">
-  <a href="#jak-uruchomić">Jak uruchomić</a> ·
+  <a href="https://github.com/z4k0lzakol/Luna/releases/latest"><b>Pobierz</b></a> ·
+  <a href="#jak-zainstalować">Jak zainstalować</a> ·
   <a href="#co-potrafi">Co potrafi</a> ·
   <a href="#do-czego-się-przyda">Do czego się przyda</a> ·
   <a href="#co-dalej">Co dalej</a> ·
@@ -96,42 +97,47 @@
 | **Słabszy laptop** | Usypianie nieużywanych kart, tryb oszczędzania baterii, menedżer zadań pokazujący, co zajmuje pamięć. |
 | **Bezpieczeństwo** | Blokada śledzenia, ostrzeżenia przed podróbkami stron logowania, hasła i kody 2FA tylko na Twoim komputerze. |
 
-## Jak uruchomić
+## Jak zainstalować
 
-Luna jest dziś uruchamiana z kodu źródłowego (Python). Gotowy instalator jest w planach – zobacz [Co dalej](#co-dalej).
+**[⬇ Pobierz najnowszą wersję](https://github.com/z4k0lzakol/Luna/releases/latest)** i wybierz plik dla swojego systemu:
 
-**Wymagania:** Windows 10 lub 11, [Python](https://www.python.org/downloads/) 3.12 albo nowszy, ok. 500 MB miejsca (silnik przeglądarki).
+| System | Plik | Instalacja |
+|---|---|---|
+| **Windows 10 / 11** | `Luna-…-Windows-Setup.exe` | Uruchom i kliknij „Zainstaluj” – Luna pojawi się w menu Start. Bez uprawnień administratora. Wersja bez instalacji: `…-Windows-portable.zip`. |
+| **Linux** (x86_64) | `Luna-…-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. Jest też archiwum `.tar.gz`. |
+| **macOS** (Apple M1 i nowsze) | `Luna-…-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → **Otwórz**. |
 
-1. **Zainstaluj Pythona** ze strony python.org. W instalatorze zaznacz **„Add python.exe to PATH”**.
-2. **Pobierz Lunę** – przyciskiem **Code → Download ZIP** na tej stronie (i rozpakuj), albo przez git:
-   ```bash
-   git clone https://github.com/z4k0lzakol/Luna.git
-   cd Luna
-   ```
-3. **Zainstaluj biblioteki** (w folderze Luny):
-   ```bash
-   python -m pip install -r requirements.txt
-   ```
-4. **Uruchom:**
-   ```bash
-   python luna.py
-   ```
-   Bez czarnego okna konsoli: `pythonw luna.py`. Skrót na pulpicie: prawy przycisk na pulpicie → Nowy → Skrót → `pythonw.exe "C:\ścieżka\do\Luna\luna.py"`.
+Luna nie ma jeszcze podpisu cyfrowego, więc przy pierwszym uruchomieniu Windows może pokazać „System Windows ochronił ten komputer” (kliknij **Więcej informacji → Uruchom mimo to**), a macOS – ostrzeżenie o nieznanym deweloperze.
 
-Przy pierwszym uruchomieniu otworzy się **przewodnik**: przeniesie zakładki, historię i hasła z Chrome, Edge, Brave, Opery albo Vivaldi i pomoże ustawić wygląd, widgety i AI.
+Przy pierwszym uruchomieniu otworzy się **przewodnik**: przeniesie zakładki, historię i hasła z Chrome, Edge, Brave, Opery albo Vivaldi i pomoże ustawić wygląd, widgety i AI. Nowe wersje Luna wykryje sama i zaproponuje ich pobranie.
 
-**Aktualizacje:** jeśli Luna została pobrana przez `git clone`, sama sprawdza nowe wersje i aktualizuje się jednym kliknięciem (Ustawienia → Aktualizacje), a potem pokazuje „Co nowego”.
+Wersje na Linuksa i macOS to pierwsze wydania na tych systemach – część funkcji powstała z myślą o Windows (np. sterowanie odtwarzaczami przez system). [Zgłoś](https://github.com/z4k0lzakol/Luna/issues/new/choose), jeśli coś nie działa.
 
-**Plik .exe (dla twórców):** `powershell -ExecutionPolicy Bypass -File build.ps1` buduje `dist\Luna.exe` (PyInstaller).
+<details>
+<summary><b>Uruchomienie z kodu źródłowego (dla twórców)</b></summary>
+
+Wymagania: [Python](https://www.python.org/downloads/) 3.12 albo nowszy (w instalatorze zaznacz „Add python.exe to PATH”).
+
+```bash
+git clone https://github.com/z4k0lzakol/Luna.git
+cd Luna
+python -m pip install -r requirements.txt
+python luna.py
+```
+
+Bez czarnego okna konsoli: `pythonw luna.py`. Luna pobrana przez `git clone` aktualizuje się jednym kliknięciem (Ustawienia → Aktualizacje), a potem pokazuje „Co nowego”.
+
+Własny plik .exe i instalator na Windows: `powershell -ExecutionPolicy Bypass -File build.ps1` (PyInstaller, instalator – gdy jest Inno Setup 6). Wydania na wszystkie systemy GitHub buduje sam po oznaczeniu wersji tagiem `v…` (`.github/workflows/release.yml`).
+</details>
 
 <details>
 <summary><b>Gdzie Luna trzyma dane</b></summary>
 
-Wszystko jest w Twoim folderze użytkownika (`C:\Users\<Ty>`), w plikach i folderach zaczynających się od `.luna`:
+Wszystko jest w Twoim folderze użytkownika (np. `C:\Users\<Ty>` albo `/home/<ty>`), w plikach i folderach zaczynających się od `.luna`:
 
 - `.luna_ustawienia.json` – ustawienia, widgety, sesja kart,
 - `.luna.json`, `.luna_historia.json`, `.luna_zakladki.json` – kafelki, historia, zakładki,
-- `.luna_hasla.bin` – hasła (zaszyfrowane przez Windows),
+- `.luna_hasla.bin` – hasła zaszyfrowane przez Windows (na Linuksie i macOS hasła są w pęku kluczy systemu),
 - `.luna_profile` – profil przeglądarki (logowania do stron, ciasteczka),
 - `.luna_profile_uzytkownikow\<nazwa>` – dodatkowe profile.
 
@@ -142,13 +148,14 @@ Kopię wszystkiego w jednym zaszyfrowanym pliku zrobisz w menu: Więcej narzędz
 
 Plany na kolejne wersje:
 
-- [ ] **Instalator `Luna-Setup.exe`** – pobierasz, klikasz „Zainstaluj”, Luna pojawia się w menu Start i na pulpicie. Bez instalowania Pythona.
-- [ ] **Podpis cyfrowy** – Windows nie pokaże już ostrzeżenia „Nieznany wydawca”.
-- [ ] **Wydania na GitHubie (Releases)** – każda wersja z listą zmian i plikiem do pobrania; aktualizacje bez gita.
+- [x] **Instalator** dla Windows, AppImage dla Linuksa i obraz .dmg dla macOS – bez instalowania Pythona.
+- [x] **Wydania na GitHubie** – każda wersja z instrukcją i plikami do pobrania; Luna sama wykrywa nowe wydania.
+- [ ] **Podpis cyfrowy** – Windows i macOS nie pokażą już ostrzeżeń przy pierwszym uruchomieniu.
+- [ ] **Luna na telefon** – aplikacja na Androida i iPhone'a w tym samym wyglądzie, z synchronizacją.
 - [ ] **Luna jako domyślna przeglądarka** – linki z poczty i innych programów otwierają się w Lunie.
 - [ ] **Jasny motyw i kolor akcentu**, archiwum starych kart, wersja przenośna (na pendrive).
 
-Docelowo instalacja ma wyglądać tak: **pobierz → zainstaluj → przewodnik przenosi Twoje dane z poprzedniej przeglądarki** – i to wszystko.
+Instalacja wygląda tak: **pobierz → zainstaluj → przewodnik przenosi Twoje dane z poprzedniej przeglądarki** – i to wszystko.
 
 ## Licencja
 

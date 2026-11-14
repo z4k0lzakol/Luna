@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Luna – lekka, ciemna przeglądarka dla Windows</title>
-<meta name="description" content="Luna to lekka, ciemna przeglądarka dla Windows z kafelkami, widgetami, podziałem ekranu, wbudowaną blokadą reklam i asystentem AI.">
-<meta property="og:title" content="Luna – lekka, ciemna przeglądarka dla Windows">
+<title>Luna – lekka, ciemna przeglądarka dla Windows, Linuksa i macOS</title>
+<meta name="description" content="Luna to lekka, ciemna przeglądarka dla Windows, Linuksa i macOS z kafelkami, widgetami, podziałem ekranu, wbudowaną blokadą reklam i asystentem AI.">
+<meta property="og:title" content="Luna – lekka, ciemna przeglądarka dla Windows, Linuksa i macOS">
 <meta property="og:description" content="Kafelki, widgety, podział ekranu, blokada reklam i AI obok strony – w jednym oknie.">
 <meta property="og:image" content="img/home.jpg">
 <link rel="icon" href="favicon.ico" sizes="any">
@@ -135,21 +135,21 @@
   <div class="wrap">
     <a class="brand" href="#"><img src="img/logo.png" alt="">Luna</a>
     <div class="links">
-      <a href="#funkcje">Funkcje</a><a href="#zastosowania">Zastosowania</a><a href="#uruchom">Jak uruchomić</a>
-      <a href="#plan">Co dalej</a><a href="#faq">Pytania</a><a href="privacy.html">Prywatność</a><a href="regulamin.html">Regulamin</a>
+      <a href="#funkcje">Funkcje</a><a href="#zastosowania">Zastosowania</a>
+      <a href="#uruchom">Pobierz</a><a href="#plan">Co dalej</a><a href="#faq">Pytania</a><a href="privacy.html">Prywatność</a><a href="regulamin.html">Regulamin</a>
     </div>
   </div>
 </nav>
 
 <header class="hero">
   <div class="wrap">
-    <span class="pill">Windows 10 / 11 · po polsku · bez kont i serwerów</span>
+    <span class="pill">Windows · Linux · macOS · po polsku · bez kont i serwerów</span>
     <h1>Przeglądarka, która mieści<br>cały Twój dzień w jednym oknie</h1>
     <p class="lead">Luna to lekka, ciemna przeglądarka z kafelkami, widgetami, podziałem ekranu, wbudowaną blokadą reklam
       i asystentem AI obok strony. Szybka na słabszym laptopie, prywatna od pierwszego uruchomienia.</p>
     <div class="cta">
-      <a class="btn primary" href="#uruchom">Jak uruchomić Lunę</a>
-      <a class="btn" href="#funkcje">Zobacz, co potrafi</a>
+      <a class="btn primary" href="https://github.com/z4k0lzakol/Luna/releases/latest">Pobierz Lunę</a>
+      <a class="btn" href="#uruchom">Jak zainstalować</a>
     </div>
     <div class="shot"><img src="img/home.jpg" alt="Ekran główny Luny: kafelki, wyszukiwarka i widgety pogody, zadań i rynków w panelach bocznych" width="1440" height="900"></div>
   </div>
@@ -222,24 +222,27 @@
 
 <section id="uruchom">
   <div class="wrap">
-    <h2>Jak uruchomić Lunę</h2>
-    <p class="sub">Dziś Luna działa z kodu źródłowego w Pythonie – to cztery kroki, jednorazowo. Gotowy instalator jest w planach.</p>
-    <div class="steps">
-      <div class="step"><div><h3>Zainstaluj Pythona</h3>
-        <p>Pobierz najnowszą wersję z <a href="https://www.python.org/downloads/">python.org</a> (3.12 lub nowszy). W instalatorze zaznacz <b>„Add python.exe to PATH”</b>.</p></div></div>
-      <div class="step"><div><h3>Pobierz Lunę</h3>
-        <p>Na GitHubie: <b>Code → Download ZIP</b> i rozpakuj – albo przez git:</p>
-        <div class="cmd">git clone https://github.com/z4k0lzakol/Luna.git
-cd Luna<button class="copy">Kopiuj</button></div></div></div>
-      <div class="step"><div><h3>Zainstaluj biblioteki</h3>
-        <p>W folderze Luny otwórz terminal (prawy przycisk → „Otwórz w terminalu”) i wpisz:</p>
-        <div class="cmd">python -m pip install -r requirements.txt<button class="copy">Kopiuj</button></div></div></div>
-      <div class="step"><div><h3>Uruchom</h3>
-        <p>Pierwsze uruchomienie otworzy przewodnik, który przeniesie Twoje zakładki, historię i hasła.</p>
-        <div class="cmd">pythonw luna.py<button class="copy">Kopiuj</button></div>
-        <p class="note">Skrót na pulpicie: prawy przycisk na pulpicie → Nowy → Skrót → <code>pythonw.exe "C:\ścieżka\do\Luna\luna.py"</code>.
-          Pobrana przez git Luna sama sprawdza aktualizacje i instaluje je jednym kliknięciem.</p></div></div>
+    <h2>Pobierz i zainstaluj</h2>
+    <p class="sub">Gotowe pliki dla Windows, Linuksa i macOS – bez instalowania Pythona. Wszystkie są na stronie
+      <a href="https://github.com/z4k0lzakol/Luna/releases/latest">najnowszego wydania</a>.</p>
+    <div class="grid">
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/></svg></div>
+        <h3>Windows 10 / 11</h3><p>Pobierz <code>Luna-…-Windows-Setup.exe</code>, uruchom i kliknij „Zainstaluj”. Luna pojawi się w menu Start – bez uprawnień administratora.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3c-2.5 0-4 2.2-4 5 0 1.6.5 2.6.5 3.6S6 15 6 17.5 8.5 21 12 21s6-1 6-3.5-2.5-4.9-2.5-5.9S16 9.6 16 8c0-2.8-1.5-5-4-5z"/></svg></div>
+        <h3>Linux</h3><p>Pobierz <code>Luna-…-Linux-x86_64.AppImage</code>, nadaj prawo uruchamiania (<code>chmod +x</code>) i uruchom dwuklikiem.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M15 4c-1.2.1-2.5.9-3 2 1.3 0 2.6-.8 3-2zM12 8c-1.5 0-2.3-.8-3.7-.8C6.4 7.2 5 8.8 5 11.5 5 15.3 7.6 20 9.6 20c1 0 1.4-.6 2.5-.6s1.4.6 2.5.6c1.4 0 3-2.3 3.6-4.2-1.6-.7-2.4-2.1-2.4-3.6 0-1.4.8-2.6 1.9-3.3-.8-1-1.9-1.6-3.1-1.6-1.4 0-2 .7-2.1.7z"/></svg></div>
+        <h3>macOS</h3><p>Pobierz <code>Luna-…-macOS-arm64.dmg</code> (Apple M1 i nowsze), przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → Otwórz.</p></div>
     </div>
+    <p class="note">Luna nie ma jeszcze podpisu cyfrowego, więc przy pierwszym uruchomieniu Windows może pokazać „System Windows ochronił ten komputer”
+      (kliknij <b>Więcej informacji → Uruchom mimo to</b>), a macOS – ostrzeżenie o nieznanym deweloperze. Pierwsze uruchomienie otworzy przewodnik,
+      który przeniesie Twoje zakładki, historię i hasła. Nowe wersje Luna wykryje sama.</p>
+    <details style="margin-top:18px"><summary>Uruchomienie z kodu źródłowego (dla twórców)</summary>
+      <p>Z Pythonem 3.12 lub nowszym:</p>
+      <div class="cmd">git clone https://github.com/z4k0lzakol/Luna.git
+cd Luna
+python -m pip install -r requirements.txt
+python luna.py<button class="copy">Kopiuj</button></div>
+      <p>Luna pobrana przez git aktualizuje się jednym kliknięciem (Ustawienia → Aktualizacje).</p></details>
   </div>
 </section>
 
@@ -248,17 +251,17 @@ cd Luna<button class="copy">Kopiuj</button></div></div></div>
     <h2>Co dalej</h2>
     <p class="sub">Tak wygląda plan na najbliższe wersje.</p>
     <div class="road">
-      <div class="phase now"><span class="tag">Teraz</span><h3>Pełna przeglądarka</h3><ul>
-        <li>podział ekranu, profile, AI, komunikatory,</li><li>blokada reklam, hasła, 2FA,</li>
-        <li>aktualizacje z „Co nowego”.</li></ul></div>
-      <div class="phase"><span class="tag">Wkrótce</span><h3>Instalator</h3><ul>
-        <li><code>Luna-Setup.exe</code> – bez instalowania Pythona,</li><li>podpis cyfrowy (bez „Nieznany wydawca”),</li>
-        <li>wydania z listą zmian na GitHubie.</li></ul></div>
-      <div class="phase"><span class="tag">Później</span><h3>Wygoda i wygląd</h3><ul>
-        <li>Luna jako domyślna przeglądarka,</li><li>jasny motyw i kolor akcentu,</li>
-        <li>archiwum kart i wersja przenośna.</li></ul></div>
+      <div class="phase now"><span class="tag">Teraz</span><h3>Luna 1.0</h3><ul>
+        <li>instalator Windows, AppImage dla Linuksa, .dmg dla macOS,</li><li>podział ekranu, profile, AI, komunikatory,</li>
+        <li>blokada reklam, hasła, 2FA, aktualizacje.</li></ul></div>
+      <div class="phase"><span class="tag">Wkrótce</span><h3>Podpis i wygoda</h3><ul>
+        <li>podpis cyfrowy (bez ostrzeżeń przy instalacji),</li><li>Luna jako domyślna przeglądarka,</li>
+        <li>jasny motyw i kolor akcentu.</li></ul></div>
+      <div class="phase"><span class="tag">Później</span><h3>Luna na telefon</h3><ul>
+        <li>aplikacja na Androida,</li><li>aplikacja na iPhone'a i iPada,</li>
+        <li>połączenie z komputerem kodem QR.</li></ul></div>
     </div>
-    <div class="flow"><span class="box">Pobierz Luna-Setup.exe</span><span class="arr">→</span>
+    <div class="flow"><span class="box">Pobierz Lunę</span><span class="arr">→</span>
       <span class="box">Zainstaluj</span><span class="arr">→</span><span class="box">Przewodnik przenosi Twoje dane</span>
       <span class="arr">→</span><span class="box">Gotowe</span></div>
   </div>
@@ -282,10 +285,12 @@ cd Luna<button class="copy">Kopiuj</button></div></div></div>
         Firefoksa albo Safari wczytasz z pliku HTML (Zakładki → Importuj plik).</p></details>
     <details><summary>Gdzie są moje dane?</summary>
       <p>Tylko na Twoim komputerze – w folderze użytkownika, w plikach zaczynających się od <code>.luna</code>. Hasła są szyfrowane przez
-        Windows. Szczegóły w <a href="privacy.html">polityce prywatności</a>.</p></details>
+        system (Windows DPAPI, na Linuksie i macOS pęk kluczy systemu). Szczegóły w <a href="privacy.html">polityce prywatności</a>.</p></details>
     <details><summary>Czy Luna działa na Macu albo Linuksie?</summary>
-      <p>Luna powstaje dla Windows. Uruchomi się z Pythona także gdzie indziej, ale część funkcji (np. sterowanie odtwarzaczami,
-        szyfrowanie haseł przez Windows) działa tylko w Windows.</p></details>
+      <p>Tak – są gotowe pliki: AppImage dla Linuksa i .dmg dla macOS (Apple M1 i nowsze). To pierwsze wydania na tych systemach;
+        część funkcji powstała z myślą o Windows (np. sterowanie odtwarzaczami przez system), więc mogą działać inaczej.</p></details>
+    <details><summary>A na telefonie?</summary>
+      <p>Jeszcze nie. Aplikacja na Androida i iPhone'a jest w planach – w tym samym wyglądzie, z Twoimi danymi z komputera dzięki synchronizacji.</p></details>
   </div>
 </section>
 

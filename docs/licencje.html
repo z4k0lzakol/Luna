@@ -40,8 +40,9 @@ wyraźnie oznaczone jako zmienione i nie mogą być przedstawiane jako oficjalna
 </div>
 
 <h2 id="skladniki">Składniki programu</h2>
-<p>Luna nie zawiera w repozytorium kodu innych autorów – poniższe składniki instalujesz osobno (pip) albo Luna pobiera je przy
-pierwszym uruchomieniu. Przy rozpowszechnianiu Luny jako pliku .exe wchodzą one w skład pliku i obowiązują ich licencje.</p>
+<p>Luna nie zawiera w repozytorium kodu innych autorów – przy uruchamianiu z kodu źródłowego poniższe składniki instalujesz osobno (pip)
+albo Luna pobiera je przy pierwszym uruchomieniu. Pliki instalacyjne z wydań (Windows, Linux, macOS) zawierają je w środku – obowiązują
+ich licencje, a kod źródłowy Luny jest w repozytorium.</p>
 <div class="tablewrap"><table>
 <tr><th>Składnik</th><th>Do czego</th><th>Licencja</th></tr>
 <tr><td><a href="https://www.python.org/">Python</a></td><td>język, w którym napisana jest Luna</td><td>PSF License</td></tr>
@@ -53,6 +54,10 @@ pierwszym uruchomieniu. Przy rozpowszechnianiu Luny jako pliku .exe wchodzą one
 <tr><td><a href="https://github.com/google/fonts/tree/main/ofl/inter">Inter</a>, <a href="https://github.com/google/fonts/tree/main/ofl/playfairdisplay">Playfair Display</a></td><td>czcionki interfejsu (pobierane)</td><td>SIL Open Font License 1.1</td></tr>
 <tr><td>Słowniki pisowni pl-PL i en-US (z serwerów Chromium)</td><td>sprawdzanie pisowni (pobierane)</td><td>słownik polski: <a href="https://sjp.pl/sl/en/">SJP.PL</a> (GPL / LGPL / MPL / Apache / CC BY); angielski: licencje Hunspell / SCOWL</td></tr>
 <tr><td><a href="https://publicsuffix.org/">Public Suffix List</a></td><td>rozpoznawanie domen</td><td>MPL 2.0</td></tr>
+<tr><td><a href="https://www.python.org/">Python</a> (w plikach instalacyjnych)</td><td>środowisko uruchomieniowe dołączone do Luny</td><td>PSF License</td></tr>
+<tr><td><a href="https://pyinstaller.org/">PyInstaller</a> (program uruchamiający)</td><td>budowanie plików Luna.exe, AppImage, .app</td><td>GPL v2 z wyjątkiem dla bootloadera (dozwolone dowolne programy)</td></tr>
+<tr><td><a href="https://jrsoftware.org/isinfo.php">Inno Setup</a></td><td>instalator Windows</td><td>Inno Setup License</td></tr>
+<tr><td><a href="https://github.com/AppImage/appimagetool">AppImage</a></td><td>plik AppImage dla Linuksa</td><td>MIT</td></tr>
 </table></div>
 
 <h2 id="filtry">Listy filtrów blokady reklam</h2>

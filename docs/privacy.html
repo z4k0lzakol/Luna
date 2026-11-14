@@ -27,7 +27,7 @@
 
 <article>
 <h1>Polityka prywatności</h1>
-<p class="meta">Obowiązuje od 14 listopada 2026 r. · dotyczy programu Luna i strony z4k0lzakol.github.io/Luna</p>
+<p class="meta">Obowiązuje od 14 listopada 2026 r. (aktualizacja: wersje na Linuksa i macOS) · dotyczy programu Luna i strony z4k0lzakol.github.io/Luna</p>
 
 <div class="box hi" id="skrot">
 <p><b>W skrócie:</b> Luna działa w całości na Twoim komputerze. Nie ma kont, własnych serwerów, reklam ani analityki.
@@ -47,7 +47,7 @@ własnych polityk prywatności.</p>
 <ul>
   <li>kafelki, zakładki, historię przeglądania, listę „Do przeczytania”, zakreślenia i notatki, ustawienia i sesję kart;</li>
   <li>profil przeglądarki: ciasteczka, logowania do stron, pamięć podręczną, uprawnienia stron;</li>
-  <li>zapisane hasła, kody 2FA i adresy – <b>zaszyfrowane</b> mechanizmem systemu Windows (DPAPI), dostępne tylko dla Twojego konta;</li>
+  <li>zapisane hasła, kody 2FA i adresy – <b>zaszyfrowane</b> mechanizmem systemu (Windows DPAPI; na Linuksie i macOS – pęk kluczy systemu), dostępne tylko dla Twojego konta;</li>
   <li>dziennik błędów programu (<code>.luna_bledy.log</code>) – tylko lokalnie, nigdzie nie jest wysyłany.</li>
 </ul>
 <p>Historię, ciasteczka, pamięć podręczną i hasła usuniesz w menu Luny (Usuń dane przeglądania, Ctrl+Shift+Del), a wszystkie dane – kasując te pliki. Profile Luny mają osobne dane w
@@ -71,7 +71,7 @@ Poza tym niektóre funkcje Luny korzystają z usług zewnętrznych:</p>
 <tr><td>Pomijanie wstawek na YouTube</td><td>SponsorBlock (sponsor.ajay.app)</td><td>4 znaki skrótu identyfikatora filmu</td><td>na YouTube; wyłączysz w Ustawieniach → Funkcje</td></tr>
 <tr><td>Blokada reklam</td><td>serwery list filtrów (GitHub, EasyList i inne)</td><td>zwykłe pobranie pliku listy</td><td>co kilka dni</td></tr>
 <tr><td>Słowniki pisowni, czcionki</td><td>serwery Google</td><td>zwykłe pobranie plików</td><td>jednorazowo</td></tr>
-<tr><td>Aktualizacje</td><td>GitHub</td><td>zwykłe sprawdzenie nowej wersji</td><td>co 12 godzin; wyłączysz w Ustawieniach → Funkcje</td></tr>
+<tr><td>Aktualizacje</td><td>GitHub</td><td>zwykłe sprawdzenie numeru najnowszej wersji (bez danych o Tobie)</td><td>po starcie i co 12 godzin; wyłączysz w Ustawieniach → Funkcje</td></tr>
 </table></div>
 <p>Te usługi działają według własnych regulaminów i polityk prywatności. Luna nie dodaje do zapytań żadnych identyfikatorów
 użytkownika.</p>
@@ -109,7 +109,7 @@ skarga do Prezesa Urzędu Ochrony Danych Osobowych) wobec usług zewnętrznych r
 <h2 id="en">English summary</h2>
 <p>Luna runs entirely on your computer. It has no accounts, no servers of its own, no ads and no analytics; the author receives no
 data about you. Your history, bookmarks, settings and browser profile stay in <code>.luna*</code> files in your user folder;
-passwords are encrypted with Windows DPAPI. Some features contact third-party services only when used (search suggestions,
+passwords are encrypted by the system (Windows DPAPI, or the system keyring on Linux and macOS). Some features contact third-party services only when used (search suggestions,
 Google Translate, Google Lens, AI and messenger websites, Open-Meteo/ipwho.is for weather, CoinGecko/Yahoo Finance/ExchangeRate-API,
 InPost tracking, DuckDuckGo icons, Have I Been Pwned with a 5-character hash prefix, SponsorBlock, filter-list, dictionary and update
 downloads) – see the table above. Optional sync and backups are encrypted with your own password and stored where you choose.
