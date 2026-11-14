@@ -21,7 +21,7 @@ jobs:
             name: Windows
           - os: ubuntu-22.04
             name: Linux
-          - os: macos-14
+          - os: macos-latest
             name: macOS
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
