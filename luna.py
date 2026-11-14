@@ -4,6 +4,7 @@
 Instalacja:   pip install PyQt6 PyQt6-WebEngine   (opcjonalnie: psutil – monitor zasobów)
               Windows, sterowanie Spotify/odtwarzaczami bez logowania: pip install winrt-Windows.Media.Control winrt-Windows.Storage.Streams
 Uruchomienie: python luna.py
+Licencja:     GNU GPL v3 (plik LICENSE) – bez żadnej gwarancji; regulamin: docs/regulamin.html
 
 Dane w katalogu domowym (odpowiednik localStorage):
   .luna_ustawienia.json   ustawienia: funkcje, widgety, sesje (tokeny, gdy brak pęku kluczy), notatki, zadania…
@@ -3373,6 +3374,7 @@ class WeatherWidget(WidgetFrame):
             h = QHBoxLayout(); h.setSpacing(8)
             d = lbl("", "muted2"); d.setFixedWidth(48); ic = QLabel(); ic.setFixedSize(24, 24); r = lbl("", "h3")
             h.addWidget(d); h.addWidget(ic); h.addStretch(); h.addWidget(r); l.addLayout(h); self.fc.append((d, ic, r))
+        l.addWidget(lbl("Dane pogodowe: Open-Meteo.com (CC BY 4.0)", "muted"))   # wymagane podanie źródła
         self.timer = QTimer(self); self.timer.timeout.connect(self.store.fetch_weather)
         self.render()
 
@@ -3580,7 +3582,7 @@ class CurrencyWidget(WidgetFrame):
     def _fiat(self, j, err, status):
         try:
             r = j["rates"]; self.rates.update({c: float(r[c]) for c in ("PLN", "USD", "GBP")}); self.rates["EUR"] = 1.0
-            self.info.setText("Kursy: open.er-api.com, CoinGecko")
+            self.info.setText("Kursy: ExchangeRate-API (open.er-api.com), dane CoinGecko")
         except Exception:
             self.info.setText("Nie udało się pobrać kursów walut.")
         self.calc()
@@ -6391,17 +6393,19 @@ class AboutDialog(LunaDialog):
     """O Lunie: logo, wersja silnika, linki."""
 
     def __init__(self, browser):
-        super().__init__(browser, "O Lunie", "help", (460, 360))
+        super().__init__(browser, "O Lunie", "help", (500, 400))
         from PyQt6.QtWebEngineCore import qWebEngineChromiumVersion
         self.body.addStretch(1)
         lg = QLabel(); lg.setPixmap(logo_pixmap(64)); lg.setFixedSize(64, 64); self.body.addWidget(lg, 0, Qt.AlignmentFlag.AlignHCenter)
         t = lbl("Luna", "h1"); t.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(t)
         for text, cls in (("Lekka przeglądarka z kafelkami, widgetami, blokadą reklam i asystentem AI.", "muted2"),
-                          (f"Silnik: Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)", "muted")):
+                          (f"Silnik: Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)", "muted"),
+                          ("Wolne oprogramowanie na licencji GNU GPL v3 – bez żadnej gwarancji. Korzystając z Luny, "
+                           "akceptujesz regulamin.", "muted")):
             l_ = lbl(text, cls, wrap=True); l_.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(l_)
         self.body.addStretch(1)
         self.footer(left=[("Polityka prywatności", lambda: (browser.open_url_new_tab(PRIVACY_URL), self.accept())),
-                          ("Skróty klawiszowe", lambda: (self.accept(), browser.open_settings("keys")))],
+                          ("Regulamin i licencje", lambda: (browser.open_url_new_tab(TERMS_URL), self.accept()))],
                     right=[("OK", self.accept, True)])
 
 
@@ -8869,7 +8873,9 @@ class WelcomeWizard(LunaDialog):
         for i, (ic, ti, tx) in enumerate(tips):
             grid.addWidget(self._card(ic, ti, tx), i // 2, i % 2)
         v.addLayout(grid)
-        v.addWidget(lbl("Ten przewodnik otworzysz ponownie w menu Luny: Pomoc → Przewodnik po Lunie.", "muted", wrap=True))
+        v.addWidget(lbl("Ten przewodnik otworzysz ponownie w menu Luny: Pomoc → Przewodnik po Lunie. Regulamin, polityka "
+                        "prywatności i licencje: Pomoc → Regulamin. Luna jest darmowa (licencja GNU GPL v3) i dostarczana "
+                        "bez gwarancji.", "muted", wrap=True))
         v.addStretch(1)
         return "Gotowe", w
 
@@ -9484,7 +9490,9 @@ TOOL_ITEMS = [("shield", "Blokada reklam i śledzenia"), ("key", "Hasła i alias
               ("apps", "Panel aplikacji (komunikatory)"), ("gear", "Ustawienia")]
 TOOL_DEFAULT = ["shield", "key", "reader", "star", "ai", "apps"]
 PRIVATE = "__prywatne__"
-PRIVACY_URL = "https://z4k0lzakol.github.io/Luna/privacy.html"   # GitHub Pages z folderu docs/ (wymagane przez Google)
+PRIVACY_URL = "https://z4k0lzakol.github.io/Luna/privacy.html"   # GitHub Pages z folderu docs/
+TERMS_URL = "https://z4k0lzakol.github.io/Luna/regulamin.html"
+LICENSES_URL = "https://z4k0lzakol.github.io/Luna/licencje.html"
 ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0]
 WINDOWS = []   # dodatkowe okna (zwykłe i prywatne) – referencje, żeby nie zniknęły
 
@@ -11956,7 +11964,10 @@ class Browser(QMainWindow):
         self.act(hp, "search", "Wszystkie polecenia…", self.palette, "Ctrl+K")
         self.act(hp, "app", "Skróty klawiszowe", lambda: self.open_settings("keys"))
         self.act(hp, "help", "O Lunie", self.about)
+        hp.addSeparator()
         self.act(hp, "shield", "Polityka prywatności", lambda: self.open_url_new_tab(PRIVACY_URL))
+        self.act(hp, "book", "Regulamin", lambda: self.open_url_new_tab(TERMS_URL))
+        self.act(hp, "app", "Licencje i źródła danych", lambda: self.open_url_new_tab(LICENSES_URL))
         self.act(m, "gear", "Ustawienia", self.open_settings, "Ctrl+,")
         self.act(m, "exit", "Zakończ", self.quit_all)
 

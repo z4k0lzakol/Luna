@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Licencje i źródła danych – Luna</title>
+<meta name="description" content="Licencja Luny (GNU GPL v3), składniki innych autorów, listy filtrów i źródła danych.">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="stylesheet" href="legal.css">
+</head>
+<body>
+<nav><div class="wrap">
+  <a class="brand" href="./"><img src="img/logo.png" alt="">Luna</a>
+  <div class="links"><a href="./">Strona główna</a><a href="privacy.html">Prywatność</a>
+    <a href="regulamin.html">Regulamin</a><a class="on" href="licencje.html">Licencje</a></div>
+</div></nav>
+
+<div class="page">
+<aside class="toc"><b>Na tej stronie</b>
+  <a href="#luna">Licencja Luny</a><a href="#skladniki">Składniki programu</a><a href="#filtry">Listy filtrów</a>
+  <a href="#dane">Źródła danych</a><a href="#uwagi">Uwagi</a></aside>
+
+<article>
+<h1>Licencje i źródła danych</h1>
+<p class="meta">Stan na 14 listopada 2026 r.</p>
+
+<h2 id="luna">Licencja Luny</h2>
+<div class="box hi">
+<p>Luna © autor projektu <a href="https://github.com/z4k0lzakol/Luna">z4k0lzakol/Luna</a>.</p>
+<p>Ten program jest wolnym oprogramowaniem: możesz go rozpowszechniać i modyfikować na warunkach
+<b>GNU General Public License w wersji 3</b> opublikowanej przez Free Software Foundation. Program jest rozpowszechniany
+w nadziei, że będzie użyteczny, ale <b>BEZ ŻADNEJ GWARANCJI</b>, nawet domyślnej gwarancji przydatności handlowej albo
+przydatności do określonego celu. Pełny tekst: plik <a href="https://github.com/z4k0lzakol/Luna/blob/main/LICENSE">LICENSE</a> ·
+<a href="https://www.gnu.org/licenses/gpl-3.0.html">gnu.org/licenses/gpl-3.0</a>.</p>
+<p class="muted">Warunek dodatkowy (pkt 7 GPL v3): nazwa „Luna” i logo Luny nie są objęte licencją; zmienione wersje muszą być
+wyraźnie oznaczone jako zmienione i nie mogą być przedstawiane jako oficjalna Luna.</p>
+</div>
+
+<h2 id="skladniki">Składniki programu</h2>
+<p>Luna nie zawiera w repozytorium kodu innych autorów – poniższe składniki instalujesz osobno (pip) albo Luna pobiera je przy
+pierwszym uruchomieniu. Przy rozpowszechnianiu Luny jako pliku .exe wchodzą one w skład pliku i obowiązują ich licencje.</p>
+<div class="tablewrap"><table>
+<tr><th>Składnik</th><th>Do czego</th><th>Licencja</th></tr>
+<tr><td><a href="https://www.python.org/">Python</a></td><td>język, w którym napisana jest Luna</td><td>PSF License</td></tr>
+<tr><td><a href="https://www.riverbankcomputing.com/software/pyqt/">PyQt6, PyQt6-WebEngine</a> (Riverbank Computing)</td><td>okna i silnik stron w Pythonie</td><td>GNU GPL v3</td></tr>
+<tr><td><a href="https://www.qt.io/">Qt 6, Qt WebEngine</a> (The Qt Company)</td><td>interfejs i wyświetlanie stron</td><td>GNU LGPL v3 / GPL v3</td></tr>
+<tr><td><a href="https://www.chromium.org/">Chromium</a> (w Qt WebEngine)</td><td>silnik stron</td><td>BSD-3-Clause i licencje składników Chromium</td></tr>
+<tr><td><a href="https://github.com/giampaolo/psutil">psutil</a> (opcjonalnie)</td><td>monitor zasobów, menedżer zadań</td><td>BSD-3-Clause</td></tr>
+<tr><td><a href="https://github.com/pywinrt/pywinrt">winrt (PyWinRT)</a> (opcjonalnie)</td><td>sterowanie odtwarzaczami w Windows</td><td>MIT</td></tr>
+<tr><td><a href="https://github.com/google/fonts/tree/main/ofl/inter">Inter</a>, <a href="https://github.com/google/fonts/tree/main/ofl/playfairdisplay">Playfair Display</a></td><td>czcionki interfejsu (pobierane)</td><td>SIL Open Font License 1.1</td></tr>
+<tr><td>Słowniki pisowni pl-PL i en-US (z serwerów Chromium)</td><td>sprawdzanie pisowni (pobierane)</td><td>słownik polski: <a href="https://sjp.pl/sl/en/">SJP.PL</a> (GPL / LGPL / MPL / Apache / CC BY); angielski: licencje Hunspell / SCOWL</td></tr>
+<tr><td><a href="https://publicsuffix.org/">Public Suffix List</a></td><td>rozpoznawanie domen</td><td>MPL 2.0</td></tr>
+</table></div>
+
+<h2 id="filtry">Listy filtrów blokady reklam</h2>
+<p>Listy są pobierane bezpośrednio od ich autorów i nie są częścią kodu Luny. Dziękujemy ich twórcom.</p>
+<div class="tablewrap"><table>
+<tr><th>Lista</th><th>Autor / źródło</th><th>Licencja</th></tr>
+<tr><td>uBlock filters (w tym banery cookies, natrętne elementy)</td><td><a href="https://github.com/uBlockOrigin/uAssets">uBlock Origin uAssets</a></td><td>GPL v3</td></tr>
+<tr><td>EasyList, EasyPrivacy i listy pokrewne</td><td><a href="https://easylist.to/">easylist.to</a></td><td>GPL v3 / CC BY-SA 3.0</td></tr>
+<tr><td>Oficjalne Polskie Filtry (POL-0)</td><td><a href="https://github.com/MajkiIT/polish-ads-filter">MajkiIT/polish-ads-filter</a></td><td>CC BY-NC-SA 4.0</td></tr>
+<tr><td>Serwery reklam i śledzenia</td><td><a href="https://pgl.yoyo.org/adservers/">Peter Lowe</a></td><td>bezpłatna do użytku (warunki autora)</td></tr>
+<tr><td>HaGeZi Multi PRO</td><td><a href="https://github.com/hagezi/dns-blocklists">hagezi/dns-blocklists</a></td><td>GPL v3</td></tr>
+</table></div>
+
+<h2 id="dane">Źródła danych i usługi</h2>
+<div class="tablewrap"><table>
+<tr><th>Funkcja</th><th>Źródło</th><th>Warunki</th></tr>
+<tr><td>Pogoda</td><td><a href="https://open-meteo.com/">Weather data by Open-Meteo.com</a>; lokalizacja przybliżona: <a href="https://ipwho.is/">ipwho.is</a></td><td>dane CC BY 4.0; użytek niekomercyjny API</td></tr>
+<tr><td>Kryptowaluty i notowania</td><td><a href="https://www.coingecko.com/">Data provided by CoinGecko</a>; Yahoo Finance</td><td>warunki API CoinGecko i Yahoo</td></tr>
+<tr><td>Kursy walut</td><td><a href="https://www.exchangerate-api.com">Rates By Exchange Rate API</a></td><td>darmowe API z podaniem źródła</td></tr>
+<tr><td>Pomijanie wstawek na YouTube</td><td><a href="https://sponsor.ajay.app/">SponsorBlock</a></td><td>dane CC BY-NC-SA 4.0</td></tr>
+<tr><td>Sprawdzanie wycieków haseł</td><td><a href="https://haveibeenpwned.com/Passwords">Have I Been Pwned – Pwned Passwords</a></td><td>CC BY 4.0</td></tr>
+<tr><td>Tłumaczenie</td><td>Google Translate; widget: <a href="https://mymemory.translated.net/">MyMemory</a></td><td>warunki dostawców</td></tr>
+<tr><td>Szukaj obrazem</td><td>Google Lens</td><td>warunki Google</td></tr>
+<tr><td>Śledzenie paczek</td><td>InPost (API ShipX); strony przewoźników</td><td>warunki dostawców</td></tr>
+<tr><td>Ikony stron</td><td>strony kafelków; serwis ikon DuckDuckGo</td><td>ikony należą do właścicieli stron</td></tr>
+<tr><td>Wiadomości RSS</td><td>wybrane kanały (np. BBC, Hacker News, TVN24, Niebezpiecznik)</td><td>treści należą do wydawców</td></tr>
+</table></div>
+
+<h2 id="uwagi">Uwagi</h2>
+<ul>
+  <li>Nazwy i logo usług należą do ich właścicieli; Luna nie jest z nimi powiązana – zob. <a href="regulamin.html#p6">regulamin, pkt 6</a>.</li>
+  <li>Część danych (Oficjalne Polskie Filtry, SponsorBlock) ma licencję niekomercyjną – przy komercyjnym rozpowszechnianiu Luny trzeba je
+    wyłączyć lub uzyskać zgodę autorów.</li>
+  <li>Zauważyłeś brakujące lub błędne oznaczenie licencji? <a href="https://github.com/z4k0lzakol/Luna/issues">Zgłoś to</a> – poprawimy je.</li>
+</ul>
+</article>
+</div>
+
+<footer><div class="wrap">
+  <a class="brand" href="./" style="font-size:15px"><img src="img/logo.png" alt="" style="width:22px;height:22px">Luna</a>
+  <span>Wolne oprogramowanie na licencji GNU GPL v3.</span>
+  <span style="margin-left:auto"><a href="privacy.html">Prywatność</a> · <a href="regulamin.html">Regulamin</a> ·
+    <a href="licencje.html">Licencje</a> · <a href="https://github.com/z4k0lzakol/Luna">GitHub</a></span>
+</div></footer>
+</body>
+</html>

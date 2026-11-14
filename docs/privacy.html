@@ -3,76 +3,126 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Luna – polityka prywatności</title>
+<title>Polityka prywatności – Luna</title>
+<meta name="description" content="Jak Luna traktuje Twoje dane: wszystko zostaje na Twoim komputerze, bez kont i serwerów Luny.">
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="theme-color" content="#0a0a0a">
-<style>
-  :root { --bg:#0b0b0b; --fg:#d6d6d6; --muted:#8a8a8a; --line:#232323; --link:#8ab4ff; }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.7 "Segoe UI", system-ui, sans-serif; }
-  main { max-width:760px; margin:0 auto; padding:56px 20px 96px; }
-  h1 { color:#f2f2f2; font-size:30px; margin:0 0 6px; }
-  h2 { color:#ececec; font-size:20px; margin:36px 0 10px; }
-  p, li { margin:0 0 10px; }
-  .muted { color:var(--muted); font-size:14px; }
-  a { color:var(--link); text-decoration:none; } a:hover { text-decoration:underline; }
-  table { border-collapse:collapse; width:100%; font-size:15px; margin:8px 0 14px; }
-  td, th { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
-  th { color:#ececec; font-weight:600; }
-  hr { border:none; border-top:1px solid var(--line); margin:48px 0; }
-  code { background:#161616; padding:1px 5px; border-radius:4px; font-size:14px; }
-</style>
+<link rel="stylesheet" href="legal.css">
 </head>
 <body>
-<main>
-<h1>Polityka prywatności Luny</h1>
-<p class="muted">Obowiązuje od 8 listopada 2026 r. · <a href="./">Strona główna</a> · <a href="#en">English version</a></p>
+<nav><div class="wrap">
+  <a class="brand" href="./"><img src="img/logo.png" alt="">Luna</a>
+  <div class="links"><a href="./">Strona główna</a><a class="on" href="privacy.html">Prywatność</a>
+    <a href="regulamin.html">Regulamin</a><a href="licencje.html">Licencje</a></div>
+</div></nav>
 
-<p>Luna to przeglądarka internetowa na komputer (Windows), która działa w całości na komputerze użytkownika.
-Luna nie ma własnych serwerów: nie zbiera, nie przesyła, nie sprzedaje i nie udostępnia nikomu danych użytkownika.</p>
+<div class="page">
+<aside class="toc"><b>Na tej stronie</b>
+  <a href="#skrot">W skrócie</a><a href="#kto">Kto odpowiada</a><a href="#lokalnie">Dane na komputerze</a>
+  <a href="#uslugi">Połączenia z usługami</a><a href="#logowanie">Logowanie na stronach</a><a href="#sync">Synchronizacja i kopia</a>
+  <a href="#strona">Ta strona internetowa</a><a href="#prawa">Twoje prawa</a><a href="#dzieci">Dzieci</a>
+  <a href="#zmiany">Zmiany i kontakt</a><a href="#en">English summary</a></aside>
 
-<h2>Logowanie na stronach</h2>
-<p>Luna nie ma widgetów ani integracji łączących się z kontami w innych usługach i nie pobiera z nich danych.
-Logując się na stronie (np. Gmail, Discord, Claude) w karcie lub panelu Luny, użytkownik loguje się bezpośrednio na tej stronie,
-jak w każdej przeglądarce – sesja (ciasteczka) zostaje w lokalnym profilu Luny na komputerze.</p>
+<article>
+<h1>Polityka prywatności</h1>
+<p class="meta">Obowiązuje od 14 listopada 2026 r. · dotyczy programu Luna i strony z4k0lzakol.github.io/Luna</p>
 
-<h2>Usuwanie danych</h2>
-<p>Usunięcie Luny wraz z jej plikami w katalogu domowym (<code>.luna_*</code>) usuwa wszystkie dane programu.
-Ciasteczka i dane stron można też usunąć w menu Luny: Usuń dane przeglądania.</p>
+<div class="box hi" id="skrot">
+<p><b>W skrócie:</b> Luna działa w całości na Twoim komputerze. Nie ma kont, własnych serwerów, reklam ani analityki.
+Autor Luny nie zbiera, nie otrzymuje i nie sprzedaje żadnych Twoich danych. Do zewnętrznych usług trafia tylko to, co jest
+potrzebne do funkcji, której używasz (np. tekst strony do tłumacza po kliknięciu „Przetłumacz”) – lista jest poniżej.</p>
+</div>
 
-<h2>Inne dane w Lunie</h2>
-<p>Historia przeglądania, kafelki, ustawienia, notatki i zapisane hasła są przechowywane lokalnie na komputerze użytkownika.
-Hasła są szyfrowane mechanizmem systemu Windows (DPAPI). Kopia zapasowa tworzona w Lunie jest szyfrowana hasłem podanym przez użytkownika
-i trafia tylko tam, gdzie użytkownik ją zapisze. Podpowiedzi wyszukiwania z sieci (do wyłączenia w ustawieniach) wysyłają wpisywany tekst
-do wybranej wyszukiwarki, tak jak w innych przeglądarkach.</p>
+<h2 id="kto">Kto odpowiada za Lunę</h2>
+<p>Lunę tworzy autor projektu udostępnionego na GitHubie jako
+<a href="https://github.com/z4k0lzakol/Luna">z4k0lzakol/Luna</a> (dalej: „Autor”). Ponieważ Luna nie przesyła Autorowi żadnych danych,
+Autor nie przetwarza Twoich danych osobowych w związku z korzystaniem z programu. Dane, które wpisujesz i przeglądasz w Lunie,
+są pod Twoją kontrolą na Twoim komputerze. Usługi zewnętrzne, z którymi łączysz się przez Lunę, przetwarzają dane według
+własnych polityk prywatności.</p>
 
-<h2>Dzieci</h2>
-<p>Luna nie jest skierowana do dzieci poniżej 13 lat i nie zbiera świadomie ich danych.</p>
+<h2 id="lokalnie">Dane zapisywane na Twoim komputerze</h2>
+<p>W folderze użytkownika (pliki i foldery zaczynające się od <code>.luna</code>) Luna przechowuje:</p>
+<ul>
+  <li>kafelki, zakładki, historię przeglądania, listę „Do przeczytania”, zakreślenia i notatki, ustawienia i sesję kart;</li>
+  <li>profil przeglądarki: ciasteczka, logowania do stron, pamięć podręczną, uprawnienia stron;</li>
+  <li>zapisane hasła, kody 2FA i adresy – <b>zaszyfrowane</b> mechanizmem systemu Windows (DPAPI), dostępne tylko dla Twojego konta;</li>
+  <li>dziennik błędów programu (<code>.luna_bledy.log</code>) – tylko lokalnie, nigdzie nie jest wysyłany.</li>
+</ul>
+<p>Historię, ciasteczka, pamięć podręczną i hasła usuniesz w menu Luny (Usuń dane przeglądania, Ctrl+Shift+Del), a wszystkie dane – kasując te pliki. Profile Luny mają osobne dane w
+folderze <code>.luna_profile_uzytkownikow</code>.</p>
 
-<h2>Zmiany i kontakt</h2>
-<p>O zmianach tej polityki informuje data na górze strony. Pytania dotyczące prywatności można zgłaszać przez
-<a href="https://github.com/z4k0lzakol/Luna/issues">GitHub (zgłoszenia projektu Luna)</a>.</p>
+<h2 id="uslugi">Połączenia z usługami zewnętrznymi</h2>
+<p>Jak każda przeglądarka, Luna łączy się ze stronami, które otwierasz – widzą one wtedy Twój adres IP i dane, które im wysyłasz.
+Poza tym niektóre funkcje Luny korzystają z usług zewnętrznych:</p>
+<div class="tablewrap"><table>
+<tr><th>Funkcja</th><th>Usługa</th><th>Co trafia do usługi</th><th>Kiedy / jak wyłączyć</th></tr>
+<tr><td>Wyszukiwanie i podpowiedzi</td><td>wybrana wyszukiwarka (Brave, Google, DuckDuckGo…)</td><td>wpisywany tekst</td><td>przy wpisywaniu; „Podpowiedzi z sieci” wyłączysz w Ustawieniach → Funkcje</td></tr>
+<tr><td>Tłumaczenie stron i zaznaczeń</td><td>Google Translate</td><td>tekst strony lub zaznaczenia</td><td>dopiero po kliknięciu „Przetłumacz”</td></tr>
+<tr><td>Widget Tłumacz</td><td>MyMemory (translated.net)</td><td>wpisany tekst</td><td>tylko gdy używasz widgetu</td></tr>
+<tr><td>Szukaj obrazem</td><td>Google Lens</td><td>zaznaczony fragment strony lub obraz</td><td>tylko po wybraniu tej opcji</td></tr>
+<tr><td>Panel AI i komunikatory</td><td>wybrana usługa (np. ChatGPT, Claude, WhatsApp)</td><td>to, co wpiszesz; przy „Podsumuj stronę” – tekst strony</td><td>tylko gdy używasz panelu; funkcje wyłączysz w Ustawieniach</td></tr>
+<tr><td>Pogoda</td><td>Open-Meteo; ipwho.is</td><td>współrzędne miasta; adres IP do ustalenia przybliżonej lokalizacji, gdy nie wybrano miasta</td><td>gdy widget Pogoda jest włączony; wybierz miasto, aby nie używać lokalizacji z IP</td></tr>
+<tr><td>Rynki i waluty</td><td>CoinGecko, Yahoo Finance, ExchangeRate-API</td><td>nazwy notowań (bez danych o Tobie)</td><td>gdy widget jest włączony</td></tr>
+<tr><td>Paczki</td><td>InPost (API); strony przewoźników</td><td>numer przesyłki, który wpiszesz</td><td>gdy śledzisz przesyłkę</td></tr>
+<tr><td>Ikony kafelków</td><td>strona kafelka; serwis ikon DuckDuckGo</td><td>nazwa domeny kafelka</td><td>przy dodaniu kafelka</td></tr>
+<tr><td>Sprawdzanie wycieków haseł</td><td>Have I Been Pwned</td><td>5 pierwszych znaków skrótu SHA-1 hasła (samo hasło nigdy)</td><td>tylko po kliknięciu „Sprawdź”</td></tr>
+<tr><td>Pomijanie wstawek na YouTube</td><td>SponsorBlock (sponsor.ajay.app)</td><td>4 znaki skrótu identyfikatora filmu</td><td>na YouTube; wyłączysz w Ustawieniach → Funkcje</td></tr>
+<tr><td>Blokada reklam</td><td>serwery list filtrów (GitHub, EasyList i inne)</td><td>zwykłe pobranie pliku listy</td><td>co kilka dni</td></tr>
+<tr><td>Słowniki pisowni, czcionki</td><td>serwery Google</td><td>zwykłe pobranie plików</td><td>jednorazowo</td></tr>
+<tr><td>Aktualizacje</td><td>GitHub</td><td>zwykłe sprawdzenie nowej wersji</td><td>co 12 godzin; wyłączysz w Ustawieniach → Funkcje</td></tr>
+</table></div>
+<p>Te usługi działają według własnych regulaminów i polityk prywatności. Luna nie dodaje do zapytań żadnych identyfikatorów
+użytkownika.</p>
+
+<h2 id="logowanie">Logowanie na stronach</h2>
+<p>Luna nie ma widgetów ani integracji łączących się z kontami w innych usługach i nie pobiera z nich danych. Logując się na stronie
+(np. Gmail, Discord, Claude) w karcie lub panelu Luny, logujesz się bezpośrednio na tej stronie, jak w każdej przeglądarce –
+sesja zostaje w lokalnym profilu Luny.</p>
+
+<h2 id="sync">Synchronizacja i kopia zapasowa</h2>
+<p>Synchronizacja (opcjonalna) zapisuje dane Luny w folderze, który sam wskażesz – np. OneDrive albo Dysk Google na Twoim komputerze.
+Plik jest zaszyfrowany hasłem synchronizacji, którego Autor nie zna. Kopia zapasowa trafia tylko tam, gdzie ją zapiszesz, i również
+jest zaszyfrowana Twoim hasłem. Zapomnianego hasła nie da się odzyskać.</p>
+
+<h2 id="strona">Ta strona internetowa</h2>
+<p>Strona z4k0lzakol.github.io/Luna jest hostowana przez GitHub Pages (GitHub, Inc.). Strona nie używa ciasteczek, analityki
+ani skryptów śledzących i nie wymaga zgody na ciasteczka. GitHub może zapisywać techniczne dane odwiedzin (np. adres IP) w celach
+bezpieczeństwa – zgodnie z <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">polityką
+prywatności GitHuba</a>.</p>
+
+<h2 id="prawa">Twoje prawa</h2>
+<p>Ponieważ Autor nie ma Twoich danych, nie musisz o nic go prosić: wszystkie dane możesz w każdej chwili przejrzeć, wyeksportować
+(kopia zapasowa, eksport zakładek) i usunąć sam w Lunie. Prawa wynikające z RODO (dostęp, sprostowanie, usunięcie, sprzeciw,
+skarga do Prezesa Urzędu Ochrony Danych Osobowych) wobec usług zewnętrznych realizujesz u ich dostawców.</p>
+
+<h2 id="dzieci">Dzieci</h2>
+<p>Luna nie jest skierowana do dzieci poniżej 13 lat. Młodsze dzieci powinny korzystać z niej pod opieką rodzica lub opiekuna.</p>
+
+<h2 id="zmiany">Zmiany i kontakt</h2>
+<p>O zmianach tej polityki informuje data na górze strony, a ważne zmiany są opisane w oknie „Co nowego” w Lunie. Pytania i zgłoszenia:
+<a href="https://github.com/z4k0lzakol/Luna/issues">zgłoszenia projektu Luna na GitHubie</a>. Zobacz też
+<a href="regulamin.html">regulamin</a> i <a href="licencje.html">licencje</a>.</p>
 
 <hr>
+<h2 id="en">English summary</h2>
+<p>Luna runs entirely on your computer. It has no accounts, no servers of its own, no ads and no analytics; the author receives no
+data about you. Your history, bookmarks, settings and browser profile stay in <code>.luna*</code> files in your user folder;
+passwords are encrypted with Windows DPAPI. Some features contact third-party services only when used (search suggestions,
+Google Translate, Google Lens, AI and messenger websites, Open-Meteo/ipwho.is for weather, CoinGecko/Yahoo Finance/ExchangeRate-API,
+InPost tracking, DuckDuckGo icons, Have I Been Pwned with a 5-character hash prefix, SponsorBlock, filter-list, dictionary and update
+downloads) – see the table above. Optional sync and backups are encrypted with your own password and stored where you choose.
+This website is hosted on GitHub Pages and uses no cookies or analytics. Questions:
+<a href="https://github.com/z4k0lzakol/Luna/issues">GitHub issues</a>.</p>
+</article>
+</div>
 
-<h1 id="en">Luna Privacy Policy</h1>
-<p class="muted">Effective November 2, 2026</p>
-<p>Luna is a desktop web browser (Windows) that runs entirely on the user's computer. Luna has no servers of its own:
-it does not collect, transmit, sell or share user data with anyone.</p>
-
-<h2>Signing in on websites</h2>
-<p>Luna has no widgets or integrations that connect to accounts on other services and does not fetch data from them. Signing in on a website
-(e.g. Gmail, Discord, Claude) in a Luna tab or panel signs in directly on that website, as in any browser; the session (cookies)
-stays in Luna's local profile on the computer.</p>
-
-<h2>Deletion</h2>
-<p>Removing Luna and its files in the home folder (<code>.luna_*</code>) deletes all of its data. Cookies and site data can also be
-cleared in Luna's menu: Clear browsing data.</p>
-
-<h2>Contact</h2>
-<p>Privacy questions: <a href="https://github.com/z4k0lzakol/Luna/issues">GitHub issues for the Luna project</a>.</p>
-</main>
+<footer><div class="wrap">
+  <a class="brand" href="./" style="font-size:15px"><img src="img/logo.png" alt="" style="width:22px;height:22px">Luna</a>
+  <span>Wolne oprogramowanie na licencji GNU GPL v3.</span>
+  <span style="margin-left:auto"><a href="privacy.html">Prywatność</a> · <a href="regulamin.html">Regulamin</a> ·
+    <a href="licencje.html">Licencje</a> · <a href="https://github.com/z4k0lzakol/Luna">GitHub</a></span>
+</div></footer>
 </body>
 </html>

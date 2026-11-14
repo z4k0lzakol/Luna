@@ -14,7 +14,9 @@
   <a href="#co-potrafi">Co potrafi</a> ·
   <a href="#do-czego-się-przyda">Do czego się przyda</a> ·
   <a href="#co-dalej">Co dalej</a> ·
-  <a href="docs/privacy.html">Prywatność</a>
+  <a href="https://z4k0lzakol.github.io/Luna/privacy.html">Prywatność</a> ·
+  <a href="https://z4k0lzakol.github.io/Luna/regulamin.html">Regulamin</a> ·
+  <a href="LICENSE">Licencja GPL v3</a>
 </p>
 
 <p align="center">
@@ -148,9 +150,17 @@ Plany na kolejne wersje:
 
 Docelowo instalacja ma wyglądać tak: **pobierz → zainstaluj → przewodnik przenosi Twoje dane z poprzedniej przeglądarki** – i to wszystko.
 
+## Licencja
+
+Luna jest wolnym oprogramowaniem na licencji **[GNU GPL v3](LICENSE)** – możesz ją używać, zmieniać i udostępniać dalej na warunkach licencji. Program jest dostarczany **bez żadnej gwarancji**.
+
+Warunek dodatkowy (pkt 7 GPL v3): nazwa „Luna” i logo Luny nie są objęte licencją – zmienione wersje muszą być wyraźnie oznaczone i nie mogą być przedstawiane jako oficjalna Luna.
+
+Zasady korzystania: [regulamin](https://z4k0lzakol.github.io/Luna/regulamin.html) · licencje składników, list filtrów i źródła danych: [licencje](https://z4k0lzakol.github.io/Luna/licencje.html).
+
 ## Prywatność
 
-Luna działa w całości na Twoim komputerze i nie ma własnych serwerów. Logowania do stron zostają w lokalnym profilu, hasła są szyfrowane, a do zewnętrznych usług trafia tylko to, czego używasz (np. strona do tłumaczenia po kliknięciu „Przetłumacz”). Szczegóły: [polityka prywatności](docs/privacy.html).
+Luna działa w całości na Twoim komputerze i nie ma własnych serwerów. Logowania do stron zostają w lokalnym profilu, hasła są szyfrowane, a do zewnętrznych usług trafia tylko to, czego używasz (np. strona do tłumaczenia po kliknięciu „Przetłumacz”). Szczegóły: [polityka prywatności](https://z4k0lzakol.github.io/Luna/privacy.html).
 
 ---
 
