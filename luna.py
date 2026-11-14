@@ -10,8 +10,7 @@ Dane w katalogu domowym (odpowiednik localStorage):
   .luna.json (kafelki)    .luna_ostatnie.json (ostatnie)    .luna_historia.json (historia do podpowiedzi)
   .luna_ikony/ favicony   .luna_fonty/ fonty                .luna_profile/ profil przeglądarki (zapamiętane logowania)
 
-Luna nie łączy się z kontami przez zewnętrzne aplikacje (OAuth): liczniki nieprzeczytanych na kafelkach korzystają
-z logowania z kart Luny (wspólny profil, SessionBridge), a komunikatory działają w panelu aplikacji.
+Luna nie łączy się z kontami w innych usługach i nie odpytuje ich w tle; komunikatory działają w panelu aplikacji.
 """
 import sys, json, math, re, html, os, random, base64, time, ast, operator, secrets, hashlib, weakref
 import urllib.parse
@@ -2010,7 +2009,6 @@ class Store(QObject):
         self.bump_day(emit=False)  # samo uruchomienie przeglądarki liczy się do serii
         SHIELD.append(adblock.AdBlock(self, home=BASE_HOME, legacy_domains=TRACKERS, legacy_file=BLOCKLIST))
         VAULT.append(Vault()); DOWNLOADS.append(DownloadManager())   # przed pierwszym profilem
-        self.session = SessionBridge(self)  # logowania z kart Luny dostępne dla widgetów i kafelków
 
     @staticmethod
     def _load(path, default):
@@ -2558,8 +2556,6 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                 "reklamy, śledzenie, wyskakujące okna i komunikaty „wyłącz AdBlocka”. Działa niewidocznie dla stron.", True),
     "passwords": ("Menedżer haseł", "Proponuje zapis haseł po zalogowaniu i sam wypełnia formularze. Hasła są szyfrowane "
                   "na tym komputerze.", True),
-    "discord_watch": ("Licznik Discorda w tle", "Ukryty Discord Web (wyciszony) liczy wzmianki dla kafelka Discorda – ok. 200–300 MB RAM. "
-                      "Wyłączony: licznik tylko z otwartych kart Discorda.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
     "instant_back": ("Błyskawiczne „Wstecz”", "Strony, z których przechodzisz dalej, zostają w pamięci, więc powrót jest "
@@ -3136,7 +3132,6 @@ class WidgetHost(QObject):
     def set_active(self, active):
         """Okno nieaktywne → wstrzymujemy odpytywanie API i timery widgetów (oszczędność baterii/CPU)."""
         self.app_active = active
-        self.store.session.set_active(active)
         for w in list(self.inst.values()):
             w._sync_active()
 
@@ -4537,238 +4532,6 @@ class RssWidget(WidgetFrame):
                 raise ValueError
         except Exception:
             self.rows.addWidget(lbl("Nie udało się wczytać kanału RSS.", "muted2"))
-
-
-ATOM = "{http://purl.org/atom/ns#}"
-GMAIL_FEED = "https://mail.google.com/mail/u/0/feed/atom"
-DISCORD_APP = "https://discord.com/channels/@me"
-HOST_ALIAS = {"gmail.com": "mail.google.com", "inbox.google.com": "mail.google.com"}
-# licznik w tytule karty: „(3) Discord”, „Odebrane (5) - … - Gmail”; 1–3 cyfry, żeby nie łapać lat w tytułach filmów
-TITLE_COUNT = re.compile(r"^\((\d{1,3})\+?\)\s|\s\((\d{1,3})\+?\)\s+[-–|]")
-
-
-class NoDiscordAppCheck(QWebEngineUrlRequestInterceptor):
-    """Discord Web pyta lokalny port aplikacji Discord (127.0.0.1:6463–6472). Gdy aplikacja działa, zamiast klienta
-    pokazuje ekran „Wykryto aplikację Discord” i czeka na kliknięcie – ukryta strona i Czat w widgecie stałyby wtedy
-    w miejscu. Dla tych dwóch stron blokujemy to sprawdzenie (zwykłe karty działają bez zmian)."""
-
-    def interceptRequest(self, info):
-        u = info.requestUrl()
-        if u.host() in ("127.0.0.1", "localhost") and 6463 <= u.port() <= 6472:
-            info.block(True)
-
-
-_NO_DISCORD_APP = []
-
-
-def no_discord_app_check(page):
-    if not _NO_DISCORD_APP:
-        _NO_DISCORD_APP.append(NoDiscordAppCheck(QApplication.instance()))
-    page.setUrlRequestInterceptor(_NO_DISCORD_APP[0])
-
-
-class SessionBridge(QObject):
-    """Połączenie przez sesję – bez kluczy OAuth. Logowanie odbywa się normalnie w karcie Luny (wspólny profil
-    WebEngine), a most kopiuje ciasteczka wybranych usług do własnego QNetworkAccessManagera. Dzięki temu widgety
-    i kafelki dostają dane jako zalogowany użytkownik. Źródła liczników: kanał Atom Gmaila (odpytywany tylko, gdy
-    ktoś go potrzebuje i okno jest aktywne) oraz tytuły otwartych kart („(3) …”) – te bez żadnych zapytań."""
-    changed = pyqtSignal()          # zmiana stanu logowania (Google/Discord) lub nowe dane Gmaila
-    counts_changed = pyqtSignal()   # liczniki na kafelkach
-    DOMAINS = ("google.com",)       # tylko te ciasteczka trafiają do mostu
-    LOGIN = {"google": ("google.com", ("SID", "__Secure-1PSID", "__Secure-3PSID"))}
-    POLLED = {"mail.google.com"}    # hosty z licznikiem odpytywanym w tle (nie znikają po zamknięciu karty)
-
-    def __init__(self, store):
-        super().__init__()
-        self.store, self.active, self._subs = store, True, 0
-        self.jar = QNetworkCookieJar()
-        self.nam = QNetworkAccessManager(self); self.nam.setCookieJar(self.jar)
-        self.counts, self._tab_host = {}, {}
-        self.gmail = {"count": None, "items": [], "error": "", "ts": 0.0}
-        self._busy = False; self._state = {}; self._dpage = None
-        self._emit = QTimer(self); self._emit.setSingleShot(True); self._emit.timeout.connect(self._cookies_settled)
-        self._poll = QTimer(self); self._poll.timeout.connect(self.poll)
-        self._eval = QTimer(self); self._eval.setSingleShot(True); self._eval.timeout.connect(self._update_poll)
-        for sig in (store.changed, store.layout_changed, store.features_changed):   # kafelki, widgety, funkcje
-            sig.connect(lambda: self._eval.start(400))
-        cs = get_profile().cookieStore()
-        cs.cookieAdded.connect(self._added); cs.cookieRemoved.connect(self._removed)
-        cs.loadAllCookies()
-
-    # --- ciasteczka ---
-    def _ours(self, c):
-        d = c.domain().lstrip(".")
-        return any(d == x or d.endswith("." + x) for x in self.DOMAINS)
-
-    def _added(self, c):
-        if self._ours(c):
-            self.jar.insertCookie(c); self._emit.start(300)   # ciasteczka przychodzą seriami – jedna reakcja
-
-    def _removed(self, c):
-        if self._ours(c):
-            self.jar.deleteCookie(c); self._emit.start(300)
-
-    def _cookies_settled(self):
-        state = {k: self.logged_in(k) for k in self.LOGIN}
-        if state != self._state:
-            self._state = state
-            if not state.get("google"):
-                self.gmail.update(count=None, items=[], error="", ts=0.0); self._set_count("mail.google.com", 0)
-            self.changed.emit(); self._update_poll()
-
-    def logged_in(self, svc):
-        dom, names = self.LOGIN[svc]
-        for c in self.jar.allCookies():
-            d = c.domain().lstrip(".")
-            if (d == dom or d.endswith("." + dom)) and bytes(c.name()).decode() in names:
-                return True
-        return False
-
-    # --- liczniki kafelków ---
-    @staticmethod
-    def _host(url):
-        h = host_of(url)
-        return HOST_ALIAS.get(h, h)
-
-    def count_for(self, url):
-        return self.counts.get(self._host(url), 0)
-
-    def _set_count(self, host, n):
-        if self.counts.get(host, 0) != n:
-            if n:
-                self.counts[host] = n
-            else:
-                self.counts.pop(host, None)
-            self.counts_changed.emit()
-
-    def on_tab_title(self, tab, url, title):
-        host = self._host(url)
-        if host == "discord.com":
-            self._discord_url(url)
-        old = self._tab_host.get(id(tab))
-        if old and old != host:
-            self._drop(old, tab)
-        self._tab_host[id(tab)] = host
-        m = TITLE_COUNT.search(title or "")
-        if m or host in self.counts:
-            self._set_count(host, int(m.group(1) or m.group(2)) if m else 0)
-
-    def forget_tab(self, tab):
-        host = self._tab_host.pop(id(tab), None)
-        if host:
-            self._drop(host, tab)
-
-    def _drop(self, host, tab):
-        others = [t for k, t in self._tab_host.items() if k != id(tab) and t == host]
-        polled = host in self.POLLED or (host == "discord.com" and self._dpage is not None)   # ukryty Discord liczy dalej
-        if not polled and not others:
-            self._set_count(host, 0)
-
-    # --- Gmail (kanał Atom skrzynki odbiorczej) ---
-    def register(self):
-        self._subs += 1; self._update_poll()
-
-    def unregister(self):
-        self._subs = max(0, self._subs - 1); self._update_poll()
-
-    def set_active(self, active):
-        self.active = active; self._update_poll()
-
-    def _wanted(self):
-        tile = any(self._host(b["url"]) == "mail.google.com" for b in self.store.items)
-        return self.active and (self._subs > 0 or tile) and self.logged_in("google")
-
-    def _update_poll(self):
-        self._update_discord()
-        if self._wanted():
-            if not self._poll.isActive():
-                self._poll.start(180000)
-                if time.time() - self.gmail["ts"] > 60:
-                    self.poll()
-        else:
-            self._poll.stop()
-
-    def poll(self):
-        if self._busy or not self.logged_in("google"):
-            return
-        self._busy = True
-        req = QNetworkRequest(QUrl(GMAIL_FEED))
-        req.setAttribute(QNetworkRequest.Attribute.RedirectPolicyAttribute,
-                         QNetworkRequest.RedirectPolicy.NoLessSafeRedirectPolicy)
-        req.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, get_profile().httpUserAgent())
-        req.setTransferTimeout(15000)
-        r = self.nam.get(req); r.finished.connect(lambda r=r: self._gmail_reply(r))
-
-    # --- Discord (licznik wzmianek z tytułu klienta WWW: „(3) Discord | …”) ---
-    def discord_logged_in(self):
-        return bool(self.store.settings.get("discord", {}).get("web"))
-
-    def _discord_url(self, url):
-        """Każdy widok Discorda (karta, Czat w widgecie, ukryta strona) mówi, czy sesja jest aktywna."""
-        path = QUrl(url).path()
-        if path.startswith("/channels"):
-            self._set_discord_web(True)
-        elif path.startswith("/login"):
-            self._set_discord_web(False)
-
-    def _set_discord_web(self, on):
-        if on != self.discord_logged_in():
-            self.store.settings.setdefault("discord", {})["web"] = on; self.store.save_soon()
-            if not on:
-                self._set_count("discord.com", 0)
-            self.changed.emit(); self._update_discord()
-
-    def _discord_wanted(self):
-        st = self.store
-        used = any(self._host(b["url"]) == "discord.com" for b in st.items)
-        return st.feature("discord_watch") and used and self.discord_logged_in()
-
-    def _update_discord(self):
-        if self._discord_wanted() and self._dpage is None:
-            pg = self._dpage = QWebEnginePage(get_profile(), self)
-            pg.setAudioMuted(True)      # dźwięki powiadomień tylko z widocznego Discorda
-            no_discord_app_check(pg)
-            pg.titleChanged.connect(lambda t: self.on_tab_title(pg, pg.url().toString(), t))
-            pg.urlChanged.connect(lambda u: self._discord_url(u.toString()))
-            pg.setUrl(QUrl(DISCORD_APP))
-        elif not self._discord_wanted() and self._dpage is not None:
-            pg, self._dpage = self._dpage, None
-            self.forget_tab(pg); pg.deleteLater()
-
-    def _gmail_reply(self, r):
-        self._busy = False
-        status = r.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
-        neterr = r.error() != QNetworkReply.NetworkError.NoError
-        data = bytes(r.readAll()); r.deleteLater()
-        try:
-            root = ET.fromstring(data)
-            if root.tag != ATOM + "feed":   # np. strona logowania, która akurat jest poprawnym XML-em
-                raise ValueError
-            count = int(root.findtext(ATOM + "fullcount") or 0)
-            m = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", root.findtext(ATOM + "title") or "")
-            if m:
-                self.gmail["email"] = m.group(0)
-        except (ET.ParseError, ValueError):
-            root = None
-        if root is None:   # 401 albo strona logowania zamiast kanału
-            self.gmail["error"] = ("need" if status in (401, 403) or (status == 200 and not neterr)
-                                   else "Brak połączenia z Gmailem.")
-            self.changed.emit(); return
-        items = []
-        for e in root.findall(ATOM + "entry")[:6]:
-            link = e.find(ATOM + "link")
-            when = None
-            try:
-                when = datetime.fromisoformat((e.findtext(ATOM + "issued") or e.findtext(ATOM + "modified") or "")
-                                              .replace("Z", "+00:00")).astimezone()
-            except ValueError:
-                pass
-            items.append({"from": e.findtext(ATOM + "author/" + ATOM + "name") or e.findtext(ATOM + "author/" + ATOM + "email") or "",
-                          "subject": e.findtext(ATOM + "title") or "", "summary": e.findtext(ATOM + "summary") or "",
-                          "url": link.get("href") if link is not None else "https://mail.google.com/mail/u/0/#inbox",
-                          "when": when})
-        self.gmail.update(count=count, items=items, error="", ts=time.time())
-        self._set_count("mail.google.com", count); self.changed.emit()
 
 
 # --- kod QR (czysty Python: tryb bajtowy, poziom korekcji M, wersje 1–40) ---
@@ -7045,7 +6808,6 @@ class HomePage(QWidget):
         self._dirty = False
         self._rt = QTimer(self); self._rt.setSingleShot(True); self._rt.timeout.connect(self.refresh)
         self.store.changed.connect(self._soon)
-        self.store.session.counts_changed.connect(self._soon)
         self.refresh()
 
     def _soon(self):
@@ -7126,7 +6888,7 @@ class HomePage(QWidget):
         self.count.setText(f"{n} {plural(n)}")
         self.grid.blockSignals(True); self.grid.clear()
         for b in self.store.items:
-            it = QListWidgetItem(make_icon(b["name"], b["url"], self.store.session.count_for(b["url"])), b["name"])
+            it = QListWidgetItem(make_icon(b["name"], b["url"]), b["name"])
             it.setData(Qt.ItemDataRole.UserRole, b["url"])
             it.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
             it.setToolTip(b["url"])
@@ -12749,14 +12511,6 @@ class Browser(QMainWindow):
     def about(self):
         AboutDialog(self).exec()
 
-    def open_google(self, url):
-        """Strony Google: w karcie Luny, gdy jest tam sesja Google; inaczej w zwykłej przeglądarce (Google blokuje logowanie
-        w osadzonym silniku, więc karta Luny pokazałaby tylko ekran logowania)."""
-        if self.store.session.logged_in("google"):
-            self.open_url_new_tab(url)
-        else:
-            QDesktopServices.openUrl(QUrl(url))
-
     # --- karty ---
     def new_tab(self, container="", ws=None, group="", title="", lazy_url="", activate=True):
         container = PRIVATE if self.private else (container if container in self.container_ids() else "")
@@ -12826,7 +12580,6 @@ class Browser(QMainWindow):
         i = self.stack.indexOf(tab)
         if remember:
             self._remember_closed(tab, i)
-        self.store.session.forget_tab(tab)
         self.bar.removeTab(i); self.stack.removeWidget(tab); tab.deleteLater()
         self.stack.setCurrentIndex(self.bar.currentIndex())
         self.sync_address(); self.tabs_changed()
@@ -13709,7 +13462,7 @@ class Browser(QMainWindow):
         gone = self.ws; ws = self.workspaces(); ws.remove(gone)
         self.switch_ws(ws[0])
         for t in mine:
-            i = self.stack.indexOf(t); self.store.session.forget_tab(t)
+            i = self.stack.indexOf(t)
             self.bar.removeTab(i); self.stack.removeWidget(t); t.deleteLater()
         self.stack.setCurrentIndex(self.bar.currentIndex()); self.tabs_changed()
 
@@ -14258,7 +14011,7 @@ class Browser(QMainWindow):
         r.finished.connect(done)
 
     def _plus_alias(self, cb):
-        base = self.store.settings.get("alias_base") or self.store.session.gmail.get("email", "")
+        base = self.store.settings.get("alias_base") or ""
         if not base:
             base, ok = QInputDialog.getText(self, "Alias e-mail", "Twój adres e-mail (aliasy: adres+strona@…), podajesz raz:")
             base = base.strip()
@@ -14331,8 +14084,6 @@ class Browser(QMainWindow):
         if i >= 0:
             self.set_tab_text(tab, title); self.decorate(tab)
         self.tabs_changed()
-        if tab.main is not None:
-            self.store.session.on_tab_title(tab, tab.main.url().toString(), title)
 
     def on_icon(self, tab, icon):
         tab.icon = icon; self.decorate(tab); self.tabs_changed()
