@@ -225,10 +225,18 @@ class _Interceptor(QWebEngineUrlRequestInterceptor):
         self.ab, self.profile = ab, profile
 
     def interceptRequest(self, info):
+        for hook in REQUEST_HOOKS:   # dodatkowe reguły programu (np. nagłówki dla logowania Google)
+            try:
+                hook(info)
+            except Exception:
+                pass
         try:
             self.ab._intercept(info, self.profile)
         except Exception:
             pass   # fail open
+
+
+REQUEST_HOOKS = []   # funkcje(info) wywoływane dla każdego zapytania, przed blokadą
 
 
 class _PState:

@@ -1250,6 +1250,23 @@ def get_profile(container: str = "") -> QWebEngineProfile:
     return _PROFILE[0]
 
 
+# Logowanie Google: accounts.google.com odrzuca przeglądarki, które uzna za „wbudowane w inną aplikację” (Qt WebEngine,
+# Electron, CEF) – „Sign in with a supported browser”. Tylko dla stron logowania Google Luna przedstawia się jak Firefox
+# (to samo robi qutebrowser, też oparty na Qt WebEngine); wszystkie inne strony widzą zwykłe Chromium.
+GOOGLE_SIGNIN_HOSTS = {"accounts.google.com"}
+_FF = "Gecko/20100101 Firefox/158.0"
+FIREFOX_UA = {"win32": f"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:158.0) {_FF}",
+              "darwin": f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:158.0) {_FF}"}.get(
+    sys.platform, f"Mozilla/5.0 (X11; Linux x86_64; rv:158.0) {_FF}")
+
+
+def google_signin_headers(info):
+    if info.requestUrl().host() in GOOGLE_SIGNIN_HOSTS:
+        info.setHttpHeader(b"User-Agent", FIREFOX_UA.encode())
+
+
+adblock.REQUEST_HOOKS.append(google_signin_headers)
+
 def _setup_profile(prof, base):
     if base is not None:
         try:
