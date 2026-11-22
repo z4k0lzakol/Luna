@@ -828,10 +828,17 @@ APP_KEYWORDS = {"yt": "youtube", "youtube": "youtube", "ytm": "ytmusic", "sp": "
                 "pinterest": "pinterest", "nf": "netflix", "netflix": "netflix", "linkedin": "linkedin"}
 
 
+FEAT_STORE = []   # magazyn ustawień głównego okna – dla funkcji modułu (skróty aplikacji, animacje)
+
+
+def feature_on(name):
+    return bool(FEAT_STORE[0].feature(name)) if FEAT_STORE else bool(FEATURES[name][2])
+
+
 def app_match(text):
     """(nazwa aplikacji, adres, zapytanie) dla „yt kot” / „ig #morze” / „tt @ktoś” / samego „yt”; None – zwykły tekst."""
     w = (text or "").strip().split(None, 1)
-    if not w or "://" in w[0]:
+    if not w or "://" in w[0] or not feature_on("app_keywords"):
         return None
     key = APP_KEYWORDS.get(w[0].lower())
     if key is None:
@@ -2628,8 +2635,24 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "passwords": ("Menedżer haseł", "Proponuje zapis haseł po zalogowaniu i sam wypełnia formularze. Hasła są szyfrowane "
                   "na tym komputerze.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
-    "ui_sounds": ("Dźwięki interfejsu", "Ciche dźwięki jak w filmie pokazowym: przeciąganie kart, podział ekranu, wysuwanie "
-                  "paneli, widgety, odhaczanie zadań, blokada reklam i kliknięcia przycisków.", True),
+    "ui_sounds": ("Dźwięki interfejsu", "Ciche dźwięki przy przeciąganiu kart, podziale ekranu, wysuwaniu paneli, widgetach, "
+                  "odhaczaniu zadań, blokadzie reklam i kliknięciach przycisków. Głośność: Ustawienia → Wygląd.", True),
+    "animations": ("Animacje interfejsu", "Płynne wysuwanie paneli, rozsuwanie podziału ekranu i pojawianie się elementów. "
+                   "Wyłączone: wszystko zmienia się od razu, bez ruchu.", True),
+    "app_keywords": ("Skróty aplikacji w pasku adresu", "Wpisz „yt koncert”, „sp lofi” albo „ig #morze”, żeby od razu szukać "
+                     "w aplikacji. Wyłączone: takie wpisy trafiają do zwykłej wyszukiwarki.", True),
+    "tab_preview": ("Podgląd karty po najechaniu", "Po najechaniu myszą na kartę pokazuje się jej miniatura i adres.", True),
+    "link_peek": ("Podgląd linku (Shift+klik)", "Shift+klik na linku otwiera podgląd strony bez nowej karty. "
+                  "Wyłączone: Shift+klik otwiera link w nowej karcie.", True),
+    "tab_drag_split": ("Dzielenie ekranu przeciąganiem karty", "Karta wyciągnięta z paska i upuszczona na stronę dzieli ekran. "
+                       "Wyłączone: podział tylko z menu albo skrótem Ctrl+\\.", True),
+    "sidebars_start_hidden": ("Panele z widgetami schowane na starcie", "Po uruchomieniu panele boczne są zwinięte – wysuwa je "
+                              "przycisk widgetów albo uchwyt przy krawędzi. Wyłączone: zostają tak, jak je zostawisz.", True),
+    "login_guard": ("Ochrona przed fałszywymi stronami logowania", "Ostrzega, gdy strona udaje serwis, na który się logujesz "
+                    "(np. podróbka banku).", True),
+    "otp_offer": ("Podpowiadanie kodów 2FA", "Gdy strona prosi o kod weryfikacyjny, a w sejfie jest klucz tej witryny, Luna "
+                  "proponuje jego wpisanie.", True),
+    "whats_new": ("Okno „Co nowego” po aktualizacji", "Po aktualizacji Luna raz pokazuje listę zmian.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
     "instant_back": ("Błyskawiczne „Wstecz”", "Strony, z których przechodzisz dalej, zostają w pamięci, więc powrót jest "
                      "natychmiastowy – kosztem ok. 50–100 MB RAM za każdą. Wyłączone: „Wstecz” wczytuje stronę ponownie "
@@ -2986,6 +3009,8 @@ class FluidAnimation(QObject):
         return self.State.Running if self._timer.isActive() else self.State.Stopped
 
     def start(self):
+        if not feature_on("animations"):   # animacje wyłączone – od razu wartość końcowa
+            self._apply(1.0); self.finished.emit(); return
         if not self._timer.isActive():
             self._timer_res(True)
         self._clock.start(); self._timer.start(self.frame_ms()); self._apply(0.0)
@@ -3155,6 +3180,11 @@ class Tween(QObject):
         self._curve = QEasingCurve(QEasingCurve.Type.OutCubic)
 
     def start(self):
+        if not feature_on("animations"):   # animacje wyłączone – od razu stan końcowy
+            self._step(1.0)
+            if self.done is not None:
+                self.done()
+            return
         FluidAnimation._timer_res(True)
         self._clock.start(); self._t.start(FluidAnimation.frame_ms()); self._step(0.0)
 
@@ -3220,7 +3250,7 @@ def wipe_split(tab, pm, ms=380):
     """Podział ekranu bez szarpania: strony od razu mają docelowe rozmiary (jedno przeliczenie), a nad nimi obraz
     poprzedniego widoku „zjeżdża” do krawędzi nowej strony i na końcu miękko znika."""
     sp = tab.split
-    if sp is None or not tab.sides or pm is None or pm.isNull() or not tab.isVisible():
+    if sp is None or not tab.sides or pm is None or pm.isNull() or not tab.isVisible() or not feature_on("animations"):
         return
     vert = sp.orientation() == Qt.Orientation.Vertical
     o = tab.sides[-1].mapTo(tab, QPoint(0, 0))
@@ -3244,6 +3274,8 @@ def wipe_split(tab, pm, ms=380):
 
 
 def soft_reveal(widgets, delay=40, gap=55, ms=260, pops=0.0):
+    if not feature_on("animations"):
+        return
     """Widgety pojawiają się po kolei (miękkie wyłanianie). Pomija widgety ze stroną WWW w środku – efekt
     przezroczystości psułby ich rysowanie."""
     k = 0
@@ -5930,11 +5962,25 @@ def page_box(title, subtitle=""):
 def page_features(dlg):
     w, l = page_box("Zarządzanie funkcjami", "Wyłączone moduły nie ładują zasobów ani nie wysyłają zapytań w tle. "
                                             "Zmiany zapisują się automatycznie.")
-    for fid, (name, desc, _) in FEATURES.items():
-        if fid == "battery_saver" and not has_battery():   # komputer stacjonarny – opcja niepotrzebna
+    groups = [("Wygląd i wygoda", ["animations", "ui_sounds", "dark_pages", "tab_preview", "sidebars_start_hidden",
+                                    "left", "right", "everywhere", "vertical_tabs", "workspaces"]),
+              ("Pasek adresu i wyszukiwanie", ["app_keywords", "suggest", "suggest_net"]),
+              ("Karty i strony", ["tab_drag_split", "link_peek", "restore_tabs", "sleep_tabs", "instant_back", "battery_saver",
+                                  "translate_offer", "spellcheck", "sponsorblock", "shortcuts"]),
+              ("Prywatność i bezpieczeństwo", ["adblock", "passwords", "login_guard", "otp_offer"]),
+              ("AI i komunikatory", ["assistant", "webapps"]),
+              ("Aktualizacje", ["updates", "auto_update", "whats_new"])]
+    listed = {f for _, ids in groups for f in ids}
+    groups.append(("Inne", [f for f in FEATURES if f not in listed]))
+    for title, ids in groups:
+        ids = [f for f in ids if f in FEATURES and not (f == "battery_saver" and not has_battery())]   # stacjonarny – bez baterii
+        if not ids:
             continue
-        l.addWidget(switch_row(name, desc, dlg.store.feature(fid), lambda v, f=fid: dlg.store.set_feature(f, v)))
-        sep = QFrame(); sep.setObjectName("sep"); l.addWidget(sep)
+        l.addSpacing(8); l.addWidget(lbl(title.upper(), "seclabel"))
+        for fid in ids:
+            name, desc, _ = FEATURES[fid]
+            l.addWidget(switch_row(name, desc, dlg.store.feature(fid), lambda v, f=fid: dlg.store.set_feature(f, v)))
+            sep = QFrame(); sep.setObjectName("sep"); l.addWidget(sep)
     l.addWidget(lbl("Język tłumaczenia", "h3"))
     l.addWidget(lbl("Na ten język Luna tłumaczy strony i zaznaczony tekst (z dowolnego języka).", "muted", wrap=True))
     lc = QComboBox()
@@ -5955,7 +6001,7 @@ def page_look(dlg):
     w, l = page_box("Wygląd", "Tło jest grafiką wektorową (SVG) renderowaną w rozdzielczości ekranu – ostrą także na Retina/HiDPI. Skaluje się w trybie „cover”.")
     store = dlg.store
     combo = QComboBox()
-    for key, name in (("stars", "Gwiazdy – czerń z poświatą i gwiazdami (jak w filmie)"), ("night", "Gładka czerń, strony w ramkach"),
+    for key, name in (("stars", "Gwiazdy – czerń z poświatą i gwiazdami"), ("night", "Gładka czerń, strony w ramkach"),
                       ("image", "Wektorowe – ukośne arkusze i poświata (ostre na HiDPI)"), ("gradient", "Gradient"),
                       ("solid", "Jednolite czarne")):
         combo.addItem(name, key)
@@ -9701,7 +9747,8 @@ class WelcomeWizard(LunaDialog):
         self._check(v, "Tryb kompaktowy", "Pasek adresu schowany – pojawia się po najechaniu na karty (Ctrl+Shift+F).",
                     bool(self.st.settings.get("compact")), lambda on: self.b.set_compact(on))
         self._feature(v, "workspaces", "Przestrzenie robocze", "Osobne zestawy kart, np. Praca, Zakupy, Hobby.")
-        self._feature(v, "ui_sounds", "Dźwięki interfejsu", "Ciche dźwięki jak w filmie: karty, podział ekranu, panele, widgety.")
+        self._feature(v, "ui_sounds", "Dźwięki interfejsu", "Ciche dźwięki: karty, podział ekranu, panele, widgety.")
+        self._feature(v, "animations", "Animacje interfejsu", "Płynne wysuwanie paneli i pojawianie się elementów.")
         vol = QSlider(Qt.Orientation.Horizontal); vol.setRange(0, 100); vol.setValue(int(self.st.settings.get("ui_volume", 60)))
         vol.setToolTip("Głośność dźwięków interfejsu"); vlab = lbl(f"Głośność dźwięków: {vol.value()}%", "muted2")
 
@@ -12380,6 +12427,8 @@ class SplitDropOverlay(QWidget):
             self._tick_t.stop()
 
     def _animate(self):
+        if not feature_on("animations"):   # bez animacji: od razu pełna nakładka i podświetlenie
+            self.fade = 1.0; self.glow = {self.zone: 1.0} if self.zone >= 0 else {}; self.update(); return
         if not self._tick_t.isActive():
             if not self._clock.isValid():
                 self._clock.start()
@@ -12816,6 +12865,8 @@ class Browser(QMainWindow):
         body = QHBoxLayout(self.bgframe); body.setContentsMargins(0, 0, 0, 0); body.setSpacing(0)
         self.host = WidgetHost(self.store, self)
         self._force_widgets = False   # przycisk widgetów pokazuje panele także na stronie WWW (jak w filmie)
+        if not FEAT_STORE:
+            FEAT_STORE.append(self.store)
         if not _UISND and QApplication.instance() is not None:
             _UISND.append(UiSounds())
         _UISND[0].store = self.store
@@ -12823,8 +12874,9 @@ class Browser(QMainWindow):
             QTimer.singleShot(700, lambda: ui_sound("chime", 0.55))   # jak logo w filmie
         if not self.store.settings.get("look_stars"):   # raz: tło z gwiazdami z filmu (inne tła dalej w Ustawieniach → Wygląd)
             self.store.settings["look_stars"] = True; self.store.settings["bg"] = "stars"; self.store.save_soon()
-        for sb_ in (self.host.left, self.host.right):   # jak w filmie: start bez paneli; wysuwa je przycisk widgetów
-            sb_.user_collapsed = sb_.collapsed = True; sb_.scroll.setVisible(False); sb_._rail_icon()
+        if self.store.feature("sidebars_start_hidden"):   # start bez paneli; wysuwa je przycisk widgetów albo uchwyt
+            for sb_ in (self.host.left, self.host.right):
+                sb_.user_collapsed = sb_.collapsed = True; sb_.scroll.setVisible(False); sb_._rail_icon()
         self._state_cb = lambda st: self.host.set_active(st == Qt.ApplicationState.ApplicationActive)
         QGuiApplication.instance().applicationStateChanged.connect(self._state_cb)
         QApplication.instance().focusChanged.connect(self._focus_changed)   # podział ekranu: aktywna strona = kliknięta
@@ -12893,7 +12945,7 @@ class Browser(QMainWindow):
         up = updater(); safe_disconnect(up.news, self._startup_news)
         first = not self.store.settings.get("seen_head")
         self.store.settings["seen_head"] = head; self.store.save_settings()
-        if changes and not first:   # pierwsze uruchomienie – tylko zapamiętujemy wersję
+        if changes and not first and self.store.feature("whats_new"):   # pierwsze uruchomienie – tylko zapamiętujemy wersję
             n = len(changes)
             self.notice.ask(f"Luna została zaktualizowana – {n} {'nowa zmiana' if n == 1 else ('nowe zmiany' if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else 'nowych zmian')}.",
                             [("Co nowego?", lambda: WhatsNewDialog(self, changes, up.version()).exec(), True), ("Później", None, False)],
@@ -13185,7 +13237,7 @@ class Browser(QMainWindow):
         if old is not None:
             old.stop(finish=True)
         tgt = self._side_w(); panel._sliding = False
-        if not self._laid or not self.isVisible() or panel.isVisible() == show:
+        if not self._laid or not self.isVisible() or panel.isVisible() == show or not feature_on("animations"):
             panel.setVisible(show); panel.setFixedWidth(tgt); return
         bf = self.bgframe; W = bf.width(); cover = None
         if show:
@@ -14221,7 +14273,7 @@ class Browser(QMainWindow):
 
     # --- przeciąganie kart: na stronę (podział ekranu) albo na ikonę przestrzeni roboczej ---
     def _drag_tab_out(self, i):
-        if not 0 <= i < self.stack.count():
+        if not 0 <= i < self.stack.count() or not self.store.feature("tab_drag_split"):
             return
         from PyQt6.QtGui import QDrag
         from PyQt6.QtCore import QMimeData
@@ -14318,7 +14370,7 @@ class Browser(QMainWindow):
             host = view.url().host().lower()
         except RuntimeError:
             return
-        if not host or host in self.store.settings.get("phish_trust", []):
+        if not host or host in self.store.settings.get("phish_trust", []) or not self.store.feature("login_guard"):
             return
         brand = lookalike(host, self.known_login_domains())
         if not brand:
@@ -14381,6 +14433,8 @@ class Browser(QMainWindow):
 
     # --- podgląd linku (Shift+klik) ---
     def peek(self, url, container=""):
+        if not self.store.feature("link_peek"):   # podgląd wyłączony – Shift+klik otwiera link w nowej karcie
+            self.open_url_new_tab(url, container); return
         if getattr(self, "_peek", None) is None:
             self._peek = PeekOverlay(self)
         self._peek.open(url, container)
@@ -14826,7 +14880,7 @@ class Browser(QMainWindow):
 
     def _tab_hover(self, i):
         p = self._preview
-        if i < 0 or i >= self.stack.count():
+        if i < 0 or i >= self.stack.count() or not self.store.feature("tab_preview"):
             if p is not None:
                 p.hide()
             return
@@ -15583,6 +15637,8 @@ class Browser(QMainWindow):
 
     def offer_totp(self, view):
         """Strona prosi o kod 2FA, a w sejfie jest klucz dla tej witryny → propozycja wpisania kodu."""
+        if not self.store.feature("otp_offer"):
+            return
         v = self.vault()
         if v is None:
             return
