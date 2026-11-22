@@ -26,6 +26,7 @@ if os.environ.get("LUNA_TEST_DICTS"):   # słowniki obecne już przy starcie (ja
 os.environ["USERPROFILE"] = os.environ["HOME"] = HOMEDIR
 os.environ["LUNA_NO_WELCOME"] = "1"   # bez przewodnika powitalnego (okno modalne przy pierwszym uruchomieniu)
 os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-gpu"
+os.environ["LUNA_NO_SOUND"] = "1"   # testy bez dźwięków interfejsu
 RES = {"checks": 0, "fail": []}
 
 
@@ -303,7 +304,11 @@ def ai_page():
 
 
 def webapps_panel():
-    check("apps button pinned on the toolbar", w.apps_btn.isVisible() and "apps" in w.pins())
+    # wygląd jak w filmie: komunikatory domyślnie w menu Luny i w przełączniku panelu AI; można je przypiąć do paska
+    check("apps not pinned by default (film look)", "apps" not in w.pins() and not w.apps_btn.isVisible())
+    w.set_pin("apps", True)
+    check("apps button can be pinned to the toolbar", w.apps_btn.isVisible() and "apps" in w.pins())
+    w.set_pin("apps", False)
     w.store.settings["webapps"] = [["Czat", f"http://app.localhost:{PORT}/chat"]]; w.webapps.build_picks()
     w.toggle_webapps(); wait(1500)
     check("apps panel opens, AI panel closed", w.webapps.isVisible() and not w.assistant.isVisible())

@@ -223,6 +223,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # stałe nazwy plików (bez numeru wersji) – stały link do pobrania i autoaktualizacja; numer zostaje w tagu
+          (cd pliki && for f in Luna-*; do n=$(echo "$f" | sed -E 's/^Luna-[0-9]+\.[0-9]+\.[0-9]+-/Luna-/'); [ "$f" = "$n" ] || mv "$f" "$n"; done)
           ls -la pliki
           (cd pliki && sha256sum * > SHA256SUMS.txt)
-          gh release create "$GITHUB_REF_NAME" pliki/* --title "Luna ${GITHUB_REF_NAME#v}" --notes-file packaging/release_notes.md
+          gh release create "$GITHUB_REF_NAME" pliki/* --title "Luna" --notes-file packaging/release_notes.md --latest
+          # jedno wydanie na GitHubie: starsze wydania znikają (tagi zostają w historii repozytorium)
+          gh release list --limit 100 --json tagName --jq '.[].tagName' | while read -r t; do
+            [ "$t" = "$GITHUB_REF_NAME" ] || gh release delete "$t" --yes
+          done

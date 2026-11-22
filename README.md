@@ -105,9 +105,9 @@
 
 | System | Plik | Instalacja |
 |---|---|---|
-| **Windows 10 / 11** | `Luna-…-Windows.zip` | Rozpakuj (prawy przycisk → **Wyodrębnij wszystkie**) i uruchom `Luna.exe`. Luna sama zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. Jest też klasyczny instalator `…-Windows-Setup.exe`. |
-| **Linux** (x86_64) | `Luna-…-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. Jest też archiwum `.tar.gz`. |
-| **macOS** (Apple M1 i nowsze) | `Luna-…-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → **Otwórz**. |
+| **Windows 10 / 11** | `Luna-Windows.zip` | Rozpakuj (prawy przycisk → **Wyodrębnij wszystkie**) i uruchom `Luna.exe`. Luna sama zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. Jest też klasyczny instalator `Luna-Windows-Setup.exe`. |
+| **Linux** (x86_64) | `Luna-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. Jest też archiwum `.tar.gz`. |
+| **macOS** (Apple M1 i nowsze) | `Luna-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → **Otwórz**. |
 
 **Inteligentna kontrola aplikacji (Windows 11):** jeśli jest u Ciebie włączona, Windows na razie zablokuje Lunę z wydania – ta funkcja nie pozwala uruchamiać nowych programów bez podpisu cyfrowego, a Luna jeszcze go nie ma (podpis jest w przygotowaniu). Do tego czasu uruchom Lunę z kodu źródłowego (poniżej) – tak działa bez blokady.
 
@@ -169,7 +169,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io), certific
 
 > **Stan:** zgłoszenie do SignPath Foundation jest w przygotowaniu – obecne wydania nie są jeszcze podpisane.
 
-- **Co jest podpisywane:** tylko pliki zbudowane automatycznie z kodu źródłowego tego repozytorium przez GitHub Actions (`.github/workflows/release.yml`): `Luna.exe` i instalator `Luna-…-Windows-Setup.exe`. Biblioteki innych projektów (np. Qt, PyQt6, Python) są dołączane bez zmian.
+- **Co jest podpisywane:** tylko pliki zbudowane automatycznie z kodu źródłowego tego repozytorium przez GitHub Actions (`.github/workflows/release.yml`): `Luna.exe` i instalator `Luna-Windows-Setup.exe`. Biblioteki innych projektów (np. Qt, PyQt6, Python) są dołączane bez zmian.
 - **Committers and reviewers:** [z4k0lzakol](https://github.com/z4k0lzakol) – Luna to projekt jednoosobowy; zmiany od innych osób (pull requesty) są przeglądane przed włączeniem.
 - **Approvers:** [z4k0lzakol](https://github.com/z4k0lzakol) – każde wydanie jest zatwierdzane do podpisu ręcznie.
 - **Prywatność:** Luna nie przesyła danych do innych systemów, poza usługami potrzebnymi do funkcji, których używasz – pełna lista, co trafia do której usługi i jak to wyłączyć, jest w [polityce prywatności](https://z4k0lzakol.github.io/Luna/privacy.html).

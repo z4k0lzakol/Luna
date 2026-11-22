@@ -10,11 +10,11 @@ W 1.0.3: szybsze wczytywanie stron (HTTP/3) i płynniejsze animacje na monitorac
 
 | System | Plik | Jak zainstalować |
 |---|---|---|
-| **Windows 10 / 11** (zalecane) | `Luna-…-Windows.zip` | Rozpakuj (prawy przycisk → Wyodrębnij wszystkie) i uruchom `Luna.exe`. Luna zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. |
-| Windows – klasyczny instalator | `Luna-…-Windows-Setup.exe` | Uruchom i kliknij „Zainstaluj”. |
-| **Linux** (x86_64) | `Luna-…-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. |
-| Linux (archiwum) | `Luna-…-Linux-x86_64.tar.gz` | Rozpakuj i uruchom `Luna/Luna`. |
-| **macOS** (Apple M1 i nowsze) | `Luna-…-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk na Lunie → **Otwórz**. |
+| **Windows 10 / 11** (zalecane) | `Luna-Windows.zip` | Rozpakuj (prawy przycisk → Wyodrębnij wszystkie) i uruchom `Luna.exe`. Luna zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. |
+| Windows – klasyczny instalator | `Luna-Windows-Setup.exe` | Uruchom i kliknij „Zainstaluj”. |
+| **Linux** (x86_64) | `Luna-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. |
+| Linux (archiwum) | `Luna-Linux-x86_64.tar.gz` | Rozpakuj i uruchom `Luna/Luna`. |
+| **macOS** (Apple M1 i nowsze) | `Luna-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk na Lunie → **Otwórz**. |
 
 **Inteligentna kontrola aplikacji (Windows 11).** Jeśli jest włączona, Windows na razie zablokuje Lunę z wydania – nie pozwala uruchamiać nowych programów bez podpisu cyfrowego, a podpis Luny jest w przygotowaniu. Do tego czasu uruchom Lunę z kodu źródłowego (instrukcja w README).
 

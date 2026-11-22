@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QStackedWidget,
                              QScrollArea, QPlainTextEdit, QGraphicsOpacityEffect, QButtonGroup, QToolTip, QComboBox,
                              QCheckBox, QSlider, QProgressBar, QFileDialog, QSizePolicy, QMessageBox, QStyledItemDelegate, QStyle,
                              QGraphicsDropShadowEffect, QSplitter, QSplitterHandle, QTreeWidget, QTreeWidgetItem, QWidgetAction,
-                             QSizeGrip, QFileIconProvider, QRadioButton, QGridLayout)
+                             QSizeGrip, QFileIconProvider, QRadioButton, QGridLayout, QAbstractButton)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
@@ -617,6 +617,9 @@ CATALOG = [
 ]
 
 SERIF = '"Playfair Display","Playfair","Georgia","Times New Roman",serif'
+HOME_TAB = "Nowa karta"   # tytuł karty z ekranem głównym na pasku kart (jak w filmie pokazowym)
+PAGE_GAP = "#0d0d0d"    # tło okna wokół stron (odstęp ramki strony od krawędzi), jak w filmie pokazowym
+PANE_LINE = "#222222"   # obwódka ramki strony / ekranu głównego
 STYLE = """
 * { font-family: "Inter","Segoe UI","Roboto","Noto Sans",sans-serif; }
 QMainWindow, QWidget, QDialog { background:#111111; color:#ececec; }
@@ -639,19 +642,20 @@ QPushButton#spotbtn { background:#1db954; color:#08140c; border-radius:18px; pad
 QPushButton#spotbtn:hover { background:#25d366; }
 QPushButton#discbtn { background:#5865f2; color:#ffffff; border-radius:18px; padding:8px 18px; font-weight:700; }
 QPushButton#discbtn:hover { background:#6b77f5; }
-QToolButton#rail { background:rgba(255,255,255,0.06); border-radius:8px; }
-QToolButton#rail:hover { background:rgba(255,255,255,0.15); }
+QToolButton#rail { background:#151515; border:1px solid #242424; border-radius:9px; }
+QToolButton#rail:hover { background:#1f1f1f; border:1px solid #3a3a3a; }
 QLabel#badge { background:#ececec; color:#111111; border-radius:8px; padding:0 6px; font-size:10px; font-weight:700; }
+QLabel#shieldbadge { background:#ececec; color:#111111; border-radius:8px; padding:0 5px; font-size:10px; font-weight:800; }
 QLabel#cover { background:#1c1c1c; border-radius:12px; }
-QLineEdit#glassin { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); border-radius:10px; padding:7px 10px; }
-QLineEdit#glassin:focus { border:1px solid #777777; }
-QPlainTextEdit#note { background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.09); border-radius:12px;
+QLineEdit#glassin { background:#1b1b1b; border:1px solid #2d2d2d; border-radius:10px; padding:7px 10px; color:#e6e6e6; }
+QLineEdit#glassin:focus { border:1px solid #4a4a4a; }
+QPlainTextEdit#note { background:#1b1b1b; border:1px solid #2d2d2d; border-radius:12px;
                       padding:8px; color:#ececec; selection-background-color:#555555; }
-QPlainTextEdit#note:focus { border:1px solid #777777; }
-QPushButton#clipitem, QPushButton#newsitem, QPushButton#mailitem { background:rgba(255,255,255,0.05); border:0; border-radius:10px;
+QPlainTextEdit#note:focus { border:1px solid #4a4a4a; }
+QPushButton#clipitem, QPushButton#newsitem, QPushButton#mailitem { background:#1a1a1a; border:1px solid #242424; border-radius:10px;
                       padding:7px 10px; text-align:left; color:#dedede; font-size:12px; }
-QPushButton#clipitem:hover, QPushButton#newsitem:hover, QPushButton#mailitem:hover { background:rgba(255,255,255,0.12); color:#ffffff; }
-QComboBox { background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10); border-radius:10px;
+QPushButton#clipitem:hover, QPushButton#newsitem:hover, QPushButton#mailitem:hover { background:#222222; border:1px solid #333333; color:#ffffff; }
+QComboBox { background:#1b1b1b; border:1px solid #2d2d2d; border-radius:10px;
             padding:5px 10px; color:#ececec; }
 QComboBox::drop-down { border:0; width:22px; }
 QComboBox::down-arrow { image:url("%CHEV%"); width:10px; height:10px; }
@@ -676,9 +680,9 @@ QFrame#optcard:hover { border:1px solid #333333; }
 QLabel#tileicon { background:#1f1f1f; border-radius:10px; }
 QLabel#emptyicon { background:#161616; border:1px solid #262626; border-radius:28px; }
 QLabel#seclabel { color:#7d7d7d; font-size:11px; font-weight:600; letter-spacing:1px; }
-QLabel#menusec { color:#6f6f6f; font-size:11px; font-weight:600; letter-spacing:1px; padding:8px 12px 3px 12px; }
-QFrame#menusearchrow { background:#111111; border:1px solid #2a2a2a; border-radius:8px; margin:2px 2px 4px 2px; }
-QFrame#menusearchrow:hover { border:1px solid #474747; background:#151515; }
+QLabel#menusec { color:#7d7d7d; font-size:11px; font-weight:700; letter-spacing:1.3px; padding:10px 12px 4px 12px; }
+QFrame#menusearchrow { background:#1b1b1b; border:1px solid #2d2d2d; border-radius:18px; margin:2px 2px 8px 2px; }
+QFrame#menusearchrow:hover { border:1px solid #4a4a4a; background:#1e1e1e; }
 QSizeGrip { background:transparent; width:16px; height:16px; }
 QRadioButton { background:transparent; spacing:8px; }
 QRadioButton::indicator { width:12px; height:12px; border-radius:8px; border:2px solid #5a5a5a; background:transparent; }
@@ -695,7 +699,7 @@ QListWidget#wlist::item:selected { background:#2a2a2a; color:#ffffff; }
 QListWidget#wlist::indicator { width:20px; height:20px; }
 QListWidget#wlist::indicator:unchecked { image:url("%CKOFF%"); }
 QListWidget#wlist::indicator:checked { image:url("%CKON%"); }
-QWidget#assistant { background:#111111; border-left:1px solid #1e1e1e; }
+QWidget#assistant { background:#101010; border-left:1px solid #222222; }
 QScrollArea#chat { border:0; background:transparent; }
 QFrame#bub_user { background:#ececec; border-radius:16px; }
 QFrame#bub_user QLabel { color:#111111; }
@@ -707,31 +711,41 @@ QToolButton#send { background:#ececec; border-radius:20px; }
 QToolButton#send:hover { background:#ffffff; }
 QToolButton#more { font-size:20px; color:#bbbbbb; border-radius:15px; }
 QToolButton#more::menu-indicator { image:none; width:0; }
-QToolButton#chip:checked { background:#ececec; color:#111111; }
+QToolButton#chip:checked { background:#1f1f1f; color:#f2f2f2; border:1px solid #3a3a3a; }
 QPushButton#sugg { background:#1a1a1a; border:1px solid #2a2a2a; border-radius:14px;
                    padding:10px 14px; text-align:left; color:#cfcfcf; }
 QPushButton#sugg:hover { background:#232323; color:#fff; }
-QWidget#aihead { background:#0d0d0d; border-bottom:1px solid #1e1e1e; border-left:1px solid #1e1e1e; }
+QWidget#aihead { background:#101010; border-left:1px solid #222222; }
+QToolButton#aichip { background:transparent; color:#a8a8a8; border:1px solid #2c2c2c; border-radius:15px;
+                     padding:5px 11px 5px 7px; font-size:12px; font-weight:500; }
+QToolButton#aichip:hover { background:#1a1a1a; color:#f0f0f0; }
+QToolButton#aichip:checked { background:#1f1f1f; color:#f2f2f2; border:1px solid #3a3a3a; }
+QPushButton#aiact { background:transparent; color:#cfcfcf; border:1px solid #2c2c2c; border-radius:13px;
+                    padding:6px 12px; font-size:12px; }
+QPushButton#aiact:hover { background:#1c1c1c; color:#ffffff; border-color:#3a3a3a; }
+QFrame#aictx { background:#161616; border:1px solid #262626; border-radius:10px; }
+QFrame#aictx QLabel { color:#a8a8a8; font-size:12px; }
+QScrollArea#chatlist { background:transparent; border:0; }
 QToolButton#aipick { background:transparent; color:#9a9a9a; border-radius:16px; padding:5px 11px 5px 6px;
                      font-size:12px; font-weight:600; }
 QToolButton#aipick:hover { background:#1f1f1f; color:#ffffff; }
 QToolButton#aipick:checked { background:#ececec; color:#111111; }
 QWidget#frame { background:#0a0a0a; border:1px solid #242424; }
-QWidget#strip { background:#0a0a0a; }
+QWidget#strip { background:#0c0c0c; }
 QToolButton#winclose:hover { background:#b3352c; }
-QWidget#tool { background:#111111; border-bottom:1px solid #1e1e1e; }
+QWidget#tool { background:#151515; border-bottom:1px solid #1f1f1f; }
 QTabBar { background:transparent; }
-QTabBar::tab { background:transparent; color:#8c8c8c; height:30px; padding:0 2px 0 14px; margin:1px 2px;
-               border-radius:15px; max-width:190px; font-size:13px; }
-QTabBar::tab:hover:!selected { background:#1a1a1a; color:#d4d4d4; }
-QTabBar::tab:selected { background:#ececec; color:#111111; font-weight:600; }
+QTabBar::tab { background:transparent; color:#a8a8a8; height:32px; padding:0 2px 0 12px; margin:1px 3px;
+               border-radius:10px; max-width:206px; font-size:13px; }
+QTabBar::tab:hover:!selected { background:#161616; color:#d4d4d4; }
+QTabBar::tab:selected { background:#1d1d1d; color:#f0f0f0; }
 QToolButton { background:transparent; border:0; border-radius:18px; padding:0; }
 QToolButton:hover { background:#1f1f1f; }
 QToolButton#tabclose { border-radius:9px; padding:0; margin:0; }
 QToolButton#tabclose:hover { background:rgba(128,128,128,0.38); }
-QToolButton#chip { background:#232323; color:#bdbdbd; border-radius:14px; padding:4px 12px;
-                   font-size:12px; font-weight:600; }
-QToolButton#chip:hover { background:#2e2e2e; color:#fff; }
+QToolButton#chip { background:transparent; color:#a8a8a8; border:1px solid #2c2c2c; border-radius:14px; padding:4px 12px;
+                   font-size:12px; font-weight:500; }
+QToolButton#chip:hover { background:#1a1a1a; color:#fff; }
 QToolButton#chip::menu-indicator { image:none; width:0; }
 QToolButton#engine { background:#1d1d1d; color:#dcdcdc; border:1px solid #2d2d2d; border-radius:15px;
                      padding:4px 24px 4px 5px; font-size:12px; font-weight:600; }
@@ -745,18 +759,23 @@ QPushButton#round { border-radius:17px; padding:0; font-size:17px; }
 QLineEdit { background:#191919; border:1px solid #2a2a2a; border-radius:12px;
             padding:9px 12px; color:#ececec; selection-background-color:#555; }
 QLineEdit:focus { border:1px solid #666; }
-QLineEdit#addr { border-radius:20px; padding:0 14px; min-height:40px; font-size:13px; }
-QLineEdit#search { border-radius:14px; padding:14px 12px; font-size:14px; background:#171717; }
+QLineEdit#addr { background:#0e0e0e; border:1px solid #262626; border-radius:16px; padding:0 10px; min-height:32px; max-height:32px; font-size:14px; color:#cfcfcf; }
+QLineEdit#addr:focus { border:1px solid #4a4a4a; }
+QLineEdit#search { border-radius:24px; padding:0 18px; font-size:16px; background:#1b1b1b; border:1px solid #2d2d2d; color:#e6e6e6; }
+QLineEdit#search:focus { border:1px solid #4a4a4a; }
+QLabel#homeclock { font-size:86px; font-weight:300; color:#f1f1f1; letter-spacing:-3px; }
+QLabel#homedate { font-size:16px; color:#8f8f8f; }
+QLabel#homecap { font-size:15px; color:#7d7d7d; }
 QLabel#brand { font-family:""" + SERIF + """; font-size:26px; font-weight:600; color:#f4f4f4; }
 QLabel#headline { font-family:""" + SERIF + """; font-size:30px; color:#d6d6d6; }
 QLabel#ai_empty { font-family:""" + SERIF + """; font-size:26px; color:#d6d6d6; }
-QLabel#bignum { font-family:""" + SERIF + """; font-size:46px; color:#f2f2f2; }
+QLabel#bignum { font-size:44px; font-weight:300; color:#f1f1f1; letter-spacing:-1px; }
 QFrame#card { background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #1a1a1a,stop:1 #131313);
               border:1px solid #262626; border-radius:20px; }
-QLabel#cap { color:#6b6b6b; font-size:10px; font-weight:700; }
+QLabel#cap { color:#7d7d7d; font-size:11px; font-weight:700; letter-spacing:1.3px; }
 QFrame#sep { background:#252525; border:0; min-height:1px; max-height:1px; }
-QLabel#clock { font-size:40px; font-weight:600; color:#f2f2f2; }
-QLabel#temp { font-size:30px; font-weight:600; color:#f2f2f2; }
+QLabel#clock { font-size:42px; font-weight:300; color:#f1f1f1; letter-spacing:-1px; }
+QLabel#temp { font-size:40px; font-weight:300; color:#f1f1f1; letter-spacing:-1px; }
 QLabel#muted2 { color:#9a9a9a; font-size:13px; }
 QLabel#h3 { font-size:14px; font-weight:600; }
 QLabel#h1 { font-size:17px; font-weight:600; }
@@ -765,13 +784,15 @@ QLabel#muted { color:#7f7f7f; font-size:12px; }
 QListWidget { border:0; background:transparent; outline:0; }
 QListWidget::item { padding:6px; border-radius:10px; }
 QListWidget::item:hover { background:#1a1a1a; }
-QListWidget#grid { color:#e6e6e6; font-size:12px; font-weight:600; }
-QListWidget#grid::item { padding:2px; border-radius:18px; }
+QListWidget#grid { color:#9a9a9a; font-size:12px; font-weight:400; }
+QListWidget#grid::item { padding:2px; border-radius:16px; }
+QListWidget#grid::item:hover { background:transparent; color:#f0f0f0; }
+QListWidget#grid::item:selected { background:transparent; }
 QListWidget#grid::item:selected { background:#1a1a1a; color:#fff; }
 QListWidget#recent::item { background:#181818; padding:8px; border-radius:12px; }
 QListWidget#recent::item:hover { background:#222222; }
-QMenu { background:#191919; border:1px solid #2a2a2a; border-radius:8px; padding:4px; }
-QMenu::item { padding:7px 20px 7px 8px; border-radius:6px; } QMenu::item:selected { background:#2a2a2a; }
+QMenu { background:#151515; border:1px solid #262626; border-radius:8px; padding:4px; }
+QMenu::item { padding:7px 20px 7px 8px; border-radius:6px; } QMenu::item:selected { background:#222222; }
 QMenu::icon { padding-left:8px; }
 QScrollBar:vertical { background:transparent; width:8px; }
 QScrollBar::handle:vertical { background:#2e2e2e; border-radius:4px; min-height:30px; }
@@ -942,6 +963,9 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
         p.drawEllipse(9, 9, 18, 18); p.drawLine(24, 24, 34, 34)
     elif kind == "shield":
         p.drawPath(_path([(22, 8), (34, 13), (33, 24), (22, 36), (11, 24), (10, 13)], True))
+    elif kind == "lock":
+        p.drawRoundedRect(QRectF(12, 20, 20, 15), 3, 3)
+        p.drawArc(QRectF(15, 9, 14, 20), 0, 180 * 16)
     elif kind == "key":
         p.drawEllipse(9, 15, 13, 13); p.drawLine(21, 21, 35, 21); p.drawLine(30, 21, 30, 27); p.drawLine(35, 21, 35, 26)
     elif kind == "split":
@@ -1084,6 +1108,30 @@ def glyph(kind: str, color: str = "#c9c9c9") -> QIcon:
     return QIcon(pm)
 
 
+def icon_is_dark(pm):
+    """Czy ikona strony jest ciemna (średnia jasność nieprzezroczystych pikseli) – wtedy potrzebuje jasnego tła."""
+    img = pm.toImage().scaled(16, 16)
+    tot = n = 0.0
+    for y in range(img.height()):
+        for x in range(img.width()):
+            c = img.pixelColor(x, y)
+            if c.alpha() > 60:
+                tot += c.lightnessF(); n += 1
+    return n > 0 and tot / n < 0.32
+
+
+def add_tile_icon() -> QIcon:
+    """Kafelek „+” na końcu aplikacji ekranu głównego – dodawanie aplikacji (zamiast przycisku nad kafelkami)."""
+    S = 128
+    pm = QPixmap(S, S); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pen = QPen(QColor("#3a3a3a"), 2.4); pen.setStyle(Qt.PenStyle.DashLine); p.setPen(pen); p.setBrush(QColor("#161616"))
+    p.drawRoundedRect(QRectF(1.2, 1.2, S - 2.4, S - 2.4), 38, 38)
+    p.setPen(QPen(QColor("#9a9a9a"), 6, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    p.drawLine(QPointF(64, 46), QPointF(64, 82)); p.drawLine(QPointF(46, 64), QPointF(82, 64)); p.end()
+    return QIcon(pm)
+
+
 def make_icon(name: str, url: str = "", count: int = 0) -> QIcon:
     """Ciemna karta; w środku favicon strony na jasnej płytce albo – gdy brak – serifowa litera.
     count > 0 → plakietka z licznikiem (np. nieprzeczytane maile) w prawym górnym rogu."""
@@ -1092,22 +1140,12 @@ def make_icon(name: str, url: str = "", count: int = 0) -> QIcon:
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.setPen(QPen(QColor("#2a2a2a"), 3)); p.setBrush(QColor("#1b1b1b"))
-    p.drawRoundedRect(2, 2, S - 4, S - 4, 26, 26)
-    path = icon_path(url) if url else None
-    fav = QPixmap(str(path)) if path and path.exists() else QPixmap()
-    if not fav.isNull():
-        plate = 80; o = (S - plate) // 2
-        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#ececea"))
-        p.drawRoundedRect(o, o, plate, plate, 20, 20)
-        side = max(36, min(56, fav.width() * 2))
-        s = fav.scaled(side, side, Qt.AspectRatioMode.KeepAspectRatio,
-                       Qt.TransformationMode.SmoothTransformation)
-        p.drawPixmap((S - s.width()) // 2, (S - s.height()) // 2, s)
-    else:
-        f = QFont("Playfair Display"); f.setStyleHint(QFont.StyleHint.Serif); f.setPixelSize(64)
-        p.setFont(f); p.setPen(QColor("#ececea"))
-        p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, (name.strip() or "?")[0].upper())
+    # kafelek jak w filmie pokazowym: ciemny zaokrąglony kwadrat (#1d1d1d, obwódka #2a2a2a) z pogrubioną literą
+    p.setPen(QPen(QColor("#2a2a2a"), 2.4)); p.setBrush(QColor("#1d1d1d"))
+    p.drawRoundedRect(QRectF(1.2, 1.2, S - 2.4, S - 2.4), 38, 38)
+    f = QFont("Inter"); f.setPixelSize(47); f.setWeight(QFont.Weight.Bold)
+    p.setFont(f); p.setPen(QColor("#dddddd"))
+    p.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, (name.strip() or "?")[0].upper())
     if count > 0:
         txt = str(count) if count < 100 else "99+"
         f = QFont("Inter"); f.setPixelSize(22); f.setWeight(QFont.Weight.Bold); p.setFont(f)
@@ -1163,8 +1201,19 @@ QFrame#tabpop { background:#121212; border:1px solid #2c2c2c; }
 QToolButton#logo { background:transparent; border-radius:8px; padding:0; }
 QToolButton#logo:hover { background:#1f1f1f; }
 QLabel#privchip { background:#2b1f3d; color:#d9c7ff; border-radius:10px; font-size:11px; font-weight:600; }
-QMenu#burger { padding:6px; min-width:330px; }
-QMenu#burger::item { padding:8px 28px 8px 10px; }
+QMenu#burger { background:#121212; border:1px solid #262626; border-radius:16px; padding:10px; min-width:470px; }
+QMenu#burger::item { padding:6px 28px 6px 10px; border-radius:8px; color:#e6e6e6; }
+QMenu#burger::item:selected { background:#1f1f1f; color:#ffffff; }
+QMenu#burger::separator { height:1px; background:#222222; margin:6px 8px; }
+QMenu#lunasub { background:#121212; border:1px solid #262626; border-radius:14px; padding:8px; }
+QMenu#lunasub::item { padding:6px 24px 6px 10px; border-radius:8px; color:#e6e6e6; }
+QMenu#lunasub::item:selected { background:#1f1f1f; color:#ffffff; }
+QMenu#lunasub::separator { height:1px; background:#222222; margin:6px 8px; }
+QToolButton#menutile { background:#1a1a1a; border:1px solid #262626; border-radius:12px; color:#bdbdbd;
+                       font-size:11px; padding:8px 2px 6px 2px; }
+QToolButton#menutile:hover { background:#222222; border:1px solid #3a3a3a; color:#ffffff; }
+QToolButton#menutile:checked { background:#232323; border:1px solid #5a5a5a; color:#ffffff; }
+QToolButton#menutile:disabled { color:#555555; background:#151515; border:1px solid #1e1e1e; }
 QMenu::separator { height:1px; background:#2a2a2a; margin:6px 6px; }
 QWidget#menurow { background:transparent; }
 QWidget#menurow QLabel { color:#e6e6e6; }
@@ -1183,16 +1232,16 @@ QListWidget#histlist::item:selected { background:#2b2b2b; color:#ffffff; }
 QTreeWidget#vtabs { background:transparent; border:none; color:#c9c9c9; outline:0; font-size:13px; show-decoration-selected:0; }
 QTreeWidget#vtabs::item { height:30px; border-radius:8px; padding-left:2px; }
 QTreeWidget#vtabs::item:hover { background:#1c1c1c; color:#ffffff; }
-QTreeWidget#vtabs::item:selected { background:#ececec; color:#111111; }
+QTreeWidget#vtabs::item:selected { background:#1f1f1f; color:#f2f2f2; }
 QTreeWidget#vtabs::item:selected { border-top-left-radius:0; border-bottom-left-radius:0; }
-QTreeWidget#vtabs::branch:selected { background:#ececec; border-top-left-radius:8px; border-bottom-left-radius:8px; }   /* zaznaczona jest zawsze karta (bez strzałki), więc pigułka obejmuje też margines */
+QTreeWidget#vtabs::branch:selected { background:#1f1f1f; border-top-left-radius:8px; border-bottom-left-radius:8px; }   /* zaznaczona jest zawsze karta (bez strzałki), więc pigułka obejmuje też margines */
 QFrame#notice { background:#1b1b1b; border-bottom:1px solid #2a2a2a; }
 QPushButton#primary { background:#ececec; color:#111111; font-weight:600; }
 QPushButton#primary:hover { background:#ffffff; }
 QPushButton:disabled { color:#5c5c5c; }
 QPushButton#primary:disabled { background:#2a2a2a; color:#6a6a6a; }
-QSplitter#split { background:#0a0a0a; }
-QFrame#splitside { background:#0d0d0d; border:1px solid #1a1a1a; border-radius:9px; }
+QSplitter#split { background:#0d0d0d; }
+QFrame#splitside { background:#141414; border:1px solid #222222; border-radius:12px; }
 QFrame#splitside[active="true"] { border:1px solid #4a4a4a; }
 QWidget#splithead { background:transparent; }
 QLabel#splittitle { color:#6f6f6f; font-size:12px; }
@@ -2564,8 +2613,6 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "suggest_net": ("Podpowiedzi z sieci", "Wysyła wpisywany tekst do wybranej wyszukiwarki po propozycje. Wyłącz dla pełnej prywatności.", True),
     "dark_pages": ("Ciemny tryb stron", "Jasne strony wyświetlają się w ciemnych kolorach, jak reszta Luny (strony z własnym "
                    "ciemnym motywem zostają bez zmian). Wyjątki ustawisz dla pojedynczych stron w menu lub w Wyglądzie.", False),
-    "panel_page_bg": ("Panele w kolorze strony", "Na stronach WWW tło pod panelami bocznymi przyjmuje kolor otwartej strony, "
-                      "żeby panele nie odstawały. Wyłączone: zawsze tło Luny, jak wcześniej.", True),
     "vertical_tabs": ("Panel kart przypięty po lewej", "Lista kart z grupami na stałe po lewej stronie zamiast paska kart u góry. "
                       "Wyłączone: lista kart i grup otwiera się przyciskiem na pasku narzędzi.", False),
     "workspaces": ("Przestrzenie robocze", "Ikona przestrzeni na pasku kart (np. Praca, Zakupy, Hobby) – lista rozwija się po kliknięciu. "
@@ -2581,6 +2628,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "passwords": ("Menedżer haseł", "Proponuje zapis haseł po zalogowaniu i sam wypełnia formularze. Hasła są szyfrowane "
                   "na tym komputerze.", True),
     "shortcuts": ("Skróty klawiszowe i gesty myszy", "Ctrl+T/W/R/Tab, F5, środkowy przycisk myszy na kartach.", True),
+    "ui_sounds": ("Dźwięki interfejsu", "Ciche dźwięki jak w filmie pokazowym: przeciąganie kart, podział ekranu, wysuwanie "
+                  "paneli, widgety, odhaczanie zadań, blokada reklam i kliknięcia przycisków.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
     "instant_back": ("Błyskawiczne „Wstecz”", "Strony, z których przechodzisz dalej, zostają w pamięci, więc powrót jest "
                      "natychmiastowy – kosztem ok. 50–100 MB RAM za każdą. Wyłączone: „Wstecz” wczytuje stronę ponownie "
@@ -2593,6 +2642,9 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                      "CC BY-NC-SA 4.0). Wysyłane są tylko 4 znaki skrótu identyfikatora filmu.", True),
     "updates": ("Sprawdzanie aktualizacji", "Po starcie i co 12 godzin Luna sprawdza w tle, czy na GitHubie jest nowa wersja, "
                 "i proponuje aktualizację jednym kliknięciem.", True),
+    "auto_update": ("Automatyczne aktualizacje", "Zainstalowana Luna (Windows) sama pobiera nową wersję w tle, sprawdza sumę "
+                    "kontrolną i podpis cyfrowy, a instaluje ją przy zamknięciu albo od razu po kliknięciu – bez ręcznego "
+                    "pobierania instalatora. Karty, hasła i ustawienia zostają.", True),
     "webapps": ("Panel aplikacji", "Komunikatory (WhatsApp, Messenger, Telegram…) i dowolne strony w panelu z boku – "
                 "przycisk na górnym pasku (Ctrl+Shift+K). Wyłączony: żadna z tych stron nie działa w tle.", True),
     "spellcheck": ("Sprawdzanie pisowni", "Podkreśla błędy w polach tekstowych (polski i angielski); podpowiedzi pod prawym "
@@ -2651,7 +2703,7 @@ class Background:
         self.cache = {}   # klucz (rozmiar, tryb, DPR) → (tło, rozmyte tło); kilka okien = kilka rozmiarów
 
     def mode(self):
-        return self.store.settings.get("bg", "image") if self.store else "image"
+        return self.store.settings.get("bg", "stars") if self.store else "stars"   # domyślnie: gwiazdy (jak w filmie)
 
     def dpr(self, frame=None):
         try:
@@ -2690,6 +2742,21 @@ class Background:
             p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
             k = max(w / 1920.0, h / 1080.0)          # „cover”: bez zniekształceń, wyśrodkowane
             self.renderer().render(p, QRectF((w - 1920 * k) / 2, (h - 1080 * k) / 2, 1920 * k, 1080 * k))
+            nz = self.noise(); nz.setDevicePixelRatio(scale); p.drawTiledPixmap(QRect(0, 0, w, h), nz); p.end()
+        elif mode == "night":   # jak w filmie pokazowym: gładka czerń okna (ekran główny i strony leżą na niej w ramkach)
+            pm = QPixmap(w, h); pm.fill(QColor(PAGE_GAP))
+        elif mode == "stars":   # noc: głęboka czerń, miękka poświata księżyca i drobne gwiazdy
+            scale = max(1.0, min(dpr, math.sqrt(self.MAX_PIXELS / (w * h))))
+            pm = QPixmap(max(1, int(w * scale)), max(1, int(h * scale))); pm.setDevicePixelRatio(scale)
+            pm.fill(QColor("#070708")); p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            rad = max(w, h) * 0.55
+            g = QRadialGradient(QPointF(w * 0.5, h * 0.36), rad)
+            g.setColorAt(0, QColor(243, 238, 230, 20)); g.setColorAt(0.55, QColor(243, 238, 230, 7)); g.setColorAt(1, QColor(0, 0, 0, 0))
+            p.fillRect(QRectF(0, 0, w, h), QBrush(g))
+            rnd = random.Random(7); p.setPen(Qt.PenStyle.NoPen)
+            for _ in range(int(w * h / 7800)):   # gęstość gwiazd niezależna od rozmiaru okna
+                x, y, a, z = rnd.random() * w, rnd.random() * h, 0.08 + rnd.random() * 0.45, 0.3 + rnd.random() * 1.1
+                p.setBrush(QColor(243, 238, 230, int(255 * a))); p.drawEllipse(QPointF(x, y), z, z)
             nz = self.noise(); nz.setDevicePixelRatio(scale); p.drawTiledPixmap(QRect(0, 0, w, h), nz); p.end()
         elif mode == "solid":
             pm = QPixmap(w, h); pm.fill(QColor("#111111"))
@@ -2791,6 +2858,9 @@ class BgFrame(QWidget):
 
 def paint_glass(w, radius=18):
     p = QPainter(w); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    if BG.mode() in ("night", "stars"):   # wygląd z filmu: płaska karta
+        p.setPen(QPen(QColor("#242424"), 1)); p.setBrush(QColor("#151515"))
+        p.drawRoundedRect(QRectF(w.rect()).adjusted(.5, .5, -.5, -.5), 16, 16); return
     path = QPainterPath(); path.addRoundedRect(QRectF(w.rect()).adjusted(.5, .5, -.5, -.5), radius, radius)
     p.setClipPath(path)
     BG.draw_under(p, w)
@@ -2940,6 +3010,260 @@ class FluidAnimation(QObject):
         self._apply(t)
         if t >= 1.0 and self._timer.isActive():
             self.stop(); self.finished.emit()
+
+
+# --- dźwięki interfejsu: syntezowane przy pierwszym użyciu (czysty Python), zapisywane do ~/.luna_dzwieki ---
+SOUND_DIR = HOME / ".luna_dzwieki"
+SOUND_VER = "1"
+_SR = 44100
+
+
+def _snd_tone(n, f0, f1=None, t0=0.0, dur=0.2, tau=0.08, att=0.004, gain=0.3, harm=0.0):
+    """Ton z opadającą obwiednią (opcjonalnie z poślizgiem wysokości f0 → f1 w pierwszych 30 ms)."""
+    out = [0.0] * n; ph = 0.0; i0 = int(t0 * _SR)
+    for k in range(int(dur * _SR)):
+        i = i0 + k
+        if i >= n:
+            break
+        t = k / _SR
+        f = f0 if f1 is None else f1 + (f0 - f1) * math.exp(-t / 0.012)
+        ph += 2 * math.pi * f / _SR
+        env = min(1.0, t / att) * math.exp(-t / tau)
+        out[i] = gain * env * (math.sin(ph) + harm * math.sin(2 * ph))
+    return out
+
+
+def _snd_sweep(n, f0, f1, dur, gain=0.3, seed=1, peak=0.55, t0=0.0):
+    """Szum filtrowany z przesuwaną częstotliwością (szelest / „whoosh”)."""
+    rnd = random.Random(seed); out = [0.0] * n; lp = lp2 = 0.0; i0 = int(t0 * _SR); m = int(dur * _SR)
+    for k in range(m):
+        i = i0 + k
+        if i >= n:
+            break
+        x = k / max(1, m - 1)
+        fc = f0 * (f1 / f0) ** x
+        a = 1 - math.exp(-2 * math.pi * fc / _SR)
+        lp += a * (rnd.uniform(-1, 1) - lp); lp2 += a * (lp - lp2)
+        env = (x / peak) ** 1.6 if x < peak else ((1 - x) / (1 - peak)) ** 1.3
+        out[i] = gain * env * (lp - lp2 * 0.6) * 2.2
+    return out
+
+
+def _snd_mix(n, *parts):
+    out = [0.0] * n
+    for part in parts:
+        for i, v in enumerate(part):
+            out[i] += v
+    return out
+
+
+def _snd_defs():
+    """Dźwięki z filmu pokazowego (bez pisania i odpowiedzi AI)."""
+    N = lambda d: int(d * _SR)
+    d = {}
+    n = N(0.06); d["click"] = _snd_mix(n, _snd_tone(n, 3200, dur=0.05, tau=0.006, gain=0.25), _snd_sweep(n, 4000, 6000, 0.02, 0.12, 3))
+    n = N(0.2); d["pick"] = _snd_mix(n, _snd_sweep(n, 600, 3000, 0.18, 0.3, 4, 0.7), _snd_tone(n, 700, 520, dur=0.12, tau=0.05, gain=0.12))
+    n = N(0.09); d["hover"] = _snd_tone(n, 1320, dur=0.08, tau=0.02, gain=0.15)
+    n = N(0.26); d["drop"] = _snd_mix(n, _snd_tone(n, 90, 150, dur=0.25, tau=0.07, gain=0.55, harm=0.3),
+                                      _snd_sweep(n, 1400, 500, 0.06, 0.18, 5, 0.2))
+    n = N(0.34); d["split"] = _snd_sweep(n, 1600, 380, 0.32, 0.32, 6, 0.35)
+    n = N(0.36); d["slide_in"] = _snd_sweep(n, 380, 2300, 0.34, 0.3, 7, 0.62)
+    n = N(0.36); d["slide_out"] = _snd_sweep(n, 2300, 380, 0.34, 0.28, 8, 0.38)
+    n = N(0.24); d["switch"] = _snd_mix(n, _snd_sweep(n, 800, 2600, 0.2, 0.22, 9, 0.5), _snd_tone(n, 880, dur=0.1, tau=0.03, gain=0.06, t0=0.12))
+    for k, f in enumerate((587.3, 659.3, 740.0, 880.0, 987.8)):   # pentatonika D – kolejne „pyknięcia”
+        n = N(0.16); d[f"pop{k}"] = _snd_tone(n, f, f * 1.3, dur=0.15, tau=0.05, att=0.002, gain=0.3, harm=0.15)
+    n = N(0.06); d["tick"] = _snd_mix(n, _snd_tone(n, 2400, dur=0.05, tau=0.008, gain=0.28), _snd_sweep(n, 5000, 7000, 0.015, 0.12, 10))
+    n = N(0.22); d["block"] = _snd_mix(n, _snd_tone(n, 220, 330, dur=0.2, tau=0.05, gain=0.35, harm=0.2),
+                                       _snd_tone(n, 660, dur=0.1, tau=0.03, gain=0.08, t0=0.03))
+    n = N(1.8); d["chime"] = _snd_mix(n, *[_snd_tone(n, f, t0=k * 0.035, dur=1.6, tau=0.6, att=0.003, gain=0.12, harm=0.08)
+                                          for k, f in enumerate((587.3, 740.0, 880.0, 1174.7))])
+    return d
+
+
+class UiSounds(QObject):
+    """Odtwarzacz krótkich dźwięków interfejsu (QSoundEffect). Pliki powstają raz (synteza), potem tylko odtwarzanie."""
+
+    def __init__(self):
+        super().__init__(); self.store = None; self.fx = {}; self.ok = None
+
+    def _ensure(self):
+        if self.ok is not None:
+            return self.ok
+        self.ok = False
+        if os.environ.get("LUNA_NO_SOUND"):
+            return False
+        try:
+            from PyQt6.QtMultimedia import QSoundEffect
+        except Exception:
+            return False
+        try:
+            SOUND_DIR.mkdir(parents=True, exist_ok=True)
+            stamp = SOUND_DIR / "wersja.txt"
+            if not stamp.exists() or stamp.read_text(encoding="utf-8").strip() != SOUND_VER:
+                import wave
+                import struct
+                for name, data in _snd_defs().items():
+                    with wave.open(str(SOUND_DIR / f"{name}.wav"), "wb") as w:
+                        w.setnchannels(1); w.setsampwidth(2); w.setframerate(_SR)
+                        w.writeframes(b"".join(struct.pack("<h", int(max(-1.0, min(1.0, v)) * 32000)) for v in data))
+                stamp.write_text(SOUND_VER, encoding="utf-8")
+            for f in SOUND_DIR.glob("*.wav"):
+                e = QSoundEffect(self); e.setSource(QUrl.fromLocalFile(str(f))); self.fx[f.stem] = e
+            self.ok = True
+        except Exception:
+            self.ok = False
+        return self.ok
+
+    def play(self, name, vol=1.0, delay=0):
+        if self.store is None or not self.store.feature("ui_sounds"):
+            return
+        if delay:
+            QTimer.singleShot(int(delay), lambda: self.play(name, vol)); return
+        if not self._ensure():
+            return
+        e = self.fx.get(name)
+        if e is not None:
+            level = max(0, min(100, int(self.store.settings.get("ui_volume", 60)))) / 100.0
+            if level > 0:
+                e.setVolume(max(0.0, min(1.0, 0.85 * level * vol))); e.play()
+
+
+_UISND = []
+
+
+def ui_sound(name, vol=1.0, delay=0):
+    if not _UISND:
+        if QApplication.instance() is None:
+            return
+        _UISND.append(UiSounds())
+    _UISND[0].play(name, vol, delay)
+
+
+class Tween(QObject):
+    """Animacja dowolnej funkcji f(k), k = 0…1, w rytmie ekranu (jak FluidAnimation) – np. rozmiary stron podziału
+    albo szerokość panelu. Postęp z upływu czasu, krzywa OutCubic: szybki start, miękkie wyhamowanie."""
+
+    def __init__(self, parent, fn, ms=280, done=None):
+        super().__init__(parent); self.fn, self.ms, self.done = fn, max(1, ms), done
+        self._clock = QElapsedTimer()
+        self._t = QTimer(self); self._t.setTimerType(Qt.TimerType.PreciseTimer); self._t.timeout.connect(self._tick)
+        self._curve = QEasingCurve(QEasingCurve.Type.OutCubic)
+
+    def start(self):
+        FluidAnimation._timer_res(True)
+        self._clock.start(); self._t.start(FluidAnimation.frame_ms()); self._step(0.0)
+
+    def stop(self, finish=False):
+        if self._t.isActive():
+            self._t.stop(); FluidAnimation._timer_res(False)
+            if finish:
+                self._step(1.0)
+                if self.done is not None:
+                    self.done()
+
+    def running(self):
+        return self._t.isActive()
+
+    def _step(self, t):
+        try:
+            self.fn(self._curve.valueForProgress(t))
+        except RuntimeError:   # animowany widget już usunięty
+            self.stop()
+
+    def _tick(self):
+        t = min(1.0, self._clock.elapsed() / self.ms); self._step(t)
+        if t >= 1.0 and self._t.isActive():
+            self._t.stop(); FluidAnimation._timer_res(False)
+            if self.done is not None:
+                self.done()
+
+
+def animate_split(split, ms=300):
+    """Strony podziału rozsuwają się płynnie do równych części: ostatnia (nowa) strona wjeżdża od krawędzi."""
+    old = getattr(split, "_tween", None)
+    if old is not None:
+        old.stop()
+    n = split.count(); sizes = split.sizes(); total = sum(sizes)
+    if n < 2 or total <= 0:
+        return
+    end = [total // n] * n; end[-1] += total - sum(end)
+    start = [(total - 1) // (n - 1)] * (n - 1) + [1]   # setSizes i tak nie zejdzie poniżej minimum strony
+    if n > 2:   # trzecia strona: dwie istniejące zaczynają od swoich obecnych proporcji
+        keep = max(1, sum(sizes[:-1])); start = [int(v * (total - 1) / keep) for v in sizes[:-1]] + [1]
+
+    def step(k):
+        split.setSizes([int(a + (b - a) * k) for a, b in zip(start, end)])
+    split._tween = Tween(split, step, ms); split._tween.start()
+
+
+class BgPatch(QWidget):
+    """Fragment tła okna (gwiazdy / czerń) nad wskazanym miejscem – podkład pod przesuwany obraz panelu."""
+
+    def __init__(self, frame, rect):
+        super().__init__(frame); self.f = frame; self.setGeometry(rect)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True); self.show(); self.raise_()
+
+    def paintEvent(self, ev):
+        p = QPainter(self); p.fillRect(self.rect(), QColor(PAGE_GAP))
+        entry = BG.cache.get(getattr(self.f, "key", None))
+        if entry is not None:
+            d = entry[0].devicePixelRatio(); x, y = self.x(), self.y()
+            p.drawPixmap(QRectF(self.rect()), entry[0], QRectF(x * d, y * d, self.width() * d, self.height() * d))
+
+
+def wipe_split(tab, pm, ms=380):
+    """Podział ekranu bez szarpania: strony od razu mają docelowe rozmiary (jedno przeliczenie), a nad nimi obraz
+    poprzedniego widoku „zjeżdża” do krawędzi nowej strony i na końcu miękko znika."""
+    sp = tab.split
+    if sp is None or not tab.sides or pm is None or pm.isNull() or not tab.isVisible():
+        return
+    vert = sp.orientation() == Qt.Orientation.Vertical
+    o = tab.sides[-1].mapTo(tab, QPoint(0, 0))
+    full = tab.height() if vert else tab.width()
+    end = max(1, (o.y() if vert else o.x()) - sp.handleWidth() // 2)
+    lab = QLabel(tab); lab.setPixmap(pm); lab.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+    lab.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+    lab.setGeometry(0, 0, tab.width(), tab.height()); lab.show(); lab.raise_()
+
+    def step(k):
+        size = int(full + (end - full) * k)
+        lab.resize(tab.width(), size) if vert else lab.resize(size, tab.height())
+
+    def fade():
+        eff = QGraphicsOpacityEffect(lab); lab.setGraphicsEffect(eff)
+        tab._wipe_fade = Tween(lab, lambda k: eff.setOpacity(1 - k), 160, lab.deleteLater); tab._wipe_fade.start()
+    old = getattr(tab, "_wipe", None)
+    if old is not None:
+        old.stop()
+    tab._wipe = Tween(tab, step, ms, fade); tab._wipe.start(); ui_sound("split")
+
+
+def soft_reveal(widgets, delay=40, gap=55, ms=260, pops=0.0):
+    """Widgety pojawiają się po kolei (miękkie wyłanianie). Pomija widgety ze stroną WWW w środku – efekt
+    przezroczystości psułby ich rysowanie."""
+    k = 0
+    for w in widgets:
+        try:
+            if not w.isVisible() or w.findChild(QWebEngineView) is not None or w.graphicsEffect() is not None:
+                continue
+        except RuntimeError:
+            continue
+        eff = QGraphicsOpacityEffect(w); eff.setOpacity(0.0); w.setGraphicsEffect(eff)
+
+        def go(w=w, eff=eff):
+            def step(v):
+                eff.setOpacity(v)
+
+            def done():
+                try:
+                    w.setGraphicsEffect(None)
+                except RuntimeError:
+                    pass
+            tw = Tween(w, step, ms, done); w._reveal = tw; tw.start()
+        QTimer.singleShot(delay + k * gap, go)
+        if pops:
+            ui_sound(f"pop{k % 5}", pops, delay + k * gap)
+        k += 1
 
 
 class WidgetFrame(QFrame):
@@ -3100,7 +3424,7 @@ class SidebarScroll(SmoothScroll):
 class Sidebar(QWidget):
     """Boczny panel: przewijana kolumna widgetów + wąska szyna (drawer). Panel sam zwija się do szyny, gdy w oknie
     brakuje miejsca; kliknięcie szyny wysuwa go z powrotem (przeglądarka zwija wtedy drugi, jeśli trzeba)."""
-    W, RAIL = 300, 20
+    W, RAIL = 300, 22
     rail_clicked = pyqtSignal(str)
 
     def __init__(self, side, store):
@@ -3127,15 +3451,15 @@ class Sidebar(QWidget):
         # półprzezroczyste tło: wymuś pełne odmalowanie przy przewijaniu (bez artefaktów po kopiowaniu pikseli)
         self.scroll.verticalScrollBar().valueChanged.connect(lambda _: self.scroll.viewport().update())
         self.scroll.setMinimumWidth(0); self.scroll.setMaximumWidth(self.W)
-        self.rail = QToolButton(); self.rail.setObjectName("rail"); self.rail.setFixedSize(16, 54)
+        self.rail = QToolButton(); self.rail.setObjectName("rail"); self.rail.setFixedSize(18, 64)   # uchwyt: wysuń / zwiń panel
         self.rail.setCursor(Qt.CursorShape.PointingHandCursor); self.rail.setIconSize(QSize(14, 14))
         self.rail.clicked.connect(lambda: self.rail_clicked.emit(self.side))
-        rb = QVBoxLayout(); rb.setContentsMargins(2, 18, 2, 0); rb.addWidget(self.rail); rb.addStretch()
+        rb = QVBoxLayout(); rb.setContentsMargins(2, 0, 2, 0); rb.addStretch(1); rb.addWidget(self.rail); rb.addStretch(1)   # uchwyt w połowie wysokości
         if side == "left":
             lay.addWidget(self.scroll); lay.addLayout(rb)
         else:
             lay.addLayout(rb); lay.addWidget(self.scroll)
-        self.anim = FluidAnimation(self.scroll, b"maximumWidth", self); self.anim.setDuration(220)
+        self.anim = FluidAnimation(self.scroll, b"maximumWidth", self); self.anim.setDuration(300)
         self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)   # wysuwanie/zwijanie panelu: szybki start, miękkie wyhamowanie
         self.anim.finished.connect(self._anim_done)
         self.user_collapsed = bool(store.settings.get("sidebar", {}).get(side, False))  # wybór użytkownika (zapisywany)
@@ -3199,10 +3523,11 @@ class Sidebar(QWidget):
         if not animate:
             self.scroll.setMaximumWidth(self.W); self.scroll.setVisible(not c)
         elif c:
-            self.anim.setStartValue(self.scroll.width()); self.anim.setEndValue(0); self.anim.start()
+            self.anim.setStartValue(self.scroll.width()); self.anim.setEndValue(0); self.anim.start(); ui_sound("slide_out", 0.6)
         else:
             self.scroll.setMaximumWidth(0); self.scroll.show()
             self.anim.setStartValue(0); self.anim.setEndValue(self.W); self.anim.start()
+            soft_reveal(self.frames, delay=90, gap=70, ms=380, pops=0.8); ui_sound("slide_in", 0.6)
         self._rail_icon()
 
     def _anim_done(self):
@@ -3762,6 +4087,8 @@ class TodoWidget(WidgetFrame):
 
     def toggled(self, it, v):
         it["d"] = v; self.save(); QTimer.singleShot(0, self.render)
+        if v:
+            ui_sound("tick")
 
 
 class PomodoroWidget(WidgetFrame):
@@ -5623,15 +5950,22 @@ def page_look(dlg):
     w, l = page_box("Wygląd", "Tło jest grafiką wektorową (SVG) renderowaną w rozdzielczości ekranu – ostrą także na Retina/HiDPI. Skaluje się w trybie „cover”.")
     store = dlg.store
     combo = QComboBox()
-    for key, name in (("image", "Wektorowe – ukośne arkusze i poświata (ostre na HiDPI)"), ("gradient", "Gradient"), ("solid", "Jednolite czarne")):
+    for key, name in (("stars", "Gwiazdy – czerń z poświatą i gwiazdami (jak w filmie)"), ("night", "Gładka czerń, strony w ramkach"),
+                      ("image", "Wektorowe – ukośne arkusze i poświata (ostre na HiDPI)"), ("gradient", "Gradient"),
+                      ("solid", "Jednolite czarne")):
         combo.addItem(name, key)
-    combo.setCurrentIndex(max(0, combo.findData(store.settings.get("bg", "image"))))
+    combo.setCurrentIndex(max(0, combo.findData(store.settings.get("bg", "stars"))))
 
     def bg_changed(_):
         store.settings["bg"] = combo.currentData(); store.save_settings()
         BG.key = None; dlg.browser.bgframe._recompute(); dlg.host.repaint_all()
         for w in WINDOWS:
             w.bgframe._recompute(); w.host.repaint_all()
+            for t in w.all_tabs():   # ekran główny w ramce tylko w wyglądzie „Jak w filmie”
+                t._frame_margins()
+                for v in t.findChildren(QWebEngineView):
+                    c = getattr(v, "_corners", None)
+                    c is not None and c.place()
     combo.currentIndexChanged.connect(bg_changed)
     sl = QSlider(Qt.Orientation.Horizontal); sl.setRange(60, 235); sl.setValue(GLASS_ALPHA[0])
 
@@ -6138,8 +6472,13 @@ def page_updates(dlg):
     name, desc, _ = FEATURES["updates"]
     l.addWidget(switch_row(name, desc, st.feature("updates"), lambda v: st.set_feature("updates", v)))
     if not up.available():
-        l.addWidget(lbl(f"Bieżąca wersja: {VERSION}", "h3"))
-        l.addWidget(lbl("Luna sprawdza po starcie, czy na GitHubie jest nowsze wydanie, i proponuje jego pobranie. "
+        name2, desc2, _ = FEATURES["auto_update"]
+        l.addWidget(switch_row(name2, desc2, st.feature("auto_update"), lambda v: st.set_feature("auto_update", v)))
+        l.addWidget(lbl("Luna", "h3"))
+        l.addWidget(lbl("Luna sprawdza po starcie, czy na GitHubie jest nowsze wydanie. Z automatycznymi aktualizacjami "
+                        "pobiera je sama i instaluje przy zamknięciu – bez ponownego pobierania instalatora. "
+                        "Twoje dane zostają." if AutoInstaller.supported() else
+                        "Luna sprawdza po starcie, czy na GitHubie jest nowsze wydanie, i proponuje jego pobranie. "
                         "Nową wersję instalujesz tak samo jak pierwszą – Twoje dane zostają.", "muted2", wrap=True))
         stat = lbl("", "muted2", wrap=True)
         chk = QPushButton("Sprawdź teraz"); dl = QPushButton("Strona wydań")
@@ -6148,13 +6487,22 @@ def page_updates(dlg):
 
         def check_now():
             rc = ReleaseCheck(dlg); stat.setText("Sprawdzanie…")
-            rc.found.connect(lambda v, u: stat.setText(f"Dostępna wersja {v} – kliknij „Strona wydań”, aby ją pobrać."))
+            def found(v, u):
+                if st.feature("auto_update") and AutoInstaller.supported() and rc.assets:
+                    ai = auto_installer(); stat.setText("Pobieranie nowej wersji…")
+                    ai.progress.connect(lambda pc: stat.setText(f"Pobieranie nowej wersji… {pc}%"))
+                    ai.ready.connect(lambda vv, _p: stat.setText("Nowa wersja gotowa – zainstaluje się przy zamknięciu Luny."))
+                    ai.failed.connect(lambda m: stat.setText(f"Nie udało się pobrać: {m}. Użyj „Strona wydań”."))
+                    dlg.browser.on_new_release(v, u, rc.assets)
+                else:
+                    stat.setText("Dostępna nowa wersja – kliknij „Strona wydań”, aby ją pobrać.")
+            rc.found.connect(found)
             rc.check(); QTimer.singleShot(8000, lambda: stat.text() == "Sprawdzanie…" and stat.setText("Masz najnowszą wersję."))
         chk.clicked.connect(check_now)
         l.addStretch(1)
         return scroll_page(w)
     ver = up.version()
-    l.addWidget(lbl(f"Bieżąca wersja: {VERSION}" + (f" (commit {ver})" if ver else ""), "h3"))
+    l.addWidget(lbl("Luna z repozytorium GitHub", "h3"))
     stat = lbl("", "muted2", wrap=True); l.addWidget(stat)
     row = QHBoxLayout(); row.setSpacing(6)
     chk = QPushButton("Sprawdź teraz"); upd = QPushButton("Zaktualizuj i uruchom ponownie"); upd.setObjectName("primary")
@@ -6513,7 +6861,7 @@ class AboutDialog(LunaDialog):
         lg = QLabel(); lg.setPixmap(logo_pixmap(64)); lg.setFixedSize(64, 64); self.body.addWidget(lg, 0, Qt.AlignmentFlag.AlignHCenter)
         t = lbl("Luna", "h1"); t.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(t)
         for text, cls in (("Lekka przeglądarka z kafelkami, widgetami, blokadą reklam i asystentem AI.", "muted2"),
-                          (f"Wersja {VERSION}  ·  silnik Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)", "muted"),
+                          (f"Silnik Chromium {qWebEngineChromiumVersion()} (Qt WebEngine)", "muted"),
                           ("Wolne oprogramowanie na licencji GNU GPL v3 – bez żadnej gwarancji. Korzystając z Luny, "
                            "akceptujesz regulamin.", "muted")):
             l_ = lbl(text, cls, wrap=True); l_.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(l_)
@@ -6875,52 +7223,65 @@ class HomePage(QWidget):
         outer.addStretch(1); outer.addWidget(content, 100); outer.addStretch(1)
         lay = QVBoxLayout(content); lay.setContentsMargins(0, 26, 0, 14); lay.setSpacing(10)
 
-        logo = QLabel(); logo.setPixmap(logo_pixmap(46)); logo.setFixedSize(46, 46)
-        brand = QLabel("Luna"); brand.setObjectName("brand")
-        brow = QHBoxLayout(); brow.setSpacing(12)
-        brow.addStretch(); brow.addWidget(logo); brow.addWidget(brand); brow.addStretch()
-        head = Caption()
-        lay.addLayout(brow); lay.addWidget(head); lay.addSpacing(8)
+        # nagłówek jak w filmie pokazowym: duży, cienki zegar, data i zmieniające się powitanie
+        self.headbox = QWidget(); self.headbox.setObjectName("clear")
+        hb = QVBoxLayout(self.headbox); hb.setContentsMargins(0, 10, 0, 0); hb.setSpacing(0)
+        self.clock = QLabel(); self.clock.setObjectName("homeclock"); self.clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.date = QLabel(); self.date.setObjectName("homedate"); self.date.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        head = Caption(); head.setObjectName("homecap"); head.setMinimumHeight(30)
+        head.hide()   # jak w filmie: pod datą nic więcej (zmieniające się podpisy nie są wyświetlane)
+        hb.addWidget(self.clock); hb.addWidget(self.date)
+        lay.addStretch(1)   # treść wyśrodkowana w pionie, jak w filmie
+        lay.addWidget(self.headbox); lay.addSpacing(30)
+        self._ct = QTimer(self); self._ct.setSingleShot(True); self._ct.timeout.connect(self._tick_clock)
+        self._tick_clock()
 
         self.search = QLineEdit(); self.search.setObjectName("search")
         self.search.addAction(glyph("search"), QLineEdit.ActionPosition.LeadingPosition)
         self.search.returnPressed.connect(self.do_search)
-        self.search.setMaximumWidth(680); self.search.setMinimumWidth(320)   # szerokość dopasowana w resizeEvent
+        self.search.setMaximumWidth(560); self.search.setMinimumWidth(320); self.search.setFixedHeight(50)   # jak w filmie
         lay.addWidget(self.search, 0, Qt.AlignmentFlag.AlignHCenter)
 
         center = lay
-        top = QHBoxLayout()
+        self.apps_head = QWidget(); self.apps_head.setObjectName("clear")
+        top = QHBoxLayout(self.apps_head); top.setContentsMargins(0, 0, 0, 0)
         title = QLabel("Aplikacje"); title.setObjectName("h1")
         self.count = QLabel(); self.count.setObjectName("muted")
         add = gicon(QPushButton(), "plus", 18); add.setObjectName("round"); add.setFixedSize(34, 34); add.setToolTip("Dodaj aplikację")
         add.clicked.connect(self.add_dialog)
         top.addWidget(title); top.addStretch(); top.addWidget(self.count); top.addSpacing(8); top.addWidget(add)
-        center.addLayout(top)
+        center.addWidget(self.apps_head); self.apps_head.hide()   # liczba i „+” → kafelek „+” na końcu (jak w filmie)
+        center.addSpacing(30)
 
         self.grid = QListWidget(); self.grid.setObjectName("grid")
         self.grid.setViewMode(QListView.ViewMode.IconMode)
-        self.grid.setIconSize(QSize(88, 88)); self.grid.setGridSize(QSize(116, 130))
+        self.grid.setIconSize(QSize(54, 54)); self.grid.setGridSize(QSize(82, 88))
+        self.grid.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.grid.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.grid.setMovement(QListView.Movement.Snap)
         self.grid.setResizeMode(QListView.ResizeMode.Adjust)
         self.grid.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.grid.setWordWrap(True); self.grid.setSpacing(6)
-        self.grid.itemClicked.connect(lambda it: self.opened.emit(it.data(Qt.ItemDataRole.UserRole)))
+        self.grid.itemClicked.connect(self._tile_clicked)
         self.grid.customContextMenuRequested.connect(self.menu)
         self.grid.model().rowsMoved.connect(self.reordered)
-        center.addWidget(self.grid, 3)
+        center.addWidget(self.grid, 0, Qt.AlignmentFlag.AlignHCenter)
+        center.addStretch(1)
 
-        seg = QHBoxLayout(); seg.setSpacing(6); self.seg_btns = {}; sg = QButtonGroup(self)
+        self.seg_box = QWidget(); self.seg_box.setObjectName("clear")
+        seg = QHBoxLayout(self.seg_box); seg.setContentsMargins(0, 0, 0, 0); seg.setSpacing(6); self.seg_btns = {}; sg = QButtonGroup(self)
         for key, text in (("recent", "Ostatnie"), ("closed", "Ostatnio zamknięte"), ("reading", "Kontynuuj czytanie")):
             b = QToolButton(); b.setObjectName("aipick"); b.setCheckable(True); b.setText(text)
             b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda _=False, k=key: self.set_list_mode(k))
             sg.addButton(b); seg.addWidget(b); self.seg_btns[key] = b
-        seg.addStretch(); center.addLayout(seg)
+        seg.addStretch(); center.addWidget(self.seg_box)
+        self.seg_box.hide()   # jak w filmie: ostatnie / zamknięte / do przeczytania są w menu Luny → Historia i Do przeczytania
         self.br = None; self.list_mode = store.settings.get("home_list", "recent")
         self.recent = QListWidget(); self.recent.setObjectName("recent")
         self.recent.setIconSize(QSize(38, 38)); self.recent.setSpacing(6)
         self.recent.itemClicked.connect(self.recent_clicked)
-        center.addWidget(self.recent, 2)
+        center.addWidget(self.recent, 2); self.recent.hide()
 
         self.grid.viewport().setAutoFillBackground(False); self.recent.viewport().setAutoFillBackground(False)
         self._dirty = False
@@ -6940,8 +7301,37 @@ class HomePage(QWidget):
         self.sugg = SuggestController(self.search, browser)
         self.search.returnPressed.connect(lambda: self.sugg.hide())
 
+    DAYS = ("poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela")
+    MONTHS = ("stycznia", "lutego", "marca", "kwietnia", "maja", "czerwca", "lipca", "sierpnia", "września",
+              "października", "listopada", "grudnia")
+
+    def paintEvent(self, ev):
+        mode = BG.mode()
+        if mode not in ("night", "stars"):
+            return
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)   # ramka jak w filmie: poświata i obwódka
+        r = QRectF(self.rect()).adjusted(.5, .5, -.5, -.5)
+        g = QRadialGradient(QPointF(r.center().x(), r.top() + r.height() * 0.3), max(500.0, r.width() * 0.55))
+        a = 120 if mode == "stars" else 255   # przy gwiazdach ramka półprzezroczysta – gwiazdy prześwitują
+        g.setColorAt(0, QColor(26, 26, 26, a)); g.setColorAt(1, QColor(18, 18, 18, a))
+        p.setPen(QPen(QColor(PANE_LINE), 1)); p.setBrush(QBrush(g)); p.drawRoundedRect(r, 12, 12)
+
+    def _tick_clock(self):
+        """Zegar ekranu głównego: odświeżany raz na minutę (w pełnej minucie) i tylko, gdy ekran jest widoczny."""
+        now = datetime.now()
+        self.clock.setText(now.strftime("%H:%M"))
+        self.date.setText(f"{self.DAYS[now.weekday()]}, {now.day} {self.MONTHS[now.month - 1]}")
+        if self.isVisible():
+            self._ct.start(max(500, (60 - now.second) * 1000 - now.microsecond // 1000 + 30))
+
+    def hideEvent(self, ev):
+        self._ct.stop(); super().hideEvent(ev)
+
     def showEvent(self, ev):
         super().showEvent(ev)
+        self._tick_clock()
+        # wejście jak w filmie: zegar, wyszukiwarka, aplikacje i lista wyłaniają się po kolei
+        soft_reveal([self.headbox, self.search, self.grid], delay=0, gap=80, ms=420, pops=0.45)
         if self._dirty:
             self.refresh()
         elif self.list_mode != "recent":   # zamknięte karty i lista do przeczytania zmieniają się poza ekranem głównym
@@ -7001,7 +7391,7 @@ class HomePage(QWidget):
 
     def refresh(self):
         self._dirty = False
-        self.search.setPlaceholderText(f"Szukaj w {CURRENT[0]} lub wpisz adres…")
+        self.search.setPlaceholderText("Szukaj lub wpisz adres")
         n = len(self.store.items)
         self.count.setText(f"{n} {plural(n)}")
         self.grid.blockSignals(True); self.grid.clear()
@@ -7011,12 +7401,27 @@ class HomePage(QWidget):
             it.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
             it.setToolTip(b["url"])
             self.grid.addItem(it)
-        self.grid.blockSignals(False)
+        add = QListWidgetItem(add_tile_icon(), "Dodaj"); add.setData(Qt.ItemDataRole.UserRole, "__add__")
+        add.setTextAlignment(Qt.AlignmentFlag.AlignHCenter); add.setToolTip("Dodaj aplikację do ekranu głównego")
+        add.setFlags(Qt.ItemFlag.ItemIsEnabled)   # nie da się go przesunąć – zawsze na końcu
+        self.grid.addItem(add)
+        self.grid.blockSignals(False); self._fit_grid()
         self.fill_list()
 
+    def _tile_clicked(self, it):
+        u = it.data(Qt.ItemDataRole.UserRole)
+        self.add_dialog() if u == "__add__" else self.opened.emit(u)
+
+    def _fit_grid(self):
+        """Rząd kafelków wyśrodkowany pod wyszukiwarką (jak w filmie): siatka ma dokładnie szerokość kafelków."""
+        n = max(1, self.grid.count()); gw, gh = self.grid.gridSize().width(), self.grid.gridSize().height()
+        cols = max(1, min(n, (max(300, self.width() - 120)) // gw)); rows = -(-n // cols)
+        self.grid.setFixedSize(cols * gw + 8, min(rows, 4) * gh + 8)
+
     def resizeEvent(self, ev):
+        self._fit_grid()
         super().resizeEvent(ev)   # pole wyszukiwania: szerokie, ale z marginesem po bokach
-        self.search.setFixedWidth(max(320, min(680, self.width() - 140)))
+        self.search.setFixedWidth(max(320, min(560, int(self.width() * 0.86))))
 
     def do_search(self):
         text = self.search.text().strip()
@@ -7026,7 +7431,7 @@ class HomePage(QWidget):
     def reordered(self, *_):
         self.store.items = [{"name": self.grid.item(i).text(),
                              "url": self.grid.item(i).data(Qt.ItemDataRole.UserRole)}
-                            for i in range(self.grid.count())]
+                            for i in range(self.grid.count()) if self.grid.item(i).data(Qt.ItemDataRole.UserRole) != "__add__"]
         self.store.save(notify=False)
 
     def add_dialog(self):
@@ -7038,7 +7443,7 @@ class HomePage(QWidget):
 
     def menu(self, pos):
         it = self.grid.itemAt(pos)
-        if not it:
+        if not it or it.data(Qt.ItemDataRole.UserRole) == "__add__":
             return
         m = QMenu(self)
         a_edit, a_icon, a_del = m.addAction("Edytuj"), m.addAction("Odśwież ikonę"), m.addAction("Usuń")
@@ -8950,7 +9355,14 @@ class WelcomeWizard(LunaDialog):
         self._check(v, "Tryb kompaktowy", "Pasek adresu schowany – pojawia się po najechaniu na karty (Ctrl+Shift+F).",
                     bool(self.st.settings.get("compact")), lambda on: self.b.set_compact(on))
         self._feature(v, "workspaces", "Przestrzenie robocze", "Osobne zestawy kart, np. Praca, Zakupy, Hobby.")
-        self._feature(v, "panel_page_bg", "Panele w kolorze strony", "Panele boczne przyjmują kolor otwartej strony.")
+        self._feature(v, "ui_sounds", "Dźwięki interfejsu", "Ciche dźwięki jak w filmie: karty, podział ekranu, panele, widgety.")
+        vol = QSlider(Qt.Orientation.Horizontal); vol.setRange(0, 100); vol.setValue(int(self.st.settings.get("ui_volume", 60)))
+        vol.setToolTip("Głośność dźwięków interfejsu"); vlab = lbl(f"Głośność dźwięków: {vol.value()}%", "muted2")
+
+        def set_vol(x):
+            self.st.settings["ui_volume"] = int(x); self.st.save_soon(); vlab.setText(f"Głośność dźwięków: {x}%")
+        vol.valueChanged.connect(set_vol); vol.sliderReleased.connect(lambda: ui_sound("pop2"))   # podgląd głośności
+        v.addWidget(vlab); v.addWidget(vol)
         v.addStretch(1)
         return "Wygląd", w
 
@@ -9134,6 +9546,7 @@ class ReleaseCheck(QObject):
     """Zainstalowana Luna (plik .exe / AppImage / .app – bez gita): sprawdza najnowsze wydanie na GitHubie i proponuje
     pobranie, gdy jest nowsze niż VERSION. Jedno zapytanie po starcie (i co 12 godzin), nic poza numerem wersji."""
     found = pyqtSignal(str, str)   # wersja, adres strony wydania
+    assets = {}                    # nazwa pliku wydania → adres pobrania (po udanym sprawdzeniu)
 
     def check(self):
         import threading, urllib.request
@@ -9145,10 +9558,122 @@ class ReleaseCheck(QObject):
                 d = json.loads(urllib.request.urlopen(req, timeout=15).read().decode("utf-8"))
                 tag = str(d.get("tag_name", "")).lstrip("vV")
                 if tag and version_tuple(tag) > version_tuple(VERSION):
+                    self.assets = {a.get("name", ""): a.get("browser_download_url", "") for a in d.get("assets") or []}
                     self.found.emit(tag, d.get("html_url") or RELEASES_URL)
             except Exception:
                 pass
         threading.Thread(target=work, daemon=True).start()
+
+
+class AutoInstaller(QObject):
+    """Automatyczna aktualizacja zainstalowanej Luny (Windows): pobiera instalator nowego wydania w tle, sprawdza sumę
+    SHA-256 z pliku SHA256SUMS.txt tego samego wydania i podpis cyfrowy (Authenticode = Valid), a potem instaluje go
+    po cichu (Inno Setup, bez uprawnień administratora) – przy zamknięciu Luny albo od razu z ponownym uruchomieniem."""
+    ready = pyqtSignal(str, str)   # wersja, ścieżka sprawdzonego instalatora
+    failed = pyqtSignal(str)
+    progress = pyqtSignal(int)     # procent pobrania
+
+    def __init__(self):
+        super().__init__(QApplication.instance()); self.ver = self.path = None; self.busy = self.launched = False
+
+    @staticmethod
+    def supported():
+        return getattr(sys, "frozen", False) and sys.platform == "win32" and not can_self_install()
+
+    @staticmethod
+    def folder():
+        return Path(os.environ.get("LOCALAPPDATA", str(BASE_HOME))) / "Luna-aktualizacje"
+
+    def fetch(self, ver, assets):
+        if self.busy:
+            return
+        if self.ver == ver and self.path:
+            self.ready.emit(ver, self.path); return
+        name = next((n for n in assets if re.fullmatch(r"Luna-(?:[\d.]+-)?Windows-Setup\.exe", n or "")), None)
+        sums = assets.get("SHA256SUMS.txt")
+        if not name or not sums:
+            self.failed.emit("w wydaniu brakuje instalatora albo sum kontrolnych"); return
+        self.busy = True
+        import threading
+        threading.Thread(target=self._work, args=(ver, name, assets[name], sums), daemon=True).start()
+
+    def _work(self, ver, name, url, sums_url):
+        import hashlib, urllib.request, subprocess
+        try:
+            folder = self.folder(); folder.mkdir(parents=True, exist_ok=True)
+            for old in folder.glob("Luna-*"):   # starsze pobrane wersje
+                if old.name not in (name, name + ".part"):
+                    try:
+                        old.unlink()
+                    except OSError:
+                        pass
+            hdr = {"User-Agent": "Luna-browser"}
+            txt = urllib.request.urlopen(urllib.request.Request(sums_url, headers=hdr), timeout=30).read().decode("utf-8", "replace")
+            want = next((ln.split()[0].lower() for ln in txt.splitlines() if ln.strip().endswith(name)), "")
+            if not re.fullmatch(r"[0-9a-f]{64}", want):
+                raise RuntimeError("brak sumy kontrolnej instalatora")
+            dest = folder / name
+
+            def sha(path):
+                h = hashlib.sha256()
+                with open(path, "rb") as f:
+                    for chunk in iter(lambda: f.read(1 << 20), b""):
+                        h.update(chunk)
+                return h.hexdigest()
+            if not (dest.exists() and sha(dest) == want):   # pobrane wcześniej i poprawne – bez ponownego pobierania
+                part = folder / (name + ".part"); h = hashlib.sha256()
+                with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=60) as r, open(part, "wb") as f:
+                    total = int(r.headers.get("Content-Length") or 0); got = 0; last = -1
+                    for chunk in iter(lambda: r.read(1 << 20), b""):
+                        f.write(chunk); h.update(chunk); got += len(chunk)
+                        pc = int(got * 100 / total) if total else 0
+                        if pc != last:
+                            last = pc; self.progress.emit(pc)
+                if h.hexdigest() != want:
+                    part.unlink(missing_ok=True); raise RuntimeError("suma kontrolna się nie zgadza – plik odrzucony")
+                os.replace(part, dest)
+            ps = "(Get-AuthenticodeSignature -LiteralPath $env:L_FILE).Status.ToString()"
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True, text=True,
+                               env=dict(os.environ, L_FILE=str(dest)), timeout=60, creationflags=0x08000000,
+                               stdin=subprocess.DEVNULL)
+            status = (r.stdout or "").strip()
+            # podpisany plik musi mieć ważny podpis; niepodpisany (wydania sprzed podpisu SignPath) przechodzi tylko
+            # dzięki zgodnej sumie SHA-256 z tego samego wydania (pobranej szyfrowanym połączeniem z GitHuba)
+            if status not in ("Valid", "NotSigned"):
+                raise RuntimeError(f"podpis cyfrowy instalatora jest nieprawidłowy ({status}) – plik odrzucony")
+            self.ver, self.path = ver, str(dest)
+            self.ready.emit(ver, str(dest))
+        except Exception as e:
+            self.failed.emit(str(e)[:200])
+        finally:
+            self.busy = False
+
+    def install(self, relaunch):
+        """Cicha instalacja po zamknięciu Luny (osobny proces czeka chwilę, instaluje i – na życzenie – uruchamia Lunę)."""
+        if self.launched or not self.path or not Path(self.path).exists():
+            return False
+        import subprocess
+        ps = ("Start-Sleep -Seconds 2; "
+              "Start-Process -FilePath $env:L_SETUP -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"
+              "'/CLOSEAPPLICATIONS' -Wait; "
+              "if ($env:L_RUN) { Start-Process -FilePath $env:L_RUN }")
+        env = dict(os.environ, L_SETUP=self.path, L_RUN=(sys.executable if relaunch else ""))
+        try:
+            subprocess.Popen(["powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps], env=env,
+                             creationflags=0x08000000 | 0x00000200, stdin=subprocess.DEVNULL, close_fds=True)
+        except OSError:
+            return False
+        self.launched = True
+        return True
+
+
+AUTOINST = []
+
+
+def auto_installer():
+    if not AUTOINST:
+        AUTOINST.append(AutoInstaller())
+    return AUTOINST[0]
 
 
 def version_tuple(v):
@@ -9620,6 +10145,31 @@ class MenuRow(QWidget):
         return b
 
 
+class MenuTiles(QWidget):
+    """Rząd kafelków w menu Luny (styl kafelków ekranu głównego): ikona + krótki podpis; kliknięcie zamyka menu."""
+
+    def __init__(self, menu):
+        super().__init__(); self.menu = menu; self.setObjectName("clear")
+        self.h = QHBoxLayout(self); self.h.setContentsMargins(2, 4, 2, 4); self.h.setSpacing(6)
+
+    def tile(self, kind, text, fn, tip="", enabled=True, checked=None, menu=None, icon=None):
+        b = QToolButton(); b.setObjectName("menutile"); b.setIcon(icon or glyph(kind, "#d6d6d6")); b.setIconSize(QSize(20, 20))
+        b.setText(text); b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon); b.setFixedHeight(62)
+        b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        b.setToolTip(tip or text); b.setCursor(Qt.CursorShape.PointingHandCursor); b.setEnabled(enabled)
+        b.pressed.connect(lambda: ui_sound("click", 0.6))
+        if checked is not None:
+            b.setCheckable(True); b.setChecked(checked)
+        if menu is not None:   # kafelek z podmenu (np. Historia, Zakładki): wybór zamyka też całe menu Luny
+            b.setMenu(menu); b.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+            b.setStyleSheet("QToolButton::menu-indicator { image:none; width:0; }")
+            menu.triggered.connect(lambda _a: self.menu.close())
+        else:
+            b.clicked.connect(lambda _=False: (self.menu.close(), QTimer.singleShot(0, fn)))
+        self.h.addWidget(b)
+        return b
+
+
 class MenuSearch(QFrame):
     """Pierwszy wiersz menu Luny: „Szukaj poleceń i ustawień” – otwiera paletę poleceń (Ctrl+K)."""
 
@@ -9648,10 +10198,11 @@ def menu_row_action(menu, row):
 
 
 # ikony, które można przypiąć do paska obok wyszukiwarki (reszta trafia do menu burgera)
-TOOL_ITEMS = [("shield", "Blokada reklam i śledzenia"), ("key", "Hasła i aliasy"), ("split", "Podział ekranu"),
-              ("reader", "Tryb czytania"), ("star", "Dodaj do ekranu głównego"), ("ai", "Asystent AI"),
-              ("apps", "Panel aplikacji (komunikatory)"), ("gear", "Ustawienia")]
-TOOL_DEFAULT = ["shield", "key", "reader", "star", "ai", "apps"]
+TOOL_ITEMS = [("home", "Ekran główny"), ("shield", "Blokada reklam i śledzenia"), ("key", "Hasła i aliasy"),
+              ("split", "Podział ekranu"), ("reader", "Tryb czytania"), ("star", "Dodaj do ekranu głównego"),
+              ("ai", "Asystent AI"), ("apps", "Panel aplikacji (komunikatory)"), ("widgets", "Widgety (panele boczne)"),
+              ("gear", "Ustawienia")]
+TOOL_DEFAULT = ["shield", "split", "ai", "widgets"]   # jak w filmie pokazowym; reszta w menu Luny (można przypiąć)
 PRIVATE = "__prywatne__"
 PRIVACY_URL = "https://z4k0lzakol.github.io/Luna/privacy.html"   # GitHub Pages z folderu docs/
 TERMS_URL = "https://z4k0lzakol.github.io/Luna/regulamin.html"
@@ -9814,13 +10365,6 @@ return 'on';
 })()"""
 
 
-PAGE_BG_JS = r"""(function(){
- function bg(e){ if (!e) return ''; var v = getComputedStyle(e).backgroundColor;
-   return (v && v !== 'transparent' && !/rgba\([^)]*,\s*0\)$/.test(v)) ? v : ''; }
- return bg(document.body) || bg(document.documentElement) || '';
-})()"""
-
-
 def css_color(v):
     """„rgb(…)” / „rgba(…)” z CSS → QColor; brak tła = kolor podkładu kart Luny (#111111), półprzezroczyste – zmieszane z nim."""
     base = QColor("#111111")
@@ -9852,8 +10396,8 @@ def tab_icon(icon, color=None, asleep=False):
         p.setOpacity(0.4)
     if icon is not None and not icon.isNull():
         p.drawPixmap(2, 2, icon.pixmap(28, 28))
-    else:
-        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#5a5a5a")); p.drawEllipse(9, 9, 14, 14)
+    else:   # jak w filmie: strona bez ikony – ciemny zaokrąglony kwadracik
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#2b2b2b")); p.drawRoundedRect(QRectF(2, 2, 28, 28), 9, 9)
     p.setOpacity(1.0)
     if color:
         p.setPen(QPen(QColor("#111111"), 2)); p.setBrush(QColor(color)); p.drawEllipse(19, 19, 12, 12)
@@ -9977,6 +10521,8 @@ class SplitSide(QFrame):
         if self.property("active") != on:
             self.setProperty("active", on); self.style().unpolish(self); self.style().polish(self)
             self.title.style().unpolish(self.title); self.title.style().polish(self.title)
+            if self.view is not None and getattr(self.view, "_corners", None) is not None:
+                self.view._corners.place()   # łuk ramki w rogach strony w kolorze aktywnej / nieaktywnej ramki
 
     def set_view(self, view):
         if self.picker is not None:
@@ -10463,6 +11009,106 @@ class HighlightsDialog(LunaDialog):
         self.fill()
 
 
+class _Corner(QWidget):
+    """Jeden zaokrąglony narożnik strony: maluje tło odstępu poza łukiem (i ewentualnie łuk ramki)."""
+
+    def __init__(self, mgr, which):
+        super().__init__(mgr.view); self.mgr, self.which = mgr, which
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def paintEvent(self, ev):
+        r = self.mgr.radius; w = h = r
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        left, top = self.which in ("tl", "bl"), self.which in ("tl", "tr")
+        # okrąg narożnika: środek w wewnętrznym rogu kwadratu r×r
+        cx, cy = (r if left else 0), (r if top else 0)
+        outer = QPainterPath(); outer.addRect(QRectF(-2, -2, w + 4, h + 4))   # poza krawędź: bez jasnej linii przy skalowaniu
+        circ = QPainterPath(); circ.addEllipse(QPointF(cx, cy), r, r)
+        area = outer.subtracted(circ)
+        if not self.mgr.in_split() and BG.mode() == "stars":
+            f = self.parentWidget()
+            while f is not None and not isinstance(f, BgFrame):
+                f = f.parentWidget()
+            entry = BG.cache.get(getattr(f, "key", None)) if f is not None else None
+            if entry is not None:
+                pos = self.mapTo(f, QPoint(0, 0)); p.save(); p.setClipPath(area)
+                dpr = entry[0].devicePixelRatio()
+                p.drawPixmap(QRectF(0, 0, w, h), entry[0], QRectF(pos.x() * dpr, pos.y() * dpr, w * dpr, h * dpr))
+                p.restore()
+            else:
+                p.fillPath(area, QColor(self.mgr.gap()))
+        else:
+            p.fillPath(area, QColor(self.mgr.gap()))
+        b = self.mgr.border()
+        if b is not None:
+            p.setPen(QPen(b, 1)); p.setBrush(Qt.BrushStyle.NoBrush)
+            start = {"tl": 90, "tr": 0, "bl": 180, "br": 270}[self.which]
+            p.drawArc(QRectF(cx - r + .5, cy - r + .5, 2 * r - 1, 2 * r - 1), start * 16, 90 * 16)
+
+
+class _Edge(QWidget):
+    """Cienka obwódka ramki strony (1 px) wzdłuż krawędzi widoku."""
+
+    def __init__(self, mgr):
+        super().__init__(mgr.view)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True); self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+    def paintEvent(self, ev):
+        QPainter(self).fillRect(self.rect(), QColor(PANE_LINE))
+
+
+class PageCorners(QObject):
+    """Zaokrąglone rogi strony WWW (wygląd „karty” jak w filmie pokazowym). Silnik stron nie daje się przyciąć
+    wygładzoną maską, więc na rogach leżą cztery maleńkie nakładki malujące tło odstępu poza łukiem.
+    Pojedyncza strona – wszystkie rogi; strona w podziale ekranu – tylko dolne (u góry jest nagłówek ramki)."""
+
+    def __init__(self, view):
+        super().__init__(view); self.view = view; self.radius = 12
+        self.corners = {k: _Corner(self, k) for k in ("tl", "tr", "bl", "br")}
+        self.edges = {k: _Edge(self) for k in ("t", "b", "l", "r")}
+        view.installEventFilter(self); self.place()
+
+    def in_split(self):
+        par = self.view.parentWidget()
+        return par is not None and par.objectName() == "splitside"
+
+    def border(self):
+        par = self.view.parentWidget()
+        if par is None or par.objectName() != "splitside":
+            return QColor(PANE_LINE)
+        return QColor("#4a4a4a" if par.property("active") else PANE_LINE)
+
+    def gap(self):
+        return "#141414" if self.in_split() else PAGE_GAP
+
+    def place(self):
+        try:
+            split = self.in_split(); r = self.radius = 11 if split else 12
+            on = not getattr(self.view, "no_corners", False)
+            w, h = self.view.width(), self.view.height()
+            pos = {"tl": (0, 0), "tr": (w - r, 0), "bl": (0, h - r), "br": (w - r, h - r)}
+            for k, c in self.corners.items():
+                vis = on and not (split and k in ("tl", "tr"))
+                c.setGeometry(pos[k][0], pos[k][1], r, r); c.setVisible(vis)
+                if vis:
+                    c.raise_(); c.update()
+            eg = {"t": (r, 0, w - 2 * r, 1), "b": (r, h - 1, w - 2 * r, 1), "l": (0, r, 1, h - 2 * r), "r": (w - 1, r, 1, h - 2 * r)}
+            for k, e in self.edges.items():   # obwódka tylko pojedynczej strony (strona podziału ma ramkę z nagłówkiem)
+                vis = on and not split and w > 2 * r and h > 2 * r
+                e.setGeometry(*eg[k]); e.setVisible(vis)
+                if vis:
+                    e.raise_()
+        except RuntimeError:   # widok już usunięty
+            pass
+
+    def eventFilter(self, obj, ev):
+        if ev.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.ParentChange, QEvent.Type.ChildAdded):
+            QTimer.singleShot(0, self.place)   # ChildAdded: silnik dokłada własny widok renderujący – rogi muszą być nad nim
+        return False
+
+
 class Tab(QStackedWidget):
     """Karta: ekran główny, a po wejściu na stronę – widok WWW (tworzony leniwie). Należy do przestrzeni roboczej,
     opcjonalnie do grupy i kontenera; może mieć podział ekranu (druga strona obok) i może zostać uśpiona."""
@@ -10479,6 +11125,19 @@ class Tab(QStackedWidget):
         self.addWidget(self.home)
         self.home.attach_suggest(browser)
         self.home.opened.connect(self.go)
+        self.currentChanged.connect(lambda _: self._frame_margins())
+        self._frame_margins()
+
+    PAGE_MARGIN = 10   # odstęp strony WWW od krawędzi obszaru roboczego (jak w filmie)
+
+    def _frame_margins(self):
+        framed_home = BG.mode() in ("night", "stars")   # wygląd z filmu: ekran główny też leży w zaokrąglonej ramce
+        m = self.PAGE_MARGIN if (self.currentWidget() is not self.home or framed_home) else 0
+        self.setContentsMargins(m, m, m, m); self.update()
+
+    def paintEvent(self, ev):
+        if self.currentWidget() is not self.home and BG.mode() != "stars":
+            QPainter(self).fillRect(self.rect(), QColor(PAGE_GAP))
 
     @property
     def main(self):
@@ -10504,6 +11163,7 @@ class Tab(QStackedWidget):
     def _new_view(self):
         """Sygnały kierujemy przez v.owner, więc widok można przenieść do innej karty bez przeładowania strony."""
         v = WebView(container=self.container); v.owner = self
+        v._corners = PageCorners(v)
         v.link_requested.connect(lambda u, v=v: v.owner.browser.open_url_new_tab(u, v.owner.container))
         v.page().recentlyAudibleChanged.connect(lambda _, v=v: v.owner.browser.audio_changed.emit())
         v.titleChanged.connect(lambda t, v=v: v.owner._view_title(v, t))
@@ -10588,6 +11248,7 @@ class Tab(QStackedWidget):
         if self._main is None:
             return
         if self.split is None:
+            pm = self.grab() if self.isVisible() else None   # obraz pojedynczej strony – do płynnego odsłonięcia
             if vertical is None:   # wąskie okno albo monitor w pionie → strony jedna pod drugą
                 vertical = self.width() < self.height() * 0.9
             self.split = SplitView(Qt.Orientation.Vertical if vertical else Qt.Orientation.Horizontal); self.sides = []
@@ -10595,6 +11256,7 @@ class Tab(QStackedWidget):
             a = SplitSide(self, self._main); self.sides.append(a); b = SplitSide(self); self.sides.append(b)
             self.split.addWidget(a); self.split.addWidget(b); self.split.setSizes([10000, 10000])
             self.addWidget(self.split); self._act = -1; self.set_active_side(b)
+            QTimer.singleShot(0, lambda: wipe_split(self, pm))   # po ułożeniu okna
         if url:
             s = self.sides[1]
             self.load_side(s, url) if s.view is None else s.view.setUrl(QUrl(normalize(url)))
@@ -10627,8 +11289,10 @@ class Tab(QStackedWidget):
         """Kolejna (trzecia) strona podziału: pusta (wybór karty / adres) albo od razu z adresem."""
         if self.split is None or not self.sides or len(self.sides) >= self.MAX_SIDES:
             return None
+        pm = self.grab() if self.isVisible() else None
         s = SplitSide(self); self.sides.append(s); self.split.addWidget(s)
         self.split.setSizes([10000] * len(self.sides)); self._act = -1; self.set_active_side(s)
+        QTimer.singleShot(0, lambda: wipe_split(self, pm))
         if url:
             self.load_side(s, url)
         for x in self.sides:
@@ -10736,7 +11400,7 @@ class Tab(QStackedWidget):
             b.on_title(self, keep.title()); b.on_icon(self, keep.icon()); keep.setFocus()
         else:
             self.title_text, self.icon = "", None; self.show_home()
-            b.set_tab_text(self, "Ekran główny")
+            b.set_tab_text(self, HOME_TAB)
         b.decorate(self); b.sync_address(); b.update_sidebars_soon(); b.tabs_changed()
 
     def swap_split(self, side=None):
@@ -10810,6 +11474,92 @@ class Tab(QStackedWidget):
                     pass
 
 
+class PanelSwitch(QWidget):
+    """Przełącznik „Asystent AI | Komunikatory” na górze obu paneli (jak w filmie): jasna gałka przesuwa się płynnie."""
+
+    def __init__(self, panel):
+        super().__init__(); self.panel = panel; self.setFixedHeight(40)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.idx = 1 if isinstance(panel, WebAppsPanel) else 0
+        self.pos_ = float(self.idx); self._tw = None
+
+    def slide_in(self, from_idx):
+        """Gałka startuje z poprzedniego panelu i dojeżdża na ten (po przełączeniu paneli)."""
+        a = float(from_idx); b = float(self.idx)
+        if self._tw is not None:
+            self._tw.stop()
+        if a == b:
+            self.pos_ = b; self.update(); return
+
+        def step(k):
+            self.pos_ = a + (b - a) * k; self.update()
+        self._tw = Tween(self, step, 260); self._tw.start()
+
+    def mousePressEvent(self, ev):
+        i = 0 if ev.position().x() < self.width() / 2 else 1
+        if i != self.idx:
+            self.panel.browser.switch_side_panel("assistant" if i == 0 else "webapps", self.idx)
+
+    def paintEvent(self, ev):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(.5, .5, -.5, -.5)
+        p.setPen(QPen(QColor("#262626"), 1)); p.setBrush(QColor("#0a0a0a")); p.drawRoundedRect(r, 12, 12)
+        half = (r.width() - 8) / 2
+        knob = QRectF(r.left() + 4 + self.pos_ * half, r.top() + 4, half, r.height() - 8)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#ececec")); p.drawRoundedRect(knob, 9, 9)
+        f = QFont(self.font()); f.setPixelSize(13); f.setWeight(QFont.Weight.DemiBold); p.setFont(f)
+        for i, text in enumerate(("Asystent AI", "Komunikatory")):
+            k = max(0.0, 1 - abs(self.pos_ - i))   # tekst na gałce ciemnieje razem z jej ruchem
+            c = QColor(int(141 + (17 - 141) * k), int(141 + (17 - 141) * k), int(141 + (17 - 141) * k))
+            p.setPen(c); p.drawText(QRectF(r.left() + 4 + i * half, r.top(), half, r.height()), Qt.AlignmentFlag.AlignCenter, text)
+
+
+class ChatRow(QAbstractButton):
+    """Wiersz na liście komunikatorów: awatar, nazwa, stan i liczba nieprzeczytanych (jak w filmie)."""
+    COLORS = {"WhatsApp": "#25d366", "Messenger": "#0a7cff", "Telegram": "#2aabee", "Instagram": "#e1306c",
+              "Discord": "#5865f2", "Signal": "#3a76f0", "Slack": "#611f69", "Teams": "#5b5fc7"}
+
+    def __init__(self, name, url):
+        super().__init__(); self.name, self.url = name, url; self.sub, self.count = "", 0
+        self.setFixedHeight(60); self.setCursor(Qt.CursorShape.PointingHandCursor); self._hover = False
+
+    def enterEvent(self, ev):
+        self._hover = True; self.update()
+
+    def leaveEvent(self, ev):
+        self._hover = False; self.update()
+
+    def paintEvent(self, ev):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        r = QRectF(self.rect())
+        if self._hover:
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#1a1a1a")); p.drawRoundedRect(r, 12, 12)
+        av = QRectF(8, (r.height() - 40) / 2, 40, 40)
+        p.setPen(Qt.PenStyle.NoPen)
+        if getattr(self, "add", False):   # wiersz „dodaj”: przerywany krążek z plusem
+            pen = QPen(QColor("#3a3a3a"), 1.4); pen.setStyle(Qt.PenStyle.DashLine); p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(av.adjusted(1, 1, -1, -1)); p.setPen(QPen(QColor("#9a9a9a"), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            c = av.center(); p.drawLine(QPointF(c.x(), c.y() - 7), QPointF(c.x(), c.y() + 7)); p.drawLine(QPointF(c.x() - 7, c.y()), QPointF(c.x() + 7, c.y()))
+        else:   # jak w filmie: kolorowy krążek z literą
+            p.setBrush(QColor(self.COLORS.get(self.name, "#3a3a3a"))); p.drawEllipse(av)
+            f = QFont(self.font()); f.setPixelSize(16); f.setWeight(QFont.Weight.ExtraBold); p.setFont(f); p.setPen(QColor("#ffffff"))
+            p.drawText(av, Qt.AlignmentFlag.AlignCenter, (self.name or "?")[0].upper())
+        right = r.width() - 12
+        if self.count:
+            txt = str(self.count) if self.count < 100 else "99+"
+            f = QFont(self.font()); f.setPixelSize(11); f.setWeight(QFont.Weight.ExtraBold); p.setFont(f)
+            w = max(22, QFontMetrics(f).horizontalAdvance(txt) + 12); b = QRectF(right - w, (r.height() - 20) / 2, w, 20)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor("#ececec")); p.drawRoundedRect(b, 10, 10)
+            p.setPen(QColor("#111111")); p.drawText(b, Qt.AlignmentFlag.AlignCenter, txt); right = b.left() - 8
+        f = QFont(self.font()); f.setPixelSize(14); f.setWeight(QFont.Weight.DemiBold); p.setFont(f)
+        p.setPen(QColor("#9a9a9a" if getattr(self, "add", False) else "#ececec"))
+        tx = av.right() + 12
+        p.drawText(QRectF(tx, 10, right - tx, 20), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.name)
+        f.setPixelSize(12); f.setWeight(QFont.Weight.Normal); p.setFont(f); p.setPen(QColor("#8a8a8a"))
+        p.drawText(QRectF(tx, 30, right - tx, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                   QFontMetrics(f).elidedText(self.sub, Qt.TextElideMode.ElideRight, int(right - tx)))
+
+
 class Assistant(QWidget):
     """Panel boczny ze stronami-usługami (własne logowanie, sesja zapamiętana). Bazowo: asystent AI – ChatGPT, Claude,
     Gemini i DeepSeek; podklasa WebAppsPanel używa tego samego układu dla komunikatorów i dowolnych stron."""
@@ -10827,26 +11577,47 @@ class Assistant(QWidget):
         lay = QVBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(0)
 
         head = QWidget(); head.setObjectName("aihead")
-        h = QVBoxLayout(head); h.setContentsMargins(12, 10, 12, 8); h.setSpacing(6)
-        self.pick_row = QHBoxLayout(); self.pick_row.setSpacing(4)
+        h = QVBoxLayout(head); h.setContentsMargins(16, 16, 16, 12); h.setSpacing(12)
+        self.switch = PanelSwitch(self); h.addWidget(self.switch)
+        self.picks_box = QWidget(); self.picks_box.setObjectName("clear")
+        self.pick_row = QHBoxLayout(self.picks_box); self.pick_row.setContentsMargins(0, 0, 0, 0); self.pick_row.setSpacing(6)
         self.group = QButtonGroup(self); self.group.setExclusive(True)
         self.build_picks()
-        h.addLayout(self.pick_row)
+        h.addWidget(self.picks_box)
 
         tools = QHBoxLayout(); tools.setSpacing(2)
-        self.hint = QLabel(self.hint_text()); self.hint.setObjectName("muted")
-        tools.addWidget(self.hint); tools.addStretch()
-        for kind, tip, fn in self.tool_defs():
-            tb = QToolButton(); tb.setIcon(glyph(kind)); tb.setIconSize(QSize(22, 22)); tb.setFixedSize(30, 30)
-            tb.setToolTip(tip); tb.setCursor(Qt.CursorShape.PointingHandCursor)
-            tb.clicked.connect(lambda _=False, f=fn: f()); tools.addWidget(tb)
-        h.addLayout(tools)
-        self.extra_tools(h)
+        self.ctx = QFrame(); self.ctx.setObjectName("aictx"); self.ctx.setToolTip(self.hint_text())
+        cl = QHBoxLayout(self.ctx); cl.setContentsMargins(10, 6, 10, 6); cl.setSpacing(8)
+        ci = QLabel(); ci.setPixmap(glyph(self.ctx_icon(), "#9a9a9a").pixmap(16, 16)); ci.setFixedSize(16, 16)
+        self.hint = QLabel(self.hint_text()); self.hint.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        cl.addWidget(ci); cl.addWidget(self.hint, 1)
+        tools.addWidget(self.ctx, 1)
+        h.addLayout(tools)   # jak w filmie: pod usługami tylko linia kontekstu; narzędzia są w menu „…” obok usług
         lay.addWidget(head)
 
         self.stack = QStackedWidget(); lay.addWidget(self.stack, 1)
         self._ri = QTimer(self); self._ri.setSingleShot(True); self._ri.timeout.connect(self.refresh_icons)
         store.changed.connect(lambda: self._ri.start(400))
+
+    def showEvent(self, ev):
+        super().showEvent(ev); self.update_ctx()
+        self.switch.setVisible(self.store.feature("assistant") and self.store.feature("webapps"))
+
+    def ctx_icon(self):
+        return "book"
+
+    def update_ctx(self):
+        """Linia kontekstu (jak w filmie): asystent „zna” otwartą stronę – jej tytuł; bez strony – podpowiedź."""
+        t = self.browser.cur() if self.browser is not None else None
+        title = t.web.title() if t is not None and t.web is not None and not t.on_home() else ""
+        text = f"Zna tę stronę: „{title}”" if title else self.hint_text()
+        fm = self.hint.fontMetrics(); room = max(80, (self.hint.width() or 300) - fm.horizontalAdvance("Zna tę stronę: „”") - 8)
+        if title:   # jak w filmie: tytuł strony wyróżniony
+            short = QFontMetrics(QFont(self.hint.font())).elidedText(title, Qt.TextElideMode.ElideRight, room)
+            self.hint.setText(f"Zna tę stronę: <b style='color:#eeeeee'>„{html.escape(short)}”</b>")
+        else:
+            self.hint.setText(fm.elidedText(text, Qt.TextElideMode.ElideRight, max(80, self.hint.width() or 300)))
+        self.hint.setToolTip(text)
 
     # --- do nadpisania w podklasach ---
     def hint_text(self):
@@ -10882,15 +11653,19 @@ class Assistant(QWidget):
         if url and url.startswith(("https://", "http://")):
             self.open_in_panel(url)
 
-    def extra_tools(self, h):
+    def ai_actions(self):
         """AI znające stronę: podsumowanie, pytania o stronę, porównanie kart (treść trafia do czatu wybranej usługi)."""
-        row = QHBoxLayout(); row.setSpacing(4)
-        for text, tip, mode in (("Podsumuj stronę", "Wyślij treść bieżącej strony do czatu z prośbą o podsumowanie", "summary"),
-                                ("Zapytaj o stronę", "Wklej treść strony do czatu – dopisz swoje pytanie i wyślij", "ask"),
-                                ("Porównaj karty", "Porównanie otwartych kart (np. produktów, ofert, artykułów)", "compare")):
-            b = QPushButton(text); b.setToolTip(tip); b.setCursor(Qt.CursorShape.PointingHandCursor)
-            b.clicked.connect(lambda _=False, m=mode: self.browser.ai_ask(m)); row.addWidget(b)
-        row.addStretch(); h.addLayout(row)
+        return (("Podsumuj stronę", "summary"), ("Zapytaj o stronę", "ask"), ("Porównaj karty", "compare"))
+
+    def more_menu(self, m):
+        """Menu „…” przy usługach: akcje AI i narzędzia panelu (jak w filmie – bez rzędów przycisków na wierzchu)."""
+        m.clear()
+        for text, mode in self.ai_actions():
+            m.addAction(glyph("assistant"), text, lambda md=mode: self.browser.ai_ask(md))
+        if self.ai_actions():
+            m.addSeparator()
+        for kind, tip, fn in self.tool_defs():
+            m.addAction(glyph(kind), tip, fn)
 
     def build_picks(self):
         while self.pick_row.count():
@@ -10898,11 +11673,13 @@ class Assistant(QWidget):
             if w is not None:
                 self.group.removeButton(w); w.deleteLater()
         self.picks = {}
+        self.before_picks()
         for name, url in self.providers().items():
-            b = QToolButton(); b.setObjectName("aipick"); b.setCheckable(True)
-            b.setIcon(mini_icon(name, url)); b.setIconSize(QSize(16, 16)); b.setToolTip(name)
+            b = QToolButton(); b.setObjectName("aichip"); b.setCheckable(True); b.setToolTip(name)
+            if self.ICON_ONLY:   # jak w filmie: usługi AI jako same nazwy; komunikatory – ikony
+                b.setIcon(mini_icon(name, url)); b.setIconSize(QSize(16, 16))
             if self.ICON_ONLY:
-                b.setFixedSize(34, 30)
+                b.setFixedSize(36, 32)
             else:
                 b.setText(name); b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -10912,8 +11689,16 @@ class Assistant(QWidget):
             self.group.addButton(b); self.pick_row.addWidget(b); self.picks[name] = b
         self.after_picks()
         self.pick_row.addStretch()
+        more = QToolButton(); more.setObjectName("aichip"); more.setIcon(glyph("dots")); more.setIconSize(QSize(16, 16))
+        more.setFixedSize(36, 32); more.setToolTip("Więcej: akcje i narzędzia panelu")
+        more.setCursor(Qt.CursorShape.PointingHandCursor); more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        mm = QMenu(more); mm.aboutToShow.connect(lambda mm=mm: self.more_menu(mm)); more.setMenu(mm)
+        self.pick_row.addWidget(more)
 
     def after_picks(self):
+        pass
+
+    def before_picks(self):
         pass
 
     def pick_menu(self, name, btn):
@@ -10933,7 +11718,7 @@ class Assistant(QWidget):
     def refresh_icons(self):
         provs = self.providers()
         for name, b in self.picks.items():
-            if name in provs:
+            if name in provs and self.ICON_ONLY:
                 b.setIcon(mini_icon(name, provs[name]))
 
     def ensure(self):
@@ -11011,12 +11796,73 @@ class WebAppsPanel(Assistant):
     def hint_text(self):
         return "Komunikatory i strony z boku. Prawy przycisk na ikonie: usuń."
 
+    def ctx_icon(self):
+        return "chat"
+
+    def update_ctx(self):
+        n = sum(r.count for r in getattr(self, "rows", []))
+        self.hint.setText(f"Nieprzeczytane: {n}" if n else "Wszystkie komunikatory w jednym miejscu")
+        self.hint.setToolTip(self.hint_text())
+
+    def before_picks(self):
+        b = QToolButton(); b.setObjectName("aichip"); b.setCheckable(True); b.setIcon(glyph("grid"))
+        b.setIconSize(QSize(16, 16)); b.setFixedSize(36, 32); b.setToolTip("Wszystkie komunikatory")
+        b.setCursor(Qt.CursorShape.PointingHandCursor); b.clicked.connect(lambda: self.show_overview())
+        self.group.addButton(b); self.pick_row.addWidget(b); self.all_btn = b
+
+    def _overview(self):
+        ov = getattr(self, "ov", None)
+        if ov is None:
+            self.ov = ov = QScrollArea(); ov.setObjectName("chatlist"); ov.setWidgetResizable(True)
+            ov.setFrameShape(QFrame.Shape.NoFrame); ov.viewport().setAutoFillBackground(False)
+            inner = QWidget(); inner.setObjectName("clear"); self.ov_lay = QVBoxLayout(inner)
+            self.ov_lay.setContentsMargins(10, 10, 10, 10); self.ov_lay.setSpacing(2); ov.setWidget(inner)
+            self.stack.addWidget(ov); self.rows = []
+        return ov
+
+    def fill_overview(self):
+        self._overview()
+        while self.ov_lay.count():
+            w = self.ov_lay.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        self.rows = []
+        for name, url in self.providers().items():
+            r = ChatRow(name, url); v = self.views.get(name)
+            m = re.match(r"\s*\((\d+)\)", v.title()) if v is not None else None
+            r.count = int(m.group(1)) if m else 0
+            r.sub = ("Nowe wiadomości" if r.count else "Otwarte w tle") if v is not None else "Kliknij, aby otworzyć"
+            r.clicked.connect(lambda _=False, n=name: self.select(n))
+            self.ov_lay.addWidget(r); self.rows.append(r)
+        add = ChatRow("Dodaj komunikator lub stronę", ""); add.add = True; add.sub = "Dowolna strona w panelu z boku"
+        add.clicked.connect(lambda: self.add_app()); self.ov_lay.addWidget(add)
+        self.ov_lay.addStretch(1)
+        self.update_ctx()
+
+    def show_overview(self):
+        self.fill_overview(); self.stack.setCurrentWidget(self.ov); self._chrome(False)
+        if getattr(self, "all_btn", None) is not None:
+            self.all_btn.setChecked(True)
+        soft_reveal(self.rows, delay=60, gap=70, ms=280, pops=0.7)   # rozmowy pojawiają się po kolei, jak w filmie
+
+    def current(self):
+        """Otwarta aplikacja (None, gdy widać listę wszystkich komunikatorów)."""
+        w = self.stack.currentWidget()
+        return w if isinstance(w, QWebEngineView) else None
+
     def tool_defs(self):
         return (("reload", "Odśwież", self.reload), ("external", "Otwórz w zwykłej karcie", self.open_tab),
                 ("trash", "Zwolnij pamięć tej aplikacji (zamknij ją do następnego kliknięcia)", self.close_current))
 
-    def extra_tools(self, h):
-        pass
+    def ai_actions(self):
+        return ()
+
+    def _chrome(self, on):
+        """Lista komunikatorów (jak w filmie): bez rzędu ikon i linii kontekstu; po otwarciu aplikacji – ikony do przełączania."""
+        self.picks_box.setVisible(on); self.ctx.setVisible(on)
+
+    def select(self, name):
+        super().select(name); self._chrome(True)
 
     def after_picks(self):
         add = QToolButton(); add.setObjectName("aipick"); add.setIcon(glyph("plus")); add.setFixedSize(34, 30)
@@ -11125,6 +11971,41 @@ class Frame(QWidget):
             h.startSystemResize(e)
 
 
+def tab_ghost(title, icon, thumb=None, dpr=2.0):
+    """Karta „oderwana” od paska podczas przeciągania: ciemna pigułka z ikoną i tytułem (lekko przechylona, z cieniem),
+    pod nią miniatura strony, jeśli jest. Zwraca (obraz, punkt chwytu)."""
+    W, H, PAD = 220, 36, 14
+    f = QFont(QApplication.font()); f.setPixelSize(13); f.setWeight(QFont.Weight.DemiBold)
+    fm = QFontMetrics(f)
+    tw = 0
+    if thumb is not None and not thumb.isNull():
+        tw = 200
+        thumb = thumb.scaledToWidth(int(tw * dpr), Qt.TransformationMode.SmoothTransformation)
+    th = (thumb.height() / dpr) if tw else 0
+    extra = (th + 8) if tw else 0
+    cw, ch = W + 2 * PAD, H + extra + 2 * PAD + 6
+    pm = QPixmap(int(cw * dpr), int(ch * dpr)); pm.setDevicePixelRatio(dpr); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    p.translate(cw / 2, ch / 2); p.rotate(-3); p.translate(-cw / 2, -ch / 2)
+    body = QRectF(PAD, PAD, W, H)
+    p.setPen(Qt.PenStyle.NoPen)
+    for i in range(6, 0, -1):   # miękki cień
+        p.setBrush(QColor(0, 0, 0, 16))
+        p.drawRoundedRect(body.adjusted(-i, -i + 4, i, i + 4 + extra), 12 + i, 12 + i)
+    if tw:
+        tr = QRectF(PAD + (W - tw) / 2, PAD + H + 8, tw, th)
+        clip = QPainterPath(); clip.addRoundedRect(tr, 10, 10)
+        p.save(); p.setClipPath(clip); p.drawPixmap(tr, thumb, QRectF(thumb.rect())); p.restore()
+        p.setPen(QPen(QColor(255, 255, 255, 40), 1)); p.setBrush(Qt.BrushStyle.NoBrush); p.drawRoundedRect(tr, 10, 10)
+    p.setPen(QPen(QColor("#3a3a3a"), 1)); p.setBrush(QColor("#262626")); p.drawRoundedRect(body, 11, 11)
+    icon.paint(p, QRect(int(PAD + 12), int(PAD + (H - 16) / 2), 16, 16))
+    p.setFont(f); p.setPen(QColor("#f0f0f0"))
+    p.drawText(QRectF(PAD + 38, PAD, W - 50, H), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+               fm.elidedText(title, Qt.TextElideMode.ElideRight, W - 52))
+    p.end()
+    return pm, QPoint(int(PAD + 40), int(PAD + H / 2))
+
+
 class SplitDropOverlay(QWidget):
     """Podgląd podziału ekranu podczas przeciągania karty z paska: nad stroną widać dwie połowy – ta pod kursorem
     podświetla się z nazwą przeciąganej karty („upuść tutaj”), druga pokazuje obecną stronę. Puszczenie poza
@@ -11134,6 +12015,30 @@ class SplitDropOverlay(QWidget):
         super().__init__(browser.stack.parentWidget()); self.b = browser
         self.setAcceptDrops(True); self.hide()
         self.T = self.t = None; self.zone = -1; self.msg = ""; self.vertical = False
+        self.fade, self.glow = 0.0, {}   # pojawianie się całej nakładki (0–1) i podświetlenie każdej strefy (0–1)
+        self._clock = QElapsedTimer(); self._last = 0
+        self._tick_t = QTimer(self); self._tick_t.setTimerType(Qt.TimerType.PreciseTimer); self._tick_t.timeout.connect(self._tick)
+
+    def _tick(self):
+        """Animacja w rytmie ekranu: nakładka wyłania się w ~160 ms, strefa pod kursorem rozjaśnia się w ~120 ms."""
+        now = self._clock.elapsed(); dt = max(1, now - self._last) / 1000.0; self._last = now
+        busy = False
+        if self.fade < 1.0:
+            self.fade = min(1.0, self.fade + dt / 0.16); busy = True
+        for i in set(self.glow) | {self.zone}:
+            tgt = 1.0 if i == self.zone else 0.0; v = self.glow.get(i, 0.0)
+            if abs(v - tgt) > 0.001:
+                v = min(tgt, v + dt / 0.12) if tgt > v else max(tgt, v - dt / 0.16); self.glow[i] = v; busy = True
+        self.update()
+        if not busy:
+            self._tick_t.stop()
+
+    def _animate(self):
+        if not self._tick_t.isActive():
+            if not self._clock.isValid():
+                self._clock.start()
+            self._last = self._clock.elapsed()
+            self._tick_t.start(FluidAnimation.frame_ms())
 
     def start(self, T, t):
         """T – karta na ekranie (zostanie podzielona), t – przeciągana karta."""
@@ -11147,10 +12052,11 @@ class SplitDropOverlay(QWidget):
         elif not url or t.split is not None:
             self.msg = "Tej karty nie da się dołożyć do podziału" if t.split is not None else "Przeciągana karta nie ma strony"
         self.vertical = bool(T is not None and not T.sides and T.width() < T.height() * 0.9)
-        self.setGeometry(self.b.stack.geometry()); self.raise_(); self.show(); self.update()
+        self.fade, self.glow = 0.0, {}
+        self.setGeometry(self.b.stack.geometry()); self.raise_(); self.show(); self.update(); self._animate()
 
     def stop(self):
-        self.hide(); self.T = self.t = None; self.zone = -1
+        self.hide(); self.T = self.t = None; self.zone = -1; self._tick_t.stop()
 
     def _vert(self):
         T = self.T
@@ -11219,27 +12125,30 @@ class SplitDropOverlay(QWidget):
         elif not enter:
             ev.ignore()
         if z != self.zone:
-            self.zone = z; self.update()
+            self.zone = z; self.update(); self._animate()
+            if z >= 0:
+                ui_sound("hover", 0.7)
 
     def dragLeaveEvent(self, ev):
-        self.zone = -1; self.update()
+        self.zone = -1; self.update(); self._animate()
 
     def dropEvent(self, ev):
         i = self._zone_at(ev.position().toPoint()); T, t = self.T, self.t
         if i < 0 or T is None or t is None:
             ev.ignore(); return
         z = self.zones()[i][1][1]
-        ev.acceptProposedAction(); vert = self.vertical; self.stop()
+        ev.acceptProposedAction(); vert = self.vertical; self.stop(); ui_sound("drop")
         QTimer.singleShot(0, lambda: self.b.split_drop(T, t, z, vert))
 
     @staticmethod
     def _title(tab):
         if tab is None:
             return ""
-        return tab.title_text or (host_of(tab.pending) if tab.pending else "Ekran główny")
+        return tab.title_text or (host_of(tab.pending) if tab.pending else HOME_TAB)
 
     def paintEvent(self, ev):
         p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setOpacity(1 - (1 - self.fade) ** 3)   # nakładka wyłania się z wyhamowaniem (OutCubic)
         p.fillRect(self.rect(), QColor(0, 0, 0, 150))
         f = QFont(self.font()); f.setPixelSize(15); f.setWeight(QFont.Weight.DemiBold)
         small = QFont(self.font()); small.setPixelSize(13)
@@ -11256,13 +12165,11 @@ class SplitDropOverlay(QWidget):
         for i, (z, kind) in enumerate(self.zones()):
             if z.isEmpty():
                 continue
-            hot = i == self.zone
-            if hot:
-                p.setPen(QPen(QColor("#ececec"), 2)); p.setBrush(QColor(236, 236, 236, 34))
-            else:
-                pen = QPen(QColor(255, 255, 255, 60), 1.4); pen.setStyle(Qt.PenStyle.DashLine); p.setPen(pen)
-                p.setBrush(QColor(20, 20, 20, 150))
-            p.drawRoundedRect(z, 16, 16)
+            hot = i == self.zone; g = self.glow.get(i, 0.0)
+            # strefa pod kursorem: przerywana ramka w kolorze księżyca rozjaśnia się, a strefa lekko rośnie (jak w filmie)
+            pen = QPen(QColor(243, 238, 230, int(60 + 90 * g)), 1.4 + 0.8 * g); pen.setStyle(Qt.PenStyle.DashLine); p.setPen(pen)
+            p.setBrush(QColor(int(20 + 24 * g), int(20 + 23 * g), int(20 + 21 * g), int(150 - 40 * g)))
+            p.drawRoundedRect(z.adjusted(-3 * g, -3 * g, 3 * g, 3 * g), 16, 16)
             # treść strefy: ikona, tytuł, podpis
             if hot:
                 head = self._title(self.t)
@@ -11336,7 +12243,7 @@ class TabBar(QTabBar):
         return super().event(ev)
 
     CLOSE_W = 26     # krzyżyk 18 px + 8 px odstępu od prawej krawędzi karty
-    MAX_W = 194      # jak max-width w arkuszu stylów (190) + marginesy
+    MAX_W = 210      # jak max-width w arkuszu stylów (206) + marginesy – karta jak w filmie
 
     def tabSizeHint(self, i):
         s = super().tabSizeHint(i)
@@ -11344,11 +12251,26 @@ class TabBar(QTabBar):
             return QSize(44, s.height())
         # szerokość z faktycznego tekstu (pogrubionego, jak na aktywnej karcie) + ikona + krzyżyk – bez pustego miejsca
         # między tytułem a krzyżykiem (Qt centrował tekst w nadmiarowej szerokości)
-        f = QFont(self.font()); f.setWeight(QFont.Weight.DemiBold)
-        tw = QFontMetrics(f).horizontalAdvance(self.tabText(i))
-        btn = self.tabButton(i, QTabBar.ButtonPosition.RightSide)
-        w = 14 + (22 if not self.tabIcon(i).isNull() else 0) + tw + 8 + (btn.width() if btn is not None else 10) + 4
-        return QSize(max(60, min(self.MAX_W, w)), s.height())
+        return QSize(self.MAX_W, s.height())   # jak w filmie: każda karta ma tę samą szerokość (tytuł skracany)
+
+    def initStyleOption(self, opt, i):
+        """Tytuł skracany według pogrubionej czcionki (tak rysowana jest aktywna karta) – bez tego dłuższy tytuł
+        wyjeżdżał w lewo pod ikonę strony (ucięta pierwsza litera)."""
+        super().initStyleOption(opt, i)
+        if not opt.text:
+            return
+        fm = QFontMetrics(self.font())
+        # dokładne miejsce na tytuł (to samo, którego używa styl przy rysowaniu) – tekst nie wejdzie pod ikonę
+        avail = self.style().subElementRect(QStyle.SubElement.SE_TabBarTabText, opt, self).width() - 4
+        pad = "\u00a0"   # jak w filmie: tytuł przy ikonie (Qt centruje tekst – dopełniamy go twardymi spacjami)
+        lead = ""
+        if not opt.icon.isNull():   # styl rysuje ikonę w tym samym prostokącie co tytuł – odstęp na ikonę
+            while fm.horizontalAdvance(lead) < 10:
+                lead += pad
+        txt = lead + fm.elidedText(self.tabText(i), Qt.TextElideMode.ElideRight, max(12, avail - fm.horizontalAdvance(lead)))
+        while fm.horizontalAdvance(txt + pad) <= avail:
+            txt += pad
+        opt.text = txt
 
     def minimumTabSizeHint(self, i):
         s = super().minimumTabSizeHint(i)
@@ -11468,15 +12390,15 @@ class Browser(QMainWindow):
 
         # --- pasek narzędzi ---
         tool = QWidget(); tool.setObjectName("tool")
-        tl = QHBoxLayout(tool); tl.setContentsMargins(12, 8, 12, 8); tl.setSpacing(4)
+        tl = QHBoxLayout(tool); tl.setContentsMargins(12, 8, 12, 8); tl.setSpacing(2)
         tl.addWidget(self.btn("back", "Wstecz", lambda: self.nav("back")))
         tl.addWidget(self.btn("forward", "Dalej", lambda: self.nav("forward")))
         tl.addWidget(self.btn("reload", "Odśwież", lambda: self.nav("reload")))
-        tl.addWidget(self.btn("home", "Ekran główny", self.go_home))
+        self.home_btn = self.btn("home", "Ekran główny", self.go_home); tl.addWidget(self.home_btn)
         tl.addSpacing(6)
 
         self.address = QLineEdit(); self.address.setObjectName("addr")
-        self.address.addAction(glyph("search"), QLineEdit.ActionPosition.LeadingPosition)
+        self.address.addAction(glyph("lock", "#7f7f7f"), QLineEdit.ActionPosition.LeadingPosition)
         self.address.returnPressed.connect(self.submit)
         self.addr_sugg = SuggestController(self.address, self)
         self.address.returnPressed.connect(lambda: self.addr_sugg.hide())
@@ -11488,47 +12410,53 @@ class Browser(QMainWindow):
         self.chip.setMenu(QMenu(self.chip))
         inner = QHBoxLayout(self.address); inner.setContentsMargins(0, 0, 6, 0)
         inner.addStretch(); inner.addWidget(self.chip)
+        self.chip.hide()   # jak w filmie: wybór wyszukiwarki jest w menu Luny (Wyszukiwarka) i w Ustawieniach
         tl.addWidget(self.address, 1)
-        tl.addSpacing(6)
+        tl.addSpacing(18)
+        rg = QHBoxLayout(); rg.setSpacing(8); tl.addLayout(rg)   # ikony po prawej – odstępy jak w filmie
         self.shield_btn = self.btn("shield", "Blokada reklam i śledzenia", lambda: None)
         self.key_btn = self.btn("key", "Hasła i aliasy e-mail", lambda: None)
         for b_, fn in ((self.shield_btn, self.shield_menu), (self.key_btn, self.key_menu)):
             b_.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup); b_.setObjectName("acct")
-            mm = QMenu(b_); mm.aboutToShow.connect(fn); b_.setMenu(mm); tl.addWidget(b_)
+            mm = QMenu(b_); mm.aboutToShow.connect(fn); b_.setMenu(mm); rg.addWidget(b_)
         self.split_btn = self.btn("split", "Podziel ekran (Ctrl+\\)", self.split_current)
-        tl.addWidget(self.split_btn)
+        rg.addWidget(self.split_btn)
         self.reader_btn = self.btn("book", "Tryb czytania (F9)", self.toggle_reader)
-        tl.addWidget(self.reader_btn)
+        rg.addWidget(self.reader_btn)
         self.star_btn = self.btn("star", "Dodaj stronę do ekranu głównego", self.pin_current)
-        tl.addWidget(self.star_btn)
+        rg.addWidget(self.star_btn)
         self.ai_btn = self.btn("assistant", "Asystent AI (Ctrl+J)", self.toggle_assistant)
-        tl.addWidget(self.ai_btn)
+        rg.addWidget(self.ai_btn)
         self.apps_btn = self.btn("chat", "Panel aplikacji: komunikatory i strony z boku (Ctrl+Shift+K)", self.toggle_webapps)
-        tl.addWidget(self.apps_btn)
+        rg.addWidget(self.apps_btn)
+        self.widgets_btn = self.btn("grid", "Widgety – pokaż / schowaj panele boczne", self.toggle_widgets)
+        rg.addWidget(self.widgets_btn)
         self.gear_btn = self.btn("gear", "Ustawienia (Ctrl+,)", self.open_settings)
-        tl.addWidget(self.gear_btn)
+        rg.addWidget(self.gear_btn)
         self.prof_btn = QToolButton(); self.prof_btn.setObjectName("acct"); self.prof_btn.setIcon(profile_icon(PROFILE))
         self.prof_btn.setIconSize(QSize(22, 22)); self.prof_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.prof_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.prof_btn.setToolTip(f"Profil: {PROFILE or 'Główny'}")
         pmn = QMenu(self.prof_btn); pmn.aboutToShow.connect(lambda: self.profiles_menu(pmn)); self.prof_btn.setMenu(pmn)
-        self.prof_btn.setVisible(bool(PROFILE) or len(list_profiles()) > 1); tl.addWidget(self.prof_btn)
+        self.prof_btn.setVisible(bool(PROFILE) or len(list_profiles()) > 1); rg.addWidget(self.prof_btn)
         self.dl_btn = self.btn("menu", "Pobrane pliki", lambda: None)   # pojawia się przy pierwszym pobraniu w tej sesji
         self.dl_btn.setObjectName("acct"); self.dl_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         dmn = QMenu(self.dl_btn); dmn.aboutToShow.connect(self.downloads_menu); self.dl_btn.setMenu(dmn)
-        self.dl_btn.setIcon(download_icon()); self.dl_btn.hide(); tl.addWidget(self.dl_btn)
+        self.dl_btn.setIcon(download_icon()); self.dl_btn.hide(); rg.addWidget(self.dl_btn)
         self._dl_t = QTimer(self); self._dl_t.setSingleShot(True); self._dl_t.timeout.connect(self.update_dl_btn)
         DOWNLOADS[0].changed.connect(self._dl_changed); self.update_dl_btn()
         self.burger =self.btn("menu", "Menu Luny", lambda: None)   # skrajnie po prawej
         self.burger.setObjectName("acct"); self.burger.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         bmn = QMenu(self.burger); bmn.setObjectName("burger"); bmn.aboutToShow.connect(self.burger_menu); self.burger.setMenu(bmn)
-        tl.addSpacing(2); tl.addWidget(self.burger)
+        bmn.setWindowFlags(bmn.windowFlags() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
+        bmn.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)   # zaokrąglone rogi menu (jak ramki ekranu głównego)
+        rg.addSpacing(18); rg.addWidget(self.burger)
         self._tool_lay, self._compact = tl, None
-        self._dense = [w for w in (tl.itemAt(i).widget() for i in range(tl.count()))
+        self._dense = [w for lay_ in (tl, rg) for w in (lay_.itemAt(i).widget() for i in range(lay_.count()))
                        if isinstance(w, QToolButton)]
-        self.tool_btns = {"shield": self.shield_btn, "key": self.key_btn, "split": self.split_btn, "reader": self.reader_btn,
-                          "star": self.star_btn,
-                          "ai": self.ai_btn, "apps": self.apps_btn, "gear": self.gear_btn}
+        self.tool_btns = {"home": self.home_btn, "shield": self.shield_btn, "key": self.key_btn, "split": self.split_btn,
+                          "reader": self.reader_btn, "star": self.star_btn,
+                          "ai": self.ai_btn, "apps": self.apps_btn, "widgets": self.widgets_btn, "gear": self.gear_btn}
         v.addWidget(tool)
         self._strip, self._tool = strip, tool
         self._compact_hover = CompactHover(self)   # tryb kompaktowy: pasek narzędzi wysuwa się po najechaniu na karty
@@ -11541,6 +12469,16 @@ class Browser(QMainWindow):
         self.bgframe = BgFrame()
         body = QHBoxLayout(self.bgframe); body.setContentsMargins(0, 0, 0, 0); body.setSpacing(0)
         self.host = WidgetHost(self.store, self)
+        self._force_widgets = False   # przycisk widgetów pokazuje panele także na stronie WWW (jak w filmie)
+        if not _UISND and QApplication.instance() is not None:
+            _UISND.append(UiSounds())
+        _UISND[0].store = self.store
+        if self.primary:
+            QTimer.singleShot(700, lambda: ui_sound("chime", 0.55))   # jak logo w filmie
+        if not self.store.settings.get("look_stars"):   # raz: tło z gwiazdami z filmu (inne tła dalej w Ustawieniach → Wygląd)
+            self.store.settings["look_stars"] = True; self.store.settings["bg"] = "stars"; self.store.save_soon()
+        for sb_ in (self.host.left, self.host.right):   # jak w filmie: start bez paneli; wysuwa je przycisk widgetów
+            sb_.user_collapsed = sb_.collapsed = True; sb_.scroll.setVisible(False); sb_._rail_icon()
         self._state_cb = lambda st: self.host.set_active(st == Qt.ApplicationState.ApplicationActive)
         QGuiApplication.instance().applicationStateChanged.connect(self._state_cb)
         QApplication.instance().focusChanged.connect(self._focus_changed)   # podział ekranu: aktywna strona = kliknięta
@@ -11661,7 +12599,7 @@ class Browser(QMainWindow):
     # --- pomocnicze ---
     def btn(self, kind, tip, fn, size=38):
         b = QToolButton(); b.setIcon(glyph(kind)); b.setIconSize(QSize(size - 8, size - 8))
-        b.setFixedSize(size, size); b.setToolTip(tip)
+        b.setFixedSize(size, size); b.setToolTip(tip); b.pressed.connect(lambda: ui_sound("click", 0.6))
         b.setCursor(Qt.CursorShape.PointingHandCursor)
         b.clicked.connect(lambda: fn())
         return b
@@ -11669,13 +12607,13 @@ class Browser(QMainWindow):
     def update_engine_ui(self):
         cur = CURRENT[0]
         self.chip.setText(cur); self.chip.setIcon(mini_icon(cur, ENGINES[cur]))
-        self.address.setPlaceholderText(f"Szukaj w {cur} lub wpisz adres…")
+        self.address.setPlaceholderText("Szukaj lub wpisz adres")
         menu = self.chip.menu(); menu.clear()
         for name in ENGINES:
             a = menu.addAction(mini_icon(name, ENGINES[name]), name); a.setCheckable(True); a.setChecked(name == cur)
             a.triggered.connect(lambda _=False, n=name: QTimer.singleShot(0, lambda: self.store.set_engine(n)))
         self.chip.adjustSize()
-        self.address.setTextMargins(0, 0, self.chip.sizeHint().width() + 12, 0)
+        self.address.setTextMargins(0, 0, (self.chip.sizeHint().width() + 12) if self.chip.isVisibleTo(self.address) else 0, 0)
 
     def _ui_refresh(self):
         self.update_engine_ui(); self.update_star()
@@ -11712,7 +12650,7 @@ class Browser(QMainWindow):
             self.assistant.hide(); self.assistant.release()
         if not self.store.feature("webapps"):
             self.webapps.hide(); self.webapps.release()
-        self.ws_btn.setVisible(self.store.feature("workspaces"))
+        self.ws_btn.setVisible(False)   # jak w filmie: przestrzenie robocze są w menu Luny i w menu karty
         self.apply_dark()
         vt = self.store.feature("vertical_tabs")
         self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.apply_pins()
@@ -11756,14 +12694,14 @@ class Browser(QMainWindow):
         """Panele nigdy nie wystają poza okno: gdy brakuje miejsca, zwijają się do szyn (drawer); panel wskazany
         przez użytkownika ma pierwszeństwo. Zwraca zbiór paneli, które mogą być rozwinięte."""
         t = self.cur()
-        ok = bool(t and t.on_home()) or self.store.feature("everywhere")
+        ok = bool(t and t.on_home()) or self.store.feature("everywhere") or self._force_widgets
         sbs = [sb for sb in (self.host.left, self.host.right)
                if self.store.feature(sb.side) and ok and sb.has_widgets()]
         for sb in (self.host.left, self.host.right):
             sb.setVisible(sb in sbs)
         side = self.assistant if self.assistant.isVisible() else (self.webapps if self.webapps.isVisible() else None)
-        if side is not None:   # panel asystenta / aplikacji też się dopasowuje do szerokości okna
-            side.setFixedWidth(max(300, min(440, int(self.width() * 0.36))))
+        if side is not None and not getattr(side, "_sliding", False):   # panel asystenta / aplikacji też się dopasowuje
+            side.setFixedWidth(self._side_w())                          # do szerokości okna (nie w trakcie wysuwania)
         total = self.width() - 12 - (side.width() if side is not None else 0)
         rails = len(sbs) * Sidebar.RAIL
         cap = max(0, int((total - rails - self.MIN_CENTER) // Sidebar.W))
@@ -11779,36 +12717,28 @@ class Browser(QMainWindow):
         return keep
 
     def update_page_bg(self):
-        """Na stronie WWW tło pod panelami bocznymi przyjmuje kolor strony; na ekranie głównym zostaje tło Luny.
-        Podział ekranu w poziomie: lewy panel – kolor lewej strony, prawy – prawej (nie aktywnej)."""
-        t = self.cur()
-        web = t.web if t is not None and t.web is not None and not t.on_home() else None
-        if web is None or not self.store.feature("panel_page_bg"):
-            self.bgframe.set_page_color(None); return
-        views = [web]
-        if t.sides and t.split is not None and t.split.orientation() == Qt.Orientation.Horizontal:
-            ends = [s.view for s in (t.sides[0], t.sides[-1])]
-            views = [v if v is not None else web for v in ends]
-        got_c = [None] * len(views); self._bg_req = req = object()
+        """Panele boczne zawsze na tle Luny (gwiazdy / czerń) – także obok stron WWW."""
+        self.bgframe.set_page_color(None)
 
-        def fix(v, val):
-            c = css_color(val)
-            if dark_for(v.url().toString()) and c.lightnessF() > 0.5:
-                c = QColor("#121212")   # tak silnik maluje jasne tło w ciemnym trybie
-            return c
+    def toggle_sounds(self):
+        on = not self.store.feature("ui_sounds"); self.store.set_feature("ui_sounds", on)
+        if on:
+            ui_sound("pop2")
+        QToolTip.showText(QCursor.pos(), "Dźwięki interfejsu włączone" if on else "Dźwięki interfejsu wyciszone", self)
 
-        def got(k, v, val):
-            try:
-                if req is not self._bg_req or t is not self.cur() or t.on_home():
-                    return
-                got_c[k] = fix(v, val)
-                if all(c is not None for c in got_c):
-                    self.bgframe.set_page_color(got_c[0], got_c[-1] if len(got_c) > 1 else None)
-            except RuntimeError:   # okno zamknięte, zanim strona odpowiedziała
-                pass
-        for k, v in enumerate(views):
-            v.page().runJavaScript(PAGE_BG_JS, QWebEngineScript.ScriptWorldId.ApplicationWorld,
-                                   lambda val, k=k, v=v: got(k, v, val))
+    def toggle_widgets(self):
+        """Przycisk widgetów (jak w filmie): wysuwa oba panele boczne z widgetami albo je chowa – także na stronie WWW."""
+        sbs = [sb for sb in (self.host.left, self.host.right) if self.store.feature(sb.side) and sb.has_widgets()]
+        if not sbs:
+            QToolTip.showText(QCursor.pos(), "Brak widgetów – dodaj je w Rynku Widgetów (Ctrl+Shift+E).", self); return
+        show = all(sb.user_collapsed for sb in sbs)
+        self._force_widgets = show
+        for sb in sbs:
+            if sb.user_collapsed == show:
+                sb.set_user_collapsed(not show)
+        self._pinned = sbs[0].side if show else None
+        self.update_sidebars(prefer=self._pinned)
+        self.widgets_btn.setIcon(glyph("grid", "#ffffff" if show else "#c9c9c9"))
 
     def toggle_sidebar(self, side):
         sb = self.host.left if side == "left" else self.host.right
@@ -11830,10 +12760,10 @@ class Browser(QMainWindow):
         c = self.width() < 1000
         if not hasattr(self, "_dense") or c == self._compact:
             return
-        self._compact = c; s = 32 if c else 38
+        self._compact = c; s = 30 if c else 32   # jak w filmie: przyciski 32 px, cienkie ikony
         for b in self._dense:
-            b.setFixedSize(s, s); b.setIconSize(QSize(s - 8, s - 8))
-        self._tool_lay.setContentsMargins(*((8, 5, 8, 5) if c else (12, 8, 12, 8))); self._tool_lay.setSpacing(2 if c else 4)
+            b.setFixedSize(s, s); b.setIconSize(QSize(s - 12, s - 12))
+        self._tool_lay.setContentsMargins(*((8, 5, 8, 5) if c else (12, 8, 12, 8))); self._tool_lay.setSpacing(2)
         if self.store.feature("vertical_tabs"):
             self.tabpanel.setFixedWidth(self._tabpanel_w())
 
@@ -11861,7 +12791,7 @@ class Browser(QMainWindow):
             h = self.bar.tabButton(i, QTabBar.ButtonPosition.RightSide)
             b = h.findChild(QToolButton) if h is not None else None   # krzyżyk w opakowaniu z marginesem
             if b is not None:
-                b.setIcon(glyph("close", "#2a2a2a" if i == cur else "#8c8c8c"))
+                b.setIcon(glyph("close", "#bdbdbd" if i == cur else "#8c8c8c"))
 
     def update_star(self):
         t = self.cur()
@@ -11877,11 +12807,54 @@ class Browser(QMainWindow):
         show = not self.assistant.isVisible()
         if show and self.webapps.isVisible():   # jeden panel boczny naraz
             self.webapps.hide(); self.apps_btn.setIcon(glyph("chat"))
-        self.assistant.setVisible(show)
+        self._slide(self.assistant, show)
         self.ai_btn.setIcon(glyph("assistantfill" if show else "assistant"))
         if show:
             self.assistant.ensure()
         self.update_sidebars_soon()
+
+    def _side_w(self):
+        return max(320, min(440, int(self.width() * 0.27)))   # jak w filmie: ~27% szerokości okna
+
+    def switch_side_panel(self, to, from_idx):
+        """Przełącznik „Asystent AI | Komunikatory”: drugi panel pojawia się w tym samym miejscu (bez zwijania)."""
+        new, old = (self.assistant, self.webapps) if to == "assistant" else (self.webapps, self.assistant)
+        if not self.store.feature("assistant" if to == "assistant" else "webapps"):
+            return
+        w = old.width() if old.isVisible() else self._side_w()
+        old.hide(); new.setFixedWidth(w); new.show(); new.ensure(); new.switch.slide_in(from_idx); ui_sound("switch")
+        self.ai_btn.setIcon(glyph("assistantfill" if new is self.assistant else "assistant"))
+        self.apps_btn.setIcon(glyph("chatfill" if new is self.webapps else "chat"))
+        self.update_sidebars_soon()
+
+    def _slide(self, panel, show):
+        """Panel asystenta / komunikatorów wysuwa się z prawej krawędzi i tak samo chowa (~300 ms, OutCubic).
+        Płynnie: układ strony zmienia się tylko raz, a w klatkach animacji przesuwa się gotowy obraz panelu."""
+        old = getattr(panel, "_slide_tw", None)
+        if old is not None:
+            old.stop(finish=True)
+        tgt = self._side_w(); panel._sliding = False
+        if not self._laid or not self.isVisible() or panel.isVisible() == show:
+            panel.setVisible(show); panel.setFixedWidth(tgt); return
+        bf = self.bgframe; W = bf.width(); cover = None
+        if show:
+            panel.setFixedWidth(tgt); panel.show(); bf.layout().activate()
+            g = panel.geometry(); pm = panel.grab(); x0, x1 = W, g.x()
+            cover = BgPatch(bf, g)   # w miejscu panelu tło, a nad nim wjeżdża obraz panelu
+        else:
+            g = panel.geometry(); pm = panel.grab(); panel.hide(); x0, x1 = g.x(), W
+        lab = QLabel(bf); lab.setPixmap(pm); lab.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        lab.setGeometry(x0, g.y(), g.width(), g.height()); lab.show(); lab.raise_()
+
+        def step(k):
+            lab.move(int(x0 + (x1 - x0) * k), g.y())
+
+        def done():
+            lab.deleteLater()
+            if cover is not None:
+                cover.deleteLater()
+            self.update_sidebars_soon()
+        panel._slide_tw = Tween(self, step, 300, done); panel._slide_tw.start(); ui_sound("slide_in" if show else "slide_out")
 
     def toggle_webapps(self):
         if not self.store.feature("webapps"):
@@ -11889,7 +12862,7 @@ class Browser(QMainWindow):
         show = not self.webapps.isVisible()
         if show and self.assistant.isVisible():
             self.assistant.hide(); self.ai_btn.setIcon(glyph("assistant"))
-        self.webapps.setVisible(show)
+        self._slide(self.webapps, show)
         self.apps_btn.setIcon(glyph("chatfill" if show else "chat"))
         if show:
             self.webapps.ensure()
@@ -11951,6 +12924,10 @@ class Browser(QMainWindow):
 
     # --- pasek narzędzi: przypięte ikony i menu burgera ---
     def pins(self):
+        st = self.store.settings
+        if not st.get("look_film"):   # raz: pasek jak w filmie pokazowym (pozostałe ikony – w menu Luny, można przypiąć)
+            st["look_film"] = True; st["toolbar_pins"] = list(TOOL_DEFAULT)
+            st["toolbar_known"] = [k for k, _ in TOOL_ITEMS]; self.store.save_soon()
         p = self.store.settings.get("toolbar_pins")
         if not isinstance(p, list):
             return list(TOOL_DEFAULT)
@@ -11987,33 +12964,54 @@ class Browser(QMainWindow):
         return t.web if t is not None and t.web is not None and not t.on_home() else None
 
     def burger_menu(self):
+        """Menu Luny w stylu ekranu głównego: rzędy kafelków (podmenu otwierają się z kafelka) i krótka lista –
+        mieści się w jednej kolumnie. Wszystkie polecenia i skróty jak wcześniej."""
         m = self.burger.menu(); m.clear(); web = self.web()
         menu_row_action(m, MenuSearch(lambda: (m.close(), QTimer.singleShot(0, self.palette))))
-        hidden = [k for k, _ in TOOL_ITEMS if k not in self.pins() and k not in ("gear", "split", "key", "reader")]
+        sub = lambda: QMenu(m)   # podmenu kafelka (zamyka całe menu po wyborze)
+        qt = MenuTiles(m)
+        qt.tile("plus", "Nowa karta", self.new_tab, "Nowa karta (Ctrl+T)")
+        qt.tile("window", "Nowe okno", self.new_window, "Nowe okno (Ctrl+N)")
+        qt.tile("private", "Prywatne", lambda: self.new_window(True), "Nowe okno prywatne (Ctrl+Shift+N)")
+        qt.tile("download", "Pobrane", self.show_downloads, "Pobrane pliki (Ctrl+Shift+Y)")
+        qt.tile("gear", "Ustawienia", self.open_settings, "Ustawienia (Ctrl+,)")
+        qt.tile("exit", "Zakończ", self.quit_all, "Zakończ Lunę")
+        menu_row_action(m, qt)
+        hidden = [k for k, _ in TOOL_ITEMS if k not in self.pins() and k not in ("gear", "split", "key", "reader", "star")]
         if hidden:   # ikony schowane z paska (podział, hasła i czytanie mają stałe miejsca niżej)
             names = dict(TOOL_ITEMS)
             for k in hidden:
                 if k == "shield":
                     sm = m.addMenu(glyph("shield"), names[k]); sm.aboutToShow.connect(lambda sm=sm: self.shield_menu(sm))
-                elif k == "star":
-                    self.act(m, "star", "Dodaj do ekranu głównego", self.pin_current, "Ctrl+D", web is not None)
                 elif k == "ai" and self.store.feature("assistant"):
                     self.act(m, "assistant", "Asystent AI", self.toggle_assistant, "Ctrl+J")
                 elif k == "apps" and self.store.feature("webapps"):
-                    self.act(m, "chat", "Panel aplikacji", self.toggle_webapps, "Ctrl+Shift+K")
+                    self.act(m, "chat", "Komunikatory (panel aplikacji)", self.toggle_webapps, "Ctrl+Shift+K")
+                elif k == "home":
+                    self.act(m, "home", "Ekran główny", self.go_home)
+                elif k == "widgets":
+                    self.act(m, "grid", "Widgety (panele boczne)", self.toggle_widgets)
         # 1. karty i okna
         menu_section(m, "Karty i okna")
-        self.act(m, "plus", "Nowa karta", self.new_tab, "Ctrl+T")
-        self.act(m, "window", "Nowe okno", self.new_window, "Ctrl+N")
-        self.act(m, "private", "Nowe okno prywatne", lambda: self.new_window(True), "Ctrl+Shift+N")
-        self.act(m, "search", "Szukaj w kartach…", self.search_tabs, "Ctrl+Shift+Space")
+        kt = MenuTiles(m)
+        kt.tile("search", "Szukaj kart", self.search_tabs, "Szukaj w kartach (Ctrl+Shift+Space)")
         on = bool(self.cur() and self.cur().sides)
-        self.act(m, "split", "Zakończ podział ekranu" if on else "Podziel ekran",
-                 self.split_current, "Ctrl+\\", on or web is not None)
-        pf = m.addMenu(profile_icon(PROFILE), f"Profile (teraz: {PROFILE or 'Główny'})")
-        pf.aboutToShow.connect(lambda: self.profiles_menu(pf)); self.profiles_menu(pf)
-        lm = m.addMenu(glyph("layouts"), "Układy podziału"); lm.aboutToShow.connect(lambda: self.layouts_menu(lm))
-        self.layouts_menu(lm)
+        kt.tile("split", "Połącz" if on else "Podziel", self.split_current,
+                ("Zakończ podział ekranu" if on else "Podziel ekran") + " (Ctrl+\\)", on or web is not None, on)
+        if self.store.feature("workspaces"):   # przeniesione z ikony przy logo
+            wsm = sub(); self.ws_menu(wsm)
+            kt.tile("layers", "Przestrzeń", None, f"Przestrzeń robocza: {self.ws}", menu=wsm)
+        en = sub()   # przeniesione z pola adresu
+        for name in ENGINES:
+            a = en.addAction(mini_icon(name, ENGINES[name]), name); a.setCheckable(True); a.setChecked(name == CURRENT[0])
+            a.triggered.connect(lambda _=False, n=name: QTimer.singleShot(0, lambda: self.store.set_engine(n)))
+        kt.tile("search", "Wyszukiwarka", None, f"Wyszukiwarka: {CURRENT[0]}", menu=en,
+                icon=mini_icon(CURRENT[0], ENGINES[CURRENT[0]]))
+        pf = sub(); pf.aboutToShow.connect(lambda: self.profiles_menu(pf)); self.profiles_menu(pf)
+        kt.tile("window", "Profile", None, f"Profile (teraz: {PROFILE or 'Główny'})", menu=pf, icon=profile_icon(PROFILE))
+        lm = sub(); lm.aboutToShow.connect(lambda: self.layouts_menu(lm)); self.layouts_menu(lm)
+        kt.tile("layouts", "Układy", None, "Układy podziału", menu=lm)
+        menu_row_action(m, kt)
         if SYNC and SYNC[0].enabled() and SYNC[0].remote:
             om = m.addMenu(glyph("window"), "Karty z innych komputerów")
             for name, ts, tabs in SYNC[0].other_tabs():
@@ -12023,7 +13021,7 @@ class Browser(QMainWindow):
                         lambda _=False, u=d_["url"]: self.open_url_new_tab(u))
         # 2. twoje rzeczy
         menu_section(m, "Twoje rzeczy")
-        hm = m.addMenu(glyph("history"), "Historia")
+        hm = sub()
         self.act(hm, "history", "Pełna historia…", self.show_history, "Ctrl+H")
         self.act(hm, "reload", "Przywróć zamkniętą kartę", self.restore_closed, "Ctrl+Shift+T", bool(self._closed))
         if self._closed:
@@ -12037,7 +13035,7 @@ class Browser(QMainWindow):
         if not self.store.recent:
             hm.addAction("Brak historii").setEnabled(False)
         hm.addSeparator(); self.act(hm, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
-        bm = m.addMenu(glyph("bookmark"), "Zakładki i listy")
+        bm = sub()
         self.act(bm, "bookmark", "Menedżer zakładek…", self.show_bookmarks, "Ctrl+Shift+B")
         self.act(bm, "plus", "Dodaj do zakładek", self.bookmark_current, "", web is not None)
         self.act(bm, "star", "Dodaj tę stronę do ekranu głównego", self.pin_current, "Ctrl+D", web is not None)
@@ -12057,11 +13055,16 @@ class Browser(QMainWindow):
                         lambda _=False, u=b_["url"]: self.open_url_new_tab(u))
         bm.addSeparator(); self.act(bm, "download", "Importuj z innej przeglądarki…", lambda: ImportDialog(self).exec())
         self.act(bm, "save", "Eksportuj / przenieś na inne urządzenie…", self.show_bookmarks)
-        rl = m.addMenu(glyph("book"), "Do przeczytania"); rl.aboutToShow.connect(lambda: self.read_later_menu(rl))
-        self.act(m, "edit", "Zakreślenia i notatki…", self.show_highlights)
-        self.act(m, "download", "Pobrane pliki", self.show_downloads, "Ctrl+Shift+Y")
-        pw = m.addMenu(glyph("key"), "Hasła i autouzupełnianie")
-        pw.aboutToShow.connect(lambda: self.key_menu(pw))
+        rl = sub(); rl.aboutToShow.connect(lambda: self.read_later_menu(rl))
+        pw = sub(); pw.aboutToShow.connect(lambda: self.key_menu(pw))
+        yt = MenuTiles(m)
+        yt.tile("history", "Historia", None, "Historia, ostatnio zamknięte karty (Ctrl+H, Ctrl+Shift+T)", menu=hm)
+        yt.tile("bookmark", "Zakładki", None, "Zakładki i listy (Ctrl+Shift+B)", menu=bm)
+        yt.tile("book", "Do czytania", None, "Do przeczytania (Ctrl+Shift+O)", menu=rl)
+        yt.tile("edit", "Zakreślenia", self.show_highlights, "Zakreślenia i notatki")
+        yt.tile("key", "Hasła", None, "Hasła i autouzupełnianie", menu=pw)
+        yt.tile("star", "Na ekran", self.pin_current, "Dodaj stronę do ekranu głównego (Ctrl+D)", web is not None)
+        menu_row_action(m, yt)
         # 3. ta strona
         menu_section(m, "Ta strona")
         zr = MenuRow("zoom", "Powiększ")
@@ -12073,20 +13076,21 @@ class Browser(QMainWindow):
         sep = QFrame(); sep.setObjectName("vsep"); sep.setFixedSize(1, 22); zr.h.addWidget(sep)
         zr.button(kind="fullscreen", tip="Pełny ekran (F11)", fn=lambda: (m.close(), self.toggle_fullscreen()))
         menu_row_action(m, zr)
-        rd = self.act(m, "book", "Tryb czytania", self.toggle_reader, "F9", web is not None)
-        rd.setCheckable(True); rd.setChecked(bool(web is not None and getattr(web, "reader_on", False)))
         tr_on = bool(web is not None and getattr(getattr(web, "_translator", None), "active", False))
-        self.act(m, "swap", "Pokaż oryginał strony" if tr_on else "Przetłumacz stronę na polski", self.translate_page,
-                 "Ctrl+Shift+L", web is not None)
-        self.act(m, "external", "Obraz w obrazie (film w okienku)", self.pip, "Ctrl+Shift+P", web is not None)
-        dk = self.act(m, "moon", "Ciemny tryb stron", self.toggle_dark, "Ctrl+Shift+D")
-        dk.setCheckable(True); dk.setChecked(self.store.feature("dark_pages"))
+        pt = MenuTiles(m)   # narzędzia strony jako kafelki (te same polecenia i skróty)
+        pt.tile("book", "Czytanie", self.toggle_reader, "Tryb czytania (F9)", web is not None,
+                bool(web is not None and getattr(web, "reader_on", False)))
+        pt.tile("swap", "Oryginał" if tr_on else "Tłumacz", self.translate_page,
+                ("Pokaż oryginał strony" if tr_on else "Przetłumacz stronę na polski") + " (Ctrl+Shift+L)", web is not None, tr_on)
+        pt.tile("external", "Okienko", self.pip, "Obraz w obrazie – film w okienku (Ctrl+Shift+P)", web is not None)
+        pt.tile("moon", "Ciemny tryb", self.toggle_dark, "Ciemny tryb stron (Ctrl+Shift+D)", True, self.store.feature("dark_pages"))
+        pt.tile("search", "Obrazem", self.image_search, "Szukaj obrazem – zaznacz fragment (Ctrl+Shift+X)", web is not None)
+        pt.tile("print", "Drukuj", self.print_page, "Drukuj (Ctrl+P)", web is not None)
+        menu_row_action(m, pt)
         if web is not None and self.store.feature("dark_pages"):
             dom = base_domain(web.url().host())
             ex = self.act(m, "sun", f"Bez ciemnego trybu na {dom}", lambda d=dom: self.set_dark_except(d, d not in DARK["except"]))
             ex.setCheckable(True); ex.setChecked(dom in DARK["except"])
-        self.act(m, "search", "Szukaj obrazem (zaznacz fragment)", self.image_search, "Ctrl+Shift+X", web is not None)
-        self.act(m, "print", "Drukuj…", self.print_page, "Ctrl+P", web is not None)
         fm = m.addMenu(glyph("search"), "Znajdź i edytuj"); fm.setEnabled(web is not None)
         self.act(fm, "search", "Znajdź na stronie…", self.find_bar.open, "Ctrl+F")
         fm.addSeparator()
@@ -12106,15 +13110,12 @@ class Browser(QMainWindow):
         self.act(sm, "copy", "Zrzut: zaznaczony fragment…", lambda: self.screenshot("region"), "Ctrl+Shift+S")
         # 4. luna
         menu_section(m, "Dostosuj Lunę")
-        self.act(m, "grid", "Rynek Widgetów", self.open_market, "Ctrl+Shift+E")
-        em = m.addMenu(glyph("puzzle"), "Rozszerzenia"); em.aboutToShow.connect(lambda: self.extensions_menu(em))
-        cp = self.act(m, "eye", "Tryb kompaktowy (pasek adresu schowany)", self.toggle_compact, "Ctrl+Shift+F")
-        cp.setCheckable(True); cp.setChecked(bool(self.store.settings.get("compact")))
-        pm = m.addMenu(glyph("pin"), "Ikony na pasku")
+        em = sub(); em.aboutToShow.connect(lambda: self.extensions_menu(em))
+        pm = sub()
         for key, name in TOOL_ITEMS:
             a = pm.addAction(name); a.setCheckable(True); a.setChecked(key in self.pins())
             a.toggled.connect(lambda on, k=key: self.set_pin(k, on))
-        tm = m.addMenu(glyph("tools"), "Więcej narzędzi")
+        tm = sub()
         self.act(tm, "tools", "Menedżer zadań", self.task_manager, "Shift+Esc")
         self.act(tm, "trash", "Usuń dane przeglądania…", self.clear_data, "Ctrl+Shift+Del")
         self.act(tm, "save", "Kopia zapasowa…", lambda: BackupDialog(self).exec())
@@ -12126,9 +13127,7 @@ class Browser(QMainWindow):
         tm.addSeparator()
         self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
         self.act(tm, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U", web is not None)
-        m.addSeparator()
-        # 5. systemowe
-        hp = m.addMenu(glyph("help"), "Pomoc")
+        hp = sub()
         self.act(hp, "help", "Przewodnik po Lunie", self.show_welcome)
         self.act(hp, "star", "Co nowego w Lunie", self.show_whats_new)
         self.act(hp, "search", "Wszystkie polecenia…", self.palette, "Ctrl+K")
@@ -12138,8 +13137,24 @@ class Browser(QMainWindow):
         self.act(hp, "shield", "Polityka prywatności", lambda: self.open_url_new_tab(PRIVACY_URL))
         self.act(hp, "book", "Regulamin", lambda: self.open_url_new_tab(TERMS_URL))
         self.act(hp, "app", "Licencje i źródła danych", lambda: self.open_url_new_tab(LICENSES_URL))
-        self.act(m, "gear", "Ustawienia", self.open_settings, "Ctrl+,")
-        self.act(m, "exit", "Zakończ", self.quit_all)
+        dt = MenuTiles(m)
+        dt.tile("grid", "Widgety", self.open_market, "Rynek Widgetów (Ctrl+Shift+E)")
+        dt.tile("puzzle", "Rozszerzenia", None, "Rozszerzenia", menu=em)
+        dt.tile("eye", "Kompaktowy", self.toggle_compact, "Tryb kompaktowy – pasek adresu schowany (Ctrl+Shift+F)",
+                True, bool(self.store.settings.get("compact")))
+        dt.tile("pin", "Ikony paska", None, "Ikony na pasku – co ma być widoczne obok adresu", menu=pm)
+        dt.tile("tools", "Narzędzia", None, "Więcej narzędzi", menu=tm)
+        dt.tile("help", "Pomoc", None, "Pomoc, przewodnik, skróty, O Lunie", menu=hp)
+        snd_on = self.store.feature("ui_sounds")
+        dt.tile("volume" if snd_on else "mute", "Dźwięki" if snd_on else "Wyciszone", self.toggle_sounds,
+                "Dźwięki interfejsu – kliknij, aby " + ("wyciszyć" if snd_on else "włączyć") + " (głośność: Ustawienia → Wygląd)",
+                True, snd_on)
+        menu_row_action(m, dt)
+        for sub_ in m.findChildren(QMenu):   # podmenu też jako ciemne karty z zaokrąglonymi rogami
+            if not sub_.property("lunaRounded"):
+                sub_.setProperty("lunaRounded", True); sub_.setObjectName("lunasub")
+                sub_.setWindowFlags(sub_.windowFlags() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
+                sub_.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
     # --- akcje menu ---
     def new_window(self, private=False):
@@ -12291,11 +13306,37 @@ class Browser(QMainWindow):
                         "Rozpakowany folder możesz potem usunąć.",
                         [("Uruchom zainstalowaną", start_installed, True), ("Później", None, False)], icon="download")
 
-    def on_new_release(self, ver, url):
+    def on_new_release(self, ver, url, assets=None):
         if WINDOWS and WINDOWS[0] is not self:
             return
-        self.notice.ask(f"Dostępna nowa wersja Luny: {ver} (masz {VERSION}).",
+        if assets is None:
+            rc = self.sender()
+            assets = getattr(rc, "assets", None) or (RELEASE_CHECK[0].assets if RELEASE_CHECK else {})
+        if self.store.feature("auto_update") and AutoInstaller.supported() and assets:
+            ai = auto_installer()
+            if not getattr(self, "_ai_wired", False):
+                self._ai_wired = True
+                ai.ready.connect(self._update_ready)
+                ai.failed.connect(lambda msg, u=url, v=ver: self.notice.ask(
+                    f"Nie udało się automatycznie pobrać nowej wersji Luny: {msg}.",
+                    [("Pobierz ręcznie", lambda: QDesktopServices.openUrl(QUrl(u)), True), ("Później", None, False)], icon="app"))
+            ai.fetch(ver, assets); return
+        self.notice.ask("Dostępna nowa wersja Luny.",
                         [("Pobierz", lambda: QDesktopServices.openUrl(QUrl(url)), True), ("Później", None, False)], icon="app")
+
+    def _update_ready(self, ver, path):
+        """Nowa wersja pobrana i sprawdzona: zainstaluje się przy zamknięciu Luny albo od razu po kliknięciu."""
+        if not getattr(self, "_quit_hook", False):
+            self._quit_hook = True
+            QApplication.instance().aboutToQuit.connect(
+                lambda: self.store.feature("auto_update") and auto_installer().install(relaunch=False))
+        self.notice.ask("Nowa wersja Luny jest pobrana i sprawdzona – zainstaluje się sama przy zamknięciu. Karty i dane zostają.",
+                        [("Uruchom ponownie i zaktualizuj", lambda: self.install_update_now(), True),
+                         ("Przy zamknięciu", None, False)], icon="app")
+
+    def install_update_now(self):
+        if auto_installer().install(relaunch=True):
+            self.quit_all()
 
     def apply_update(self):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
@@ -12733,7 +13774,7 @@ class Browser(QMainWindow):
         container = PRIVATE if self.private else (container if container in self.container_ids() else "")
         t = Tab(self.store, self, ws or self.ws, group or "", container)
         self.stack.addWidget(t)
-        i = self.bar.addTab((title or "Ekran główny")[:26])
+        i = self.bar.addTab((title or HOME_TAB)[:26])
         self._close_btn(t, True)
         if lazy_url:   # przywrócona karta: strona wczyta się dopiero po wejściu na kartę
             t.pending, t.title_text = lazy_url, title
@@ -12773,7 +13814,7 @@ class Browser(QMainWindow):
         n = sum(1 for x in self.all_tabs() if x.pinned and x is not t)   # przypięte trzymają się lewej strony
         self.bar.moveTab(self.stack.indexOf(t), n)
         self._close_btn(t, not on)
-        self.set_tab_text(t, t.title_text or "Ekran główny"); self.decorate(t)
+        self.set_tab_text(t, t.title_text or HOME_TAB); self.decorate(t)
         self.refresh_close_icons(); self.tabs_changed()
         self.bar.updateGeometry(); self.bar.adjustSize()   # wąska karta – pasek od razu się zwęża (bez dziury przed „+”)
 
@@ -12839,12 +13880,12 @@ class Browser(QMainWindow):
         md = QMimeData(); md.setData(TAB_MIME, str(id(t)).encode())   # identyfikator karty (nie indeks – ten się zmienia)
         d = QDrag(self.bar); d.setMimeData(md)
         th = getattr(t, "thumb", None)
-        pm = th.scaledToWidth(180, Qt.TransformationMode.SmoothTransformation) if th is not None and not th.isNull() \
-            else self.bar.grab(self.bar.tabRect(i))
-        d.setPixmap(pm); d.setHotSpot(QPoint(pm.width() // 2, 10))
+        pm, hot = tab_ghost(SplitDropOverlay._title(t), tab_icon(t.icon), th, max(1.0, self.devicePixelRatioF()))
+        d.setPixmap(pm); d.setHotSpot(hot)
         if getattr(self, "_split_ov", None) is None:
             self._split_ov = SplitDropOverlay(self)
         self._split_ov.start(self.cur(), t)   # podgląd: na którą połowę ekranu trafi karta
+        ui_sound("pick")
         try:
             d.exec(Qt.DropAction.MoveAction)
         finally:
@@ -13478,6 +14519,8 @@ class Browser(QMainWindow):
             t.last_active = time.time()
         self.sync_address()
         self.refresh_close_icons(); self.update_sidebars_soon(); self.hide_suggest(); self.tabs_changed()
+        if self.assistant.isVisible():
+            self.assistant.update_ctx()
 
     def on_tab_moved(self, frm, to):
         w = self.stack.widget(frm)
@@ -13489,8 +14532,7 @@ class Browser(QMainWindow):
         if i < 0:
             return
         col = self.container_color(t.container)
-        has = (t.icon is not None and not t.icon.isNull()) or col or t.asleep or t.pending or t.pinned
-        self.bar.setTabIcon(i, tab_icon(t.icon, col, t.asleep or bool(t.pending)) if has else QIcon())
+        self.bar.setTabIcon(i, tab_icon(t.icon, col, t.asleep or bool(t.pending)))   # jak w filmie: każda karta ma ikonę
         tip = t.title_text or "Ekran główny"
         if t.group:
             tip += f"\nGrupa: {t.group}"
@@ -13641,8 +14683,8 @@ class Browser(QMainWindow):
         """Karta widoczna w bieżącym widoku (bez przestrzeni roboczych widać wszystkie karty)."""
         return not self.store.feature("workspaces") or t.ws == self.ws
 
-    def ws_menu(self):
-        m = self.ws_btn.menu(); m.clear()
+    def ws_menu(self, m=None):
+        m = m if m is not None else self.ws_btn.menu(); m.clear()
         m.addAction(glyph("layers"), "Przestrzenie robocze").setEnabled(False)
         for name in self.workspaces():
             n = sum(1 for t in self.all_tabs() if t.ws == name)
@@ -14103,7 +15145,16 @@ class Browser(QMainWindow):
         on = self.store.feature("adblock") and sh is not None
         url = t.web.url().toString() if t and t.web is not None and not t.on_home() else ""
         n = sh.count(url) if on and url else 0
-        self.shield_btn.setIcon(glyph("shield", "#3ddc84" if on else "#6f6f6f"))
+        self.shield_btn.setIcon(glyph("shield", "#e6e6e6" if on else "#6f6f6f"))
+        b = getattr(self, "_shield_badge", None)
+        if b is None:
+            b = self._shield_badge = QLabel(self.shield_btn); b.setObjectName("shieldbadge")
+            b.setAlignment(Qt.AlignmentFlag.AlignCenter); b.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        b.setText(str(n) if n < 1000 else "999+"); b.adjustSize()
+        bw = max(20, b.sizeHint().width()); b.setFixedSize(bw, 16)
+        b.move(self.shield_btn.width() - bw - 1, 1); b.setVisible(on and n > 0); b.raise_()
+        if on and n > 0 and url != getattr(self, "_block_snd_url", None):
+            self._block_snd_url = url; ui_sound("block", 0.8)
         self.shield_btn.setToolTip(f"Blokada reklam i śledzenia: zablokowano {n} na tej stronie" if on else
                                    "Blokada reklam i śledzenia wyłączona")
 
@@ -14257,7 +15308,7 @@ class Browser(QMainWindow):
 
     def go_home(self):
         t = self.cur(); t.show_home(); t.title_text, t.icon = "", None
-        self.set_tab_text(t, "Ekran główny"); self.decorate(t); self.tabs_changed()
+        self.set_tab_text(t, HOME_TAB); self.decorate(t); self.tabs_changed()
         self.address.clear(); self.update_sidebars_soon()
 
     def submit(self):
@@ -14298,6 +15349,8 @@ class Browser(QMainWindow):
     def on_title(self, tab, title):
         i = self.stack.indexOf(tab)
         tab.title_text = title
+        if tab is self.cur() and self.assistant.isVisible():
+            self.assistant.update_ctx()
         if i >= 0:
             self.set_tab_text(tab, title); self.decorate(tab)
         self.tabs_changed()
