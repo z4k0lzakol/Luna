@@ -3014,7 +3014,7 @@ class FluidAnimation(QObject):
 
 # --- dźwięki interfejsu: syntezowane przy pierwszym użyciu (czysty Python), zapisywane do ~/.luna_dzwieki ---
 SOUND_DIR = HOME / ".luna_dzwieki"
-SOUND_VER = "2"
+SOUND_VER = "3"
 _SR = 44100
 
 
@@ -3069,11 +3069,11 @@ def _snd_defs():
     n = N(0.34); d["split"] = _snd_sweep(n, 1600, 380, 0.32, 0.32, 6, 0.35)
     n = N(0.36); d["slide_in"] = _snd_sweep(n, 380, 2300, 0.34, 0.3, 7, 0.62)
     n = N(0.36); d["slide_out"] = _snd_sweep(n, 2300, 380, 0.34, 0.28, 8, 0.38)
-    # panele: miękki, niski „oddech” (filtrowany szum w wąskim paśmie) z cichym tonem – spokojniej niż „whoosh”
-    n = N(0.62); d["panel_open"] = _snd_mix(n, _snd_sweep(n, 220, 760, 0.58, 0.16, 11, 0.55),
-                                            _snd_tone(n, 392.0, dur=0.5, tau=0.22, att=0.09, gain=0.035))
-    n = N(0.55); d["panel_close"] = _snd_mix(n, _snd_sweep(n, 700, 200, 0.5, 0.13, 12, 0.35),
-                                             _snd_tone(n, 293.7, dur=0.45, tau=0.18, att=0.06, gain=0.03))
+    # panele: krótki, spokojny dźwięk – dwa ciche, miękkie tony (w górę przy otwieraniu, w dół przy zamykaniu)
+    n = N(0.32); d["panel_open"] = _snd_mix(n, _snd_tone(n, 587.3, dur=0.2, tau=0.06, att=0.008, gain=0.09),
+                                            _snd_tone(n, 784.0, t0=0.07, dur=0.22, tau=0.07, att=0.008, gain=0.08))
+    n = N(0.32); d["panel_close"] = _snd_mix(n, _snd_tone(n, 784.0, dur=0.2, tau=0.06, att=0.008, gain=0.07),
+                                             _snd_tone(n, 587.3, t0=0.07, dur=0.22, tau=0.07, att=0.008, gain=0.07))
     n = N(0.24); d["switch"] = _snd_mix(n, _snd_sweep(n, 800, 2600, 0.2, 0.22, 9, 0.5), _snd_tone(n, 880, dur=0.1, tau=0.03, gain=0.06, t0=0.12))
     for k, f in enumerate((587.3, 659.3, 740.0, 880.0, 987.8)):   # pentatonika D – kolejne „pyknięcia”
         n = N(0.16); d[f"pop{k}"] = _snd_tone(n, f, f * 1.3, dur=0.15, tau=0.05, att=0.002, gain=0.3, harm=0.15)
