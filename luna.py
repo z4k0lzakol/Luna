@@ -55,7 +55,7 @@ except Exception:
     _SMTC = _SMTC_STATUS = _DataReader = None
 import adblock   # wbudowana blokada reklam (adblock/); rejestruje własny schemat – musi być przed QApplication
 
-VERSION = "1.0.4"   # wersja wydania (tag vX.Y.Z na GitHubie musi się zgadzać); kopia z gita pokazuje dodatkowo commit
+VERSION = "1.0.5"   # wersja wydania (tag vX.Y.Z na GitHubie musi się zgadzać); kopia z gita pokazuje dodatkowo commit
 RELEASES_API = "https://api.github.com/repos/z4k0lzakol/Luna/releases/latest"
 RELEASES_URL = "https://github.com/z4k0lzakol/Luna/releases/latest"
 
@@ -3014,7 +3014,7 @@ class FluidAnimation(QObject):
 
 # --- dźwięki interfejsu: syntezowane przy pierwszym użyciu (czysty Python), zapisywane do ~/.luna_dzwieki ---
 SOUND_DIR = HOME / ".luna_dzwieki"
-SOUND_VER = "1"
+SOUND_VER = "2"
 _SR = 44100
 
 
@@ -3069,6 +3069,11 @@ def _snd_defs():
     n = N(0.34); d["split"] = _snd_sweep(n, 1600, 380, 0.32, 0.32, 6, 0.35)
     n = N(0.36); d["slide_in"] = _snd_sweep(n, 380, 2300, 0.34, 0.3, 7, 0.62)
     n = N(0.36); d["slide_out"] = _snd_sweep(n, 2300, 380, 0.34, 0.28, 8, 0.38)
+    # panele: miękki, niski „oddech” (filtrowany szum w wąskim paśmie) z cichym tonem – spokojniej niż „whoosh”
+    n = N(0.62); d["panel_open"] = _snd_mix(n, _snd_sweep(n, 220, 760, 0.58, 0.16, 11, 0.55),
+                                            _snd_tone(n, 392.0, dur=0.5, tau=0.22, att=0.09, gain=0.035))
+    n = N(0.55); d["panel_close"] = _snd_mix(n, _snd_sweep(n, 700, 200, 0.5, 0.13, 12, 0.35),
+                                             _snd_tone(n, 293.7, dur=0.45, tau=0.18, att=0.06, gain=0.03))
     n = N(0.24); d["switch"] = _snd_mix(n, _snd_sweep(n, 800, 2600, 0.2, 0.22, 9, 0.5), _snd_tone(n, 880, dur=0.1, tau=0.03, gain=0.06, t0=0.12))
     for k, f in enumerate((587.3, 659.3, 740.0, 880.0, 987.8)):   # pentatonika D – kolejne „pyknięcia”
         n = N(0.16); d[f"pop{k}"] = _snd_tone(n, f, f * 1.3, dur=0.15, tau=0.05, att=0.002, gain=0.3, harm=0.15)
@@ -3523,11 +3528,11 @@ class Sidebar(QWidget):
         if not animate:
             self.scroll.setMaximumWidth(self.W); self.scroll.setVisible(not c)
         elif c:
-            self.anim.setStartValue(self.scroll.width()); self.anim.setEndValue(0); self.anim.start(); ui_sound("slide_out", 0.6)
+            self.anim.setStartValue(self.scroll.width()); self.anim.setEndValue(0); self.anim.start(); ui_sound("panel_close", 0.55)
         else:
             self.scroll.setMaximumWidth(0); self.scroll.show()
             self.anim.setStartValue(0); self.anim.setEndValue(self.W); self.anim.start()
-            soft_reveal(self.frames, delay=90, gap=70, ms=380, pops=0.8); ui_sound("slide_in", 0.6)
+            soft_reveal(self.frames, delay=90, gap=70, ms=380, pops=0.35); ui_sound("panel_open", 0.6)
         self._rail_icon()
 
     def _anim_done(self):
@@ -9198,6 +9203,345 @@ class WhatsNewDialog(LunaDialog):
         self.footer(right=[("Świetnie", self.accept, True)])
 
 
+TOUR = [
+    # (ilustracja, nadtytuł, tytuł, opis, skróty)
+    ("welcome", "WITAJ", "Luna", "Lekka, ciemna przeglądarka, która Ci nie przeszkadza. Pokażemy Ci w minutę, co gdzie jest.", []),
+    ("home", "EKRAN GŁÓWNY", "Wszystko zaczyna się tutaj", "Zegar, wyszukiwarka i Twoje aplikacje jako kafelki. Kafelek „+” dodaje "
+     "nową aplikację, prawy przycisk na kafelku – edycja albo usunięcie.", ["Ctrl+T", "Ctrl+L"]),
+    ("split", "KARTY I PODZIAŁ EKRANU", "Dwie albo trzy strony obok siebie", "Chwyć kartę i przeciągnij ją w dół, na stronę – "
+     "upuść na połowę ekranu. Trzecią stronę dodasz tak samo albo przyciskiem „+” w nagłówku strony.", ["Ctrl+\\", "Ctrl+Shift+T"]),
+    ("toolbar", "PASEK", "Najważniejsze pod ręką", "Tarcza pokazuje, ile reklam i trackerów zablokowała na stronie. Obok: podział "
+     "ekranu, asystent AI i widgety. Inne ikony przypniesz w menu Luny → Ikony paska.", ["Ctrl+J"]),
+    ("panels", "PANELE BOCZNE", "Widgety z obu stron", "Pogoda, zadania, notatki, paczki, rynki i więcej. Wysuń je przyciskiem "
+     "widgetów albo uchwytem przy krawędzi okna. Nowe dodasz w Rynku Widgetów.", ["Ctrl+Shift+E"]),
+    ("ai", "ASYSTENT I KOMUNIKATORY", "AI, które zna otwartą stronę", "ChatGPT, Claude, Gemini i DeepSeek w panelu obok strony – "
+     "podsumuj ją albo zapytaj o nią w menu „…”. Przełącznik u góry otwiera komunikatory.", ["Ctrl+J", "Ctrl+Shift+K"]),
+    ("menu", "MENU LUNY", "Każde polecenie w jednym miejscu", "Kafelki z najczęstszymi akcjami, historia, zakładki, hasła, "
+     "narzędzia strony i ustawienia. Albo po prostu wpisz, czego szukasz.", ["Ctrl+K", "Ctrl+,"]),
+    ("privacy", "PRYWATNOŚĆ I AKTUALIZACJE", "Twoje dane zostają u Ciebie", "Bez kont i własnych serwerów, z blokadą śledzenia. "
+     "Luna sama pobiera nowe wersje i instaluje je przy zamknięciu. Dźwięki wyciszysz w menu.", []),
+]
+
+
+class TourArt(QWidget):
+    """Ilustracje przewodnika – miniatury Luny rysowane jak w filmie pokazowym, z krótką animacją przy każdym kroku."""
+
+    def __init__(self):
+        super().__init__(); self.kind = "welcome"; self.k = 1.0; self.setMinimumSize(360, 300)
+
+    def show_kind(self, kind):
+        self.kind = kind; self.k = 0.0
+        old = getattr(self, "_tw", None)
+        if old is not None:
+            old.stop()
+
+        def step(v):
+            self.k = v; self.update()
+        self._tw = Tween(self, step, 1400); self._tw._curve = QEasingCurve(QEasingCurve.Type.Linear); self._tw.start()
+
+    # --- pomocnicze ---
+    @staticmethod
+    def _e(x):   # wyhamowanie (OutCubic)
+        x = max(0.0, min(1.0, x)); return 1 - (1 - x) ** 3
+
+    def _seg(self, a, b):
+        return self._e((self.k - a) / max(1e-6, b - a))
+
+    @staticmethod
+    def _rr(p, r, rad, fill, line=None, width=1.0):
+        p.setPen(QPen(QColor(line), width) if line else Qt.PenStyle.NoPen); p.setBrush(QColor(fill) if fill else Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(r, rad, rad)
+
+    def _text(self, p, r, txt, size, color="#ececec", weight=QFont.Weight.Normal, align=Qt.AlignmentFlag.AlignCenter):
+        f = QFont(self.font()); f.setPixelSize(int(size)); f.setWeight(weight); p.setFont(f); p.setPen(QColor(color))
+        p.drawText(r, align, txt)
+
+    def _window(self, p, r):
+        """Miniatura okna Luny: pasek kart, pasek adresu, obszar strony."""
+        self._rr(p, r, 12, "#111111", "#2a2a2a")
+        p.save(); clip = QPainterPath(); clip.addRoundedRect(r, 12, 12); p.setClipPath(clip)
+        p.fillRect(QRectF(r.left(), r.top(), r.width(), 22), QColor("#0c0c0c"))
+        self._rr(p, QRectF(r.left() + 26, r.top() + 4, 74, 15), 5, "#1d1d1d")
+        p.fillRect(QRectF(r.left(), r.top() + 22, r.width(), 24), QColor("#151515"))
+        self._rr(p, QRectF(r.left() + 44, r.top() + 27, r.width() - 130, 14), 7, "#0e0e0e", "#262626", 0.8)
+        for i in range(4):
+            self._rr(p, QRectF(r.right() - 76 + i * 16, r.top() + 29, 10, 10), 3, "#2a2a2a")
+        p.restore()
+        return QRectF(r.left() + 6, r.top() + 52, r.width() - 12, r.height() - 58)   # obszar treści
+
+    def paintEvent(self, ev):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        R = QRectF(self.rect()).adjusted(8, 8, -8, -8)
+        W = QRectF(R.center().x() - 170, R.center().y() - 118, 340, 236)
+        getattr(self, "art_" + self.kind, self.art_welcome)(p, R, W)
+
+    # --- kroki ---
+    def art_welcome(self, p, R, W):
+        c = R.center(); a = self._seg(0.0, 0.5)
+        self._rr(p, QRectF(c.x() - 56, c.y() - 80, 112, 112), 28, "#141414", "#2a2a2a")
+        moon = QPainterPath(); moon.addEllipse(QPointF(c.x(), c.y() - 24), 32, 32)
+        sh = QPainterPath(); off = 60 * (1 - a)
+        sh.addEllipse(QPointF(c.x() + 17 + off, c.y() - 44 - off), 33, 33)
+        p.fillPath(moon.subtracted(sh), QColor("#f3eee6"))
+        t = self._seg(0.35, 0.8); p.setOpacity(t)
+        self._text(p, QRectF(R.left(), c.y() + 44 - 10 * (1 - t), R.width(), 50), "Luna", 40, "#f1f1f1", QFont.Weight.Bold)
+        p.setOpacity(1)
+
+    def art_home(self, p, R, W):
+        A = self._window(p, W)
+        self._rr(p, A, 8, "#161616", "#222222")
+        a = self._seg(0.0, 0.4); p.setOpacity(a)
+        self._text(p, QRectF(A.left(), A.top() + 18, A.width(), 40), "09:41", 32, "#f1f1f1", QFont.Weight.Light)
+        self._rr(p, QRectF(A.center().x() - 80, A.top() + 66, 160, 18), 9, "#1b1b1b", "#2d2d2d", 0.8)
+        p.setOpacity(1)
+        letters = "YGW+"
+        for i, ch in enumerate(letters):
+            t = self._seg(0.3 + i * 0.12, 0.6 + i * 0.12)
+            if t <= 0:
+                continue
+            p.setOpacity(t); x = A.center().x() - 66 + i * 36; y = A.top() + 102 + 8 * (1 - t)
+            self._rr(p, QRectF(x, y, 24, 24), 7, "#1d1d1d" if ch != "+" else "#161616", "#2a2a2a" if ch != "+" else "#3a3a3a")
+            self._text(p, QRectF(x, y, 24, 24), ch, 11, "#dddddd", QFont.Weight.Bold)
+        p.setOpacity(1)
+
+    def art_split(self, p, R, W):
+        A = self._window(p, W)
+        m = self._seg(0.0, 0.45); s = self._seg(0.55, 0.85)
+        left = QRectF(A.left(), A.top(), A.width() - (A.width() / 2 + 3) * s, A.height())
+        self._rr(p, left, 7, "#161616", "#222222")
+        for i in range(5):
+            p.fillRect(QRectF(left.left() + 10, left.top() + 12 + i * 14, max(0.0, left.width() * (0.7 if i % 2 else 0.85) - 10), 5), QColor("#262626"))
+        if 0.3 < self.k < 0.6:   # strefa upuszczenia
+            z = QRectF(A.center().x() + 3, A.top() + 2, A.width() / 2 - 5, A.height() - 4)
+            pen = QPen(QColor(243, 238, 230, 150), 1.2); pen.setStyle(Qt.PenStyle.DashLine); p.setPen(pen)
+            p.setBrush(QColor(243, 238, 230, 18)); p.drawRoundedRect(z, 7, 7)
+        if s > 0:
+            right = QRectF(A.right() - (A.width() / 2 - 3) * s, A.top(), (A.width() / 2 - 3) * s, A.height())
+            self._rr(p, right, 7, "#161616", "#222222")
+            p.setOpacity(s)
+            self._rr(p, QRectF(right.left() + 10, right.top() + 12, right.width() * 0.5, 34), 5, "#2a2f3a")
+            p.setOpacity(1)
+        if self.k < 0.6:   # karta leci za kursorem
+            x = W.left() + 26 + (A.center().x() + 40 - W.left() - 26) * m; y = W.top() + 4 + (A.center().y() - W.top() - 4) * m
+            p.save(); p.translate(x, y); p.rotate(-4 * m)
+            self._rr(p, QRectF(0, 0, 74, 16), 5, "#262626", "#3a3a3a"); self._rr(p, QRectF(5, 4, 8, 8), 2, "#3b5bdb")
+            p.restore()
+
+    def art_toolbar(self, p, R, W):
+        bar = QRectF(R.left() + 10, R.center().y() - 26, R.width() - 20, 52)
+        self._rr(p, bar, 14, "#151515", "#262626")
+        self._rr(p, QRectF(bar.left() + 12, bar.top() + 13, bar.width() * 0.42, 26), 13, "#0e0e0e", "#262626")
+        kinds = ["shield", "split", "assistant", "grid", "menu"]
+        hl = int(self.k * 5.2) % 5
+        for i, kd in enumerate(kinds):
+            x = bar.right() - 14 - (len(kinds) - i) * 38 - (16 if i == 4 else 0)
+            r = QRectF(x, bar.top() + 10, 32, 32)
+            if i == hl and self.k < 0.97:
+                self._rr(p, r, 9, "#232323", "#3a3a3a")
+            glyph(kd, "#e6e6e6" if i == hl else "#bdbdbd").paint(p, r.adjusted(7, 7, -7, -7).toRect())
+            if i == 0:   # licznik zablokowanych
+                n = int(128 * self._seg(0.0, 0.8)); txt = str(n)
+                bw = 10 + 6 * len(txt); b = QRectF(r.right() - bw + 4, r.top() - 4, bw, 14)
+                self._rr(p, b, 7, "#ececec"); self._text(p, b, txt, 9, "#111111", QFont.Weight.Bold)
+
+    def art_panels(self, p, R, W):
+        A = self._window(p, W)
+        s = self._seg(0.0, 0.4); pw = 96 * s
+        page = QRectF(A.left() + pw + (4 if pw else 0), A.top(), A.width() - pw - (4 if pw else 0), A.height())
+        self._rr(p, page, 7, "#161616", "#222222")
+        for i in range(3):
+            t = self._seg(0.35 + i * 0.12, 0.65 + i * 0.12)
+            if t <= 0 or pw < 20:
+                continue
+            p.setOpacity(t)
+            card = QRectF(A.left(), A.top() + i * 52, pw, 46)
+            self._rr(p, card, 7, "#151515", "#242424")
+            self._text(p, QRectF(card.left() + 8, card.top() + 4, pw - 10, 12), ("POGODA", "ZADANIA", "PACZKI")[i], 7,
+                       "#7d7d7d", QFont.Weight.Bold, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            if i == 0:
+                self._text(p, QRectF(card.left() + 8, card.top() + 16, 60, 26), "12°", 18, "#f1f1f1", QFont.Weight.Light,
+                           Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            else:
+                p.fillRect(QRectF(card.left() + 8, card.top() + 22, pw * 0.7, 5), QColor("#2a2a2a"))
+                p.fillRect(QRectF(card.left() + 8, card.top() + 32, pw * 0.5, 5), QColor("#2a2a2a"))
+        p.setOpacity(1)
+        hx = page.left() + 2   # uchwyt przy krawędzi
+        self._rr(p, QRectF(hx, A.center().y() - 14, 7, 28), 3, "#1f1f1f", "#333333")
+
+    def art_ai(self, p, R, W):
+        A = self._window(p, W)
+        s = self._seg(0.0, 0.4); pw = 118 * s
+        self._rr(p, QRectF(A.left(), A.top(), A.width() - pw - (4 if pw else 0), A.height()), 7, "#161616", "#222222")
+        if pw < 10:
+            return
+        P = QRectF(A.right() - pw, A.top(), pw, A.height())
+        self._rr(p, P, 7, "#101010", "#222222")
+        seg = QRectF(P.left() + 6, P.top() + 6, pw - 12, 18); self._rr(p, seg, 6, "#0a0a0a", "#262626", 0.8)
+        kx = self._seg(0.55, 0.8)
+        knob = QRectF(seg.left() + 2 + (seg.width() / 2 - 2) * kx, seg.top() + 2, seg.width() / 2 - 2, 14)
+        self._rr(p, knob, 5, "#ececec")
+        if kx < 0.5:
+            for i in range(3):
+                self._rr(p, QRectF(P.left() + 6 + i * 36, P.top() + 30, 32, 12), 6, "#1f1f1f" if i == 0 else None, "#2c2c2c", 0.8)
+            self._rr(p, QRectF(P.left() + 6, P.top() + 48, pw - 12, 14), 5, "#161616", "#262626", 0.8)
+            self._rr(p, QRectF(P.right() - 70, P.top() + 72, 64, 16), 7, "#ececec")
+            self._rr(p, QRectF(P.left() + 6, P.top() + 96, 80, 30), 7, "#1a1a1a", "#2a2a2a", 0.8)
+        else:
+            for i, col in enumerate(("#25d366", "#0a7cff", "#2aabee", "#5865f2")):
+                t = self._seg(0.75 + i * 0.05, 0.9 + i * 0.05); p.setOpacity(t)
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(col)); p.drawEllipse(QPointF(P.left() + 16, P.top() + 40 + i * 24), 7, 7)
+                p.fillRect(QRectF(P.left() + 28, P.top() + 36 + i * 24, pw * 0.5, 5), QColor("#2e2e2e"))
+            p.setOpacity(1)
+
+    def art_menu(self, p, R, W):
+        M = QRectF(R.center().x() - 130, R.center().y() - 110, 260, 220)
+        a = self._seg(0.0, 0.3); p.setOpacity(a)
+        self._rr(p, M, 14, "#121212", "#262626")
+        self._rr(p, QRectF(M.left() + 10, M.top() + 10, M.width() - 20, 18), 9, "#1b1b1b", "#2d2d2d", 0.8)
+        p.setOpacity(1)
+        kinds = ["plus", "window", "private", "download", "gear", "history", "bookmark", "book", "key", "grid", "puzzle", "volume"]
+        for i, kd in enumerate(kinds):
+            t = self._seg(0.2 + i * 0.05, 0.45 + i * 0.05)
+            if t <= 0:
+                continue
+            p.setOpacity(t); col, row = i % 6, i // 6
+            r = QRectF(M.left() + 10 + col * 41, M.top() + 40 + row * 52 + 6 * (1 - t), 36, 44)
+            self._rr(p, r, 8, "#1a1a1a", "#262626", 0.8)
+            glyph(kd, "#d6d6d6").paint(p, QRectF(r.center().x() - 8, r.top() + 8, 16, 16).toRect())
+            p.fillRect(QRectF(r.left() + 7, r.bottom() - 12, r.width() - 14, 4), QColor("#333333"))
+        p.setOpacity(1)
+        for i in range(3):
+            t = self._seg(0.75 + i * 0.05, 0.95)
+            p.setOpacity(t); p.fillRect(QRectF(M.left() + 16, M.top() + 156 + i * 18, 120 - i * 20, 6), QColor("#2a2a2a"))
+        p.setOpacity(1)
+
+    def art_privacy(self, p, R, W):
+        c = R.center(); a = self._e(self.k / 0.4)
+        sc = 0.7 + 0.3 * a
+        box = QRectF(c.x() - 40 * sc, c.y() - 80 * sc, 80 * sc, 80 * sc)
+        p.setOpacity(min(1.0, a * 1.4)); self._rr(p, box, 22 * sc, "#141414", "#2a2a2a")
+        glyph("lock", "#f3eee6").paint(p, box.adjusted(22 * sc, 22 * sc, -22 * sc, -22 * sc).toRect()); p.setOpacity(1)
+        for i, (kd, txt) in enumerate((("shield", "Bez śledzenia"), ("user", "Bez kont"), ("reload", "Sama się aktualizuje"))):
+            t = self._seg(0.35 + i * 0.12, 0.65 + i * 0.12)
+            if t <= 0:
+                continue
+            p.setOpacity(t); r = QRectF(c.x() - 90, c.y() + 18 + i * 30 + 6 * (1 - t), 180, 24)
+            self._rr(p, r, 12, "#141414", "#2a2a2a")
+            if kd != "user":
+                glyph(kd, "#cfcfcf").paint(p, QRectF(r.left() + 10, r.top() + 5, 14, 14).toRect())
+            self._text(p, r.adjusted(28, 0, -8, 0), txt, 11, "#dddddd")
+        p.setOpacity(1)
+
+
+class LunaTour(QDialog):
+    """Przewodnik po Lunie (pierwsze uruchomienie i menu Pomoc): ciemna karta z gwiazdami jak w filmie pokazowym,
+    animowane ilustracje i krótkie opisy. Na końcu – opcjonalnie kreator ustawień (import, wyszukiwarka…)."""
+
+    def __init__(self, browser):
+        super().__init__(browser, Qt.WindowType.Dialog | Qt.WindowType.FramelessWindowHint)
+        self.b = browser; self.i = 0
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True); self.setFixedSize(900, 560)
+        self.setStyleSheet("""
+            QLabel#tkick { color:#8a8a8a; font-size:11px; font-weight:700; letter-spacing:1.6px; }
+            QLabel#ttitle { color:#f2f2f2; font-size:30px; font-weight:700; letter-spacing:-0.5px; }
+            QLabel#tbody { color:#a8a8a8; font-size:15px; }
+            QLabel#tkey { background:#1a1a1a; border:1px solid #2c2c2c; border-radius:8px; color:#d6d6d6;
+                          font-size:12px; font-weight:600; padding:4px 9px; }
+            QPushButton#tmain { background:#f3eee6; color:#111111; border:0; border-radius:19px; padding:0 22px;
+                                min-height:38px; font-size:14px; font-weight:700; }
+            QPushButton#tmain:hover { background:#ffffff; }
+            QPushButton#tghost { background:transparent; color:#9a9a9a; border:0; border-radius:19px; padding:0 14px;
+                                 min-height:38px; font-size:13px; }
+            QPushButton#tghost:hover { background:#1c1c1c; color:#ffffff; }
+            QPushButton#tsoft { background:#1a1a1a; color:#e6e6e6; border:1px solid #2c2c2c; border-radius:19px; padding:0 18px;
+                                min-height:38px; font-size:13px; font-weight:600; }
+            QPushButton#tsoft:hover { background:#222222; }""")
+        root = QVBoxLayout(self); root.setContentsMargins(28, 26, 28, 22); root.setSpacing(10)
+        body = QHBoxLayout(); body.setSpacing(26)
+        self.art = TourArt(); body.addWidget(self.art, 11)
+        self.txt = QWidget(); self.txt.setObjectName("clear"); tv = QVBoxLayout(self.txt); tv.setContentsMargins(0, 0, 0, 0); tv.setSpacing(12)
+        tv.addStretch(1)
+        self.kick = QLabel(); self.kick.setObjectName("tkick")
+        self.title = QLabel(); self.title.setObjectName("ttitle"); self.title.setWordWrap(True)
+        self.body = QLabel(); self.body.setObjectName("tbody"); self.body.setWordWrap(True)
+        self.keys = QHBoxLayout(); self.keys.setSpacing(6)
+        tv.addWidget(self.kick); tv.addWidget(self.title); tv.addWidget(self.body); tv.addSpacing(4); tv.addLayout(self.keys)
+        tv.addStretch(1); body.addWidget(self.txt, 10)
+        root.addLayout(body, 1)
+        foot = QHBoxLayout(); foot.setSpacing(8)
+        self.skip = QPushButton("Pomiń"); self.skip.setObjectName("tghost"); self.skip.clicked.connect(self.finish)
+        self.dots = QLabel(); self.dots.setTextFormat(Qt.TextFormat.RichText)
+        self.setup = QPushButton("Przenieś dane i ustaw Lunę"); self.setup.setObjectName("tsoft"); self.setup.clicked.connect(self.open_wizard)
+        self.back = QPushButton("Wstecz"); self.back.setObjectName("tghost"); self.back.clicked.connect(lambda: self.go(self.i - 1))
+        self.next = QPushButton("Dalej"); self.next.setObjectName("tmain"); self.next.clicked.connect(self.advance)
+        for wdg in (self.next, self.back, self.skip, self.setup):
+            wdg.setCursor(Qt.CursorShape.PointingHandCursor)
+        foot.addWidget(self.skip); foot.addStretch(1); foot.addWidget(self.dots); foot.addStretch(1)
+        foot.addWidget(self.setup); foot.addWidget(self.back); foot.addWidget(self.next)
+        root.addLayout(foot)
+        self.eff = QGraphicsOpacityEffect(self.txt); self.txt.setGraphicsEffect(self.eff)
+        QShortcut(QKeySequence("Right"), self, activated=self.advance); QShortcut(QKeySequence("Left"), self, activated=lambda: self.go(self.i - 1))
+        self._stars = None
+        self.go(0, sound=False)
+
+    # --- wygląd karty: czerń, poświata i gwiazdy (jak w filmie) ---
+    def paintEvent(self, ev):
+        p = QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r = QRectF(self.rect()).adjusted(1, 1, -1, -1); path = QPainterPath(); path.addRoundedRect(r, 22, 22)
+        p.fillPath(path, QColor("#070708"))
+        g = QRadialGradient(QPointF(r.width() * 0.3, r.height() * 0.42), r.width() * 0.55)
+        g.setColorAt(0, QColor(243, 238, 230, 22)); g.setColorAt(1, QColor(0, 0, 0, 0)); p.fillPath(path, QBrush(g))
+        if self._stars is None:
+            rnd = random.Random(5); self._stars = [(rnd.random() * r.width(), rnd.random() * r.height(), 0.1 + rnd.random() * 0.45,
+                                                    0.3 + rnd.random()) for _ in range(90)]
+        p.save(); p.setClipPath(path); p.setPen(Qt.PenStyle.NoPen)
+        for x, y, a, z in self._stars:
+            p.setBrush(QColor(243, 238, 230, int(255 * a))); p.drawEllipse(QPointF(x, y), z, z)
+        p.restore()
+        p.setPen(QPen(QColor("#262626"), 1)); p.setBrush(Qt.BrushStyle.NoBrush); p.drawPath(path)
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        par = self.parentWidget()
+        if par is not None:
+            c = par.mapToGlobal(par.rect().center()); self.move(c.x() - self.width() // 2, c.y() - self.height() // 2)
+
+    # --- nawigacja ---
+    def advance(self):
+        self.finish() if self.i >= len(TOUR) - 1 else self.go(self.i + 1)
+
+    def go(self, i, sound=True):
+        i = max(0, min(len(TOUR) - 1, i)); self.i = i
+        kind, kick, title, text, keys = TOUR[i]
+        self.kick.setText(f"{kick}   ·   {i + 1} / {len(TOUR)}"); self.title.setText(title); self.body.setText(text)
+        while self.keys.count():
+            w = self.keys.takeAt(0).widget()
+            if w is not None:
+                w.deleteLater()
+        for k in keys:
+            lb = QLabel(k); lb.setObjectName("tkey"); self.keys.addWidget(lb)
+        self.keys.addStretch(1)
+        last = i == len(TOUR) - 1
+        self.next.setText("Zaczynamy" if last else "Dalej"); self.back.setVisible(i > 0)
+        self.skip.setVisible(not last); self.setup.setVisible(last)
+        self.dots.setText("".join(f"<span style='color:{'#f3eee6' if k == i else '#333333'}; font-size:14px'>●</span>&nbsp;"
+                                  for k in range(len(TOUR))))
+        self.art.show_kind(kind)
+        tw = getattr(self, "_fade", None)
+        if tw is not None:
+            tw.stop()
+        self.eff.setOpacity(0.0); self._fade = Tween(self, lambda v: self.eff.setOpacity(v), 420); self._fade.start()
+        if sound:
+            ui_sound(f"pop{i % 5}", 0.4)
+
+    def finish(self):
+        st = self.b.store.settings; st["tour_seen"] = True; st["onboarded"] = True; self.b.store.save_soon()
+        self.accept()
+
+    def open_wizard(self):
+        self.finish(); QTimer.singleShot(0, self.b.show_welcome)
+
+
 class WelcomeWizard(LunaDialog):
     """Przewodnik przy pierwszym uruchomieniu (i z menu Pomoc): przeniesienie danych, wyszukiwarka, prywatność, wygląd,
     widgety, AI i komunikatory, najważniejsze skróty. Każda zmiana działa od razu; „Pomiń” niczego nie psuje."""
@@ -12528,11 +12872,10 @@ class Browser(QMainWindow):
         if self.primary and can_self_install() and not self.store.settings.get("install_never") \
                 and "--luna-smoke-test" not in sys.argv:
             QTimer.singleShot(2500, self.offer_install)
-        if self.primary and not self.store.settings.get("onboarded"):   # przewodnik – tylko przy pierwszym uruchomieniu
-            if FIRST_RUN and not os.environ.get("LUNA_NO_WELCOME"):
-                QTimer.singleShot(900, self.show_welcome)
-            else:
-                self.store.settings["onboarded"] = True; self.store.save_soon()
+        if self.primary and not self.store.settings.get("tour_seen") and not os.environ.get("LUNA_NO_WELCOME"):
+            QTimer.singleShot(900, self.show_tour)   # przewodnik po Lunie – raz (także po aktualizacji do nowego wyglądu)
+        elif self.primary and not self.store.settings.get("onboarded"):
+            self.store.settings["onboarded"] = True; self.store.save_soon()
         if self.primary and len(WINDOWS) <= 1 and up.available():   # po aktualizacji: „Co nowego” (raz na wersję)
             up.news.connect(self._startup_news)
             QTimer.singleShot(3000, lambda: up.changes_since(self.store.settings.get("seen_head", "")))
@@ -12553,6 +12896,12 @@ class Browser(QMainWindow):
             self.notice.ask(f"Luna została zaktualizowana – {n} {'nowa zmiana' if n == 1 else ('nowe zmiany' if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else 'nowych zmian')}.",
                             [("Co nowego?", lambda: WhatsNewDialog(self, changes, up.version()).exec(), True), ("Później", None, False)],
                             icon="star")
+
+    def show_tour(self):
+        if not self.isVisible():
+            return
+        d = LunaTour(self); d.open(); self._tour = d
+        return d
 
     def show_welcome(self):
         d = WelcomeWizard(self); d.open()
@@ -12854,7 +13203,7 @@ class Browser(QMainWindow):
             if cover is not None:
                 cover.deleteLater()
             self.update_sidebars_soon()
-        panel._slide_tw = Tween(self, step, 300, done); panel._slide_tw.start(); ui_sound("slide_in" if show else "slide_out")
+        panel._slide_tw = Tween(self, step, 300, done); panel._slide_tw.start(); ui_sound("panel_open" if show else "panel_close", 0.6)
 
     def toggle_webapps(self):
         if not self.store.feature("webapps"):
@@ -13128,7 +13477,8 @@ class Browser(QMainWindow):
         self.act(tm, "tools", "Narzędzia deweloperskie", self.devtools, "F12", web is not None)
         self.act(tm, "app", "Wyświetl źródło strony", self.view_source, "Ctrl+U", web is not None)
         hp = sub()
-        self.act(hp, "help", "Przewodnik po Lunie", self.show_welcome)
+        self.act(hp, "help", "Przewodnik po Lunie", self.show_tour)
+        self.act(hp, "download", "Przenieś dane i ustaw Lunę…", self.show_welcome)
         self.act(hp, "star", "Co nowego w Lunie", self.show_whats_new)
         self.act(hp, "search", "Wszystkie polecenia…", self.palette, "Ctrl+K")
         self.act(hp, "app", "Skróty klawiszowe", lambda: self.open_settings("keys"))
@@ -14315,7 +14665,8 @@ class Browser(QMainWindow):
                 ("bookmark", "Menedżer zakładek – eksport, import, przeniesienie", "Ctrl+Shift+B", self.show_bookmarks),
                 ("plus", "Dodaj stronę do zakładek", "", self.bookmark_current),
                 ("search", "Szukaj obrazem (Google Lens / AI)", "Ctrl+Shift+X", self.image_search),
-                ("help", "Przewodnik po Lunie", "", lambda: self.show_welcome()),
+                ("help", "Przewodnik po Lunie", "", lambda: self.show_tour()),
+                ("download", "Przenieś dane i ustaw Lunę (kreator)", "", lambda: self.show_welcome()),
                 ("plus", "Nowy profil", "", self.new_profile),
                 ("layouts", "Zapisz układ podziału ekranu", "", self.save_layout),
                 ("star", "Co nowego w Lunie", "", lambda: self.show_whats_new()),
