@@ -4,6 +4,8 @@
 
 <h1 align="center">Luna</h1>
 
+<p align="center"><a href="README.en.md">English</a> · <b>Polski</b></p>
+
 <p align="center"><i>Przeglądarka przejrzysta jak gwieździste niebo.</i></p>
 
 <p align="center">
@@ -176,7 +178,7 @@ Plany na kolejne wersje:
 - [x] **Wydania na GitHubie** – każda wersja z instrukcją i plikami do pobrania; Luna sama wykrywa nowe wydania.
 - [ ] **Podpis cyfrowy** – Windows i macOS nie pokażą już ostrzeżeń przy pierwszym uruchomieniu.
 - [ ] **Luna na telefon** – aplikacja na Androida i iPhone'a w tym samym wyglądzie, z synchronizacją.
-- [ ] **Luna jako domyślna przeglądarka** – linki z poczty i innych programów otwierają się w Lunie.
+- [x] **Luna jako domyślna przeglądarka** – linki z poczty i innych programów otwierają się w Lunie.
 - [ ] **Jasny motyw i kolor akcentu**, archiwum starych kart, wersja przenośna (na pendrive).
 
 Instalacja wygląda tak: **pobierz → zainstaluj → przewodnik przenosi Twoje dane z poprzedniej przeglądarki** – i to wszystko.

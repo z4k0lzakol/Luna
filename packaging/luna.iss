@@ -51,6 +51,28 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 Name: "{autoprograms}\Luna"; Filename: "{app}\Luna.exe"
 Name: "{autodesktop}\Luna"; Filename: "{app}\Luna.exe"; Tasks: desktopicon
 
+[Registry]
+; Luna na liście przeglądarek Windows (Ustawienia → Aplikacje domyślne); wybór domyślnej zostaje po stronie użytkownika
+Root: HKCU; Subkey: "Software\Classes\LunaHTML"; ValueType: string; ValueName: ""; ValueData: "Luna HTML"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\LunaHTML"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\LunaHTML\Application"; ValueType: string; ValueName: "ApplicationName"; ValueData: "Luna"
+Root: HKCU; Subkey: "Software\Classes\LunaHTML\Application"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: """{app}\Luna.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\LunaHTML\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\Luna.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\LunaHTML\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Luna.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna"; ValueType: string; ValueName: ""; ValueData: "Luna"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\Luna.exe"",0"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Luna.exe"""
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "Luna"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: """{app}\Luna.exe"",0"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "Lekka, ciemna przeglądarka – przejrzysta jak gwieździste niebo."
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities\URLAssociations"; ValueType: string; ValueName: "http"; ValueData: "LunaHTML"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities\URLAssociations"; ValueType: string; ValueName: "https"; ValueData: "LunaHTML"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities\FileAssociations"; ValueType: string; ValueName: ".html"; ValueData: "LunaHTML"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities\FileAssociations"; ValueType: string; ValueName: ".htm"; ValueData: "LunaHTML"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities\FileAssociations"; ValueType: string; ValueName: ".pdf"; ValueData: "LunaHTML"
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Luna\Capabilities\StartMenu"; ValueType: string; ValueName: "StartMenuInternet"; ValueData: "Luna"
+Root: HKCU; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueName: "Luna"; ValueData: "Software\Clients\StartMenuInternet\Luna\Capabilities"; Flags: uninsdeletevalue
+
 [Run]
 Filename: "{app}\Luna.exe"; Description: "{cm:LaunchProgram,Luna}"; Flags: nowait postinstall skipifsilent
 

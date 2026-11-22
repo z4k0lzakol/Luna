@@ -672,8 +672,8 @@ QCheckBox#todo { spacing:8px; color:#e6e6e6; }
 QCheckBox#todo::indicator { width:20px; height:20px; }
 QCheckBox#todo::indicator:unchecked { image:url("%CKOFF%"); }
 QCheckBox#todo::indicator:checked { image:url("%CKON%"); }
-QDialog#settings { background:#111111; border:1px solid #2c2c2c; }
-QWidget#setHead { background:#0d0d0d; border-bottom:1px solid #1e1e1e; }
+QDialog#settings { background:#121212; border:1px solid #262626; }
+QWidget#setHead { background:#101010; border-bottom:1px solid #1c1c1c; }
 QFrame#dlgpanel { background:#0c0c0c; border:1px solid #1f1f1f; border-radius:12px; }
 QFrame#optcard { background:#161616; border:1px solid #242424; border-radius:12px; }
 QFrame#optcard:hover { border:1px solid #333333; }
@@ -689,10 +689,25 @@ QRadioButton::indicator { width:12px; height:12px; border-radius:8px; border:2px
 QRadioButton::indicator:hover { border:2px solid #8a8a8a; }
 QRadioButton::indicator:checked { border:4px solid #ececec; background:#111111; width:8px; height:8px; }
 QToolButton#splitbtn[on="true"] { background:#2e2e2e; border-radius:6px; }
-QListWidget#nav { background:#0d0d0d; border-right:1px solid #1e1e1e; padding:10px 8px; }
-QListWidget#nav::item { padding:10px 12px; border-radius:10px; color:#9a9a9a; margin:1px 0; }
-QListWidget#nav::item:selected { background:#ececec; color:#111111; font-weight:600; }
-QListWidget#nav::item:hover:!selected { background:#1a1a1a; color:#ffffff; }
+QListWidget#nav { background:#0e0e0e; border-right:1px solid #1c1c1c; padding:12px 10px; }
+QListWidget#nav::item { padding:10px 12px; border-radius:10px; color:#9a9a9a; margin:2px 0; border:1px solid transparent; }
+QListWidget#nav::item:selected { background:#1f1f1f; color:#f2f2f2; font-weight:600; border:1px solid #3a3a3a; }
+QListWidget#nav::item:hover:!selected { background:#171717; color:#ffffff; }
+QFrame#palette { background:#121212; border:1px solid #262626; border-radius:16px; }
+QLineEdit#palin { background:#1b1b1b; border:1px solid #2d2d2d; border-radius:20px; padding:0 16px; min-height:40px;
+                  max-height:40px; font-size:15px; color:#e6e6e6; }
+QLineEdit#palin:focus { border:1px solid #4a4a4a; }
+QListWidget#pallist { background:transparent; border:0; outline:0; color:#d6d6d6; font-size:13px; }
+QListWidget#pallist::item { padding:9px 10px; border-radius:10px; margin:1px 0; }
+QListWidget#pallist::item:hover { background:#181818; color:#ffffff; }
+QListWidget#pallist::item:selected { background:#1f1f1f; color:#ffffff; }
+QToolButton#focuspill { background:#1b1b1b; border:1px solid #2d2d2d; border-radius:13px; padding:3px 12px 3px 9px;
+                        color:#d6d6d6; font-size:12px; min-height:20px; }
+QToolButton#focuspill:hover { background:#222222; border:1px solid #3a3a3a; color:#ffffff; }
+QListWidget#thumbgrid { background:transparent; border:0; outline:0; color:#cfcfcf; font-size:12px; }
+QListWidget#thumbgrid::item { border-radius:12px; padding:6px; border:1px solid transparent; }
+QListWidget#thumbgrid::item:hover { background:#181818; border:1px solid #262626; }
+QListWidget#thumbgrid::item:selected { background:#1f1f1f; border:1px solid #3a3a3a; color:#ffffff; }
 QListWidget#wlist { background:rgba(255,255,255,0.03); border:1px solid #232323; border-radius:12px; padding:6px; }
 QListWidget#wlist::item { padding:9px 8px; border-radius:8px; }
 QListWidget#wlist::item:selected { background:#2a2a2a; color:#ffffff; }
@@ -873,6 +888,24 @@ def host_of(url: str) -> str:
 
 def icon_path(url: str) -> Path:
     return ICONS / (host_of(url) + ".png")
+
+
+THUMBS = HOME / ".luna_miniatury"   # miniatury stron do historii (tylko lokalnie)
+FOCUS = {"until": 0.0, "held": 0}   # tryb skupienia: do kiedy i ile powiadomień stron wstrzymano
+
+
+def focus_active():
+    return FOCUS["until"] > time.time()
+
+
+def thumb_path(url):
+    return THUMBS / (hashlib.sha1(url.encode("utf-8", "ignore")).hexdigest()[:24] + ".jpg")
+
+
+def note_key(url):
+    """Klucz notatki: host + ścieżka (bez parametrów i kotwicy)."""
+    u = QUrl(url)
+    return (u.host().lower().removeprefix("www.") + u.path().rstrip("/")) if u.host() else ""
 
 
 def plural(n: int) -> str:
@@ -1809,6 +1842,8 @@ class SiteNotifications(QObject):
 
     @classmethod
     def present(cls, n):
+        if focus_active():   # tryb skupienia: powiadomienia stron czekają (strona i tak pokaże je u siebie)
+            FOCUS["held"] += 1; return
         try:
             if cls._inst is None:
                 cls._inst = SiteNotifications()
@@ -2126,10 +2161,21 @@ class Store(QObject):
     # --- ustawienia (odpowiednik localStorage: plik JSON w katalogu domowym) ---
     def remove_history(self, pred):
         """Usuwa wpisy historii spełniające warunek (także z sekcji „Ostatnie”)."""
+        for h in self.history:
+            if pred(h):
+                try:
+                    thumb_path(h["url"]).unlink(missing_ok=True)
+                except OSError:
+                    pass
         self.history = [h for h in self.history if not pred(h)]; self.recent = [r for r in self.recent if not pred(r)]
         self._hist_dirty = True; self._write(RECENT, self.recent); self.save_soon(); self.changed.emit()
 
     def clear_history(self):
+        for f in (THUMBS.glob("*.jpg") if THUMBS.exists() else ()):
+            try:
+                f.unlink()
+            except OSError:
+                pass
         self.history, self.recent = [], []; self._hist_dirty = True
         self._write(RECENT, []); self.save_settings(); self.changed.emit()
 
@@ -2653,6 +2699,15 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
     "otp_offer": ("Podpowiadanie kodów 2FA", "Gdy strona prosi o kod weryfikacyjny, a w sejfie jest klucz tej witryny, Luna "
                   "proponuje jego wpisanie.", True),
     "whats_new": ("Okno „Co nowego” po aktualizacji", "Po aktualizacji Luna raz pokazuje listę zmian.", True),
+    "focus_pomodoro": ("Pomodoro włącza tryb skupienia", "Start pracy w widgecie Pomodoro chowa karty, panele i powiadomienia "
+                       "komunikatorów do końca odliczania.", True),
+    "later_tabs": ("Karty na później", "Kartę można odłożyć (menu karty albo upuszczenie na logo Luny) – zniknie z paska "
+                   "i wróci z przypomnieniem wieczorem, jutro rano albo za godzinę.", True),
+    "page_notes": ("Notatki do stron", "Krótka notatka przypięta do strony pokazuje się przy każdej wizycie.", True),
+    "history_thumbs": ("Miniatury stron w historii", "Historia (Ctrl+H) pokazuje małe zrzuty odwiedzonych stron. Zrzuty zostają "
+                       "tylko na tym komputerze i znikają razem z historią. Nie w oknach prywatnych.", True),
+    "privacy_report": ("Tygodniowy raport prywatności", "Raz w tygodniu, na ekranie głównym, krótkie podsumowanie: ile reklam "
+                       "i elementów śledzących zablokowano.", True),
     "assistant": ("Asystent AI", "Panel z ChatGPT, Claude, Gemini i DeepSeek (Ctrl+J).", True),
     "instant_back": ("Błyskawiczne „Wstecz”", "Strony, z których przechodzisz dalej, zostają w pamięci, więc powrót jest "
                      "natychmiastowy – kosztem ok. 50–100 MB RAM za każdą. Wyłączone: „Wstecz” wczytuje stronę ponownie "
@@ -4167,9 +4222,21 @@ class PomodoroWidget(WidgetFrame):
             self.end = time.monotonic() + self.left; self.alarm.start(self.left * 1000)
             if self.running:
                 self.ui.start(1000)
+        self._focus(self.end is not None and self.mode == "Praca")
         self.tick()
 
+    def _focus(self, on):
+        b = getattr(self.host, "browser", None)
+        if b is None or not self.store.feature("focus_pomodoro"):
+            return
+        if on:
+            b.start_focus(self.left, from_pomodoro=True)
+        elif getattr(b, "_focus_pomo", False):
+            b.end_focus(done=False)
+
     def reset(self):
+        if self.end:
+            self._focus(False)
         self.end = None; self.alarm.stop(); self.ui.stop(); self.left = self.MODES[self.mode]; self.tick()
 
     def switch(self):
@@ -5962,12 +6029,28 @@ def page_box(title, subtitle=""):
 def page_features(dlg):
     w, l = page_box("Zarządzanie funkcjami", "Wyłączone moduły nie ładują zasobów ani nie wysyłają zapytań w tle. "
                                             "Zmiany zapisują się automatycznie.")
-    groups = [("Wygląd i wygoda", ["animations", "ui_sounds", "dark_pages", "tab_preview", "sidebars_start_hidden",
+    if sys.platform == "win32":   # domyślna przeglądarka
+        l.addWidget(lbl("DOMYŚLNA PRZEGLĄDARKA", "seclabel"))
+        row = QHBoxLayout(); dstat = lbl("", "muted2", wrap=True); row.addWidget(dstat, 1)
+        db = QPushButton("Ustaw jako domyślną"); db.setObjectName("primary"); row.addWidget(db)
+        l.addLayout(row)
+
+        def refresh_default():
+            on = is_default_browser()
+            dstat.setText("Luna jest Twoją domyślną przeglądarką – linki z innych programów otwierają się tutaj." if on else
+                          "Linki z poczty, komunikatorów i dokumentów otwierają się teraz w innej przeglądarce. "
+                          "Przycisk otworzy Ustawienia Windows – wybierz tam Lunę.")
+            db.setVisible(not on)
+        db.clicked.connect(lambda: (make_default_browser(), QTimer.singleShot(4000, refresh_default)))
+        refresh_default()
+        sep0 = QFrame(); sep0.setObjectName("sep"); l.addWidget(sep0)
+    groups = [("Wygląd i wygoda", ["animations", "ui_sounds", "focus_pomodoro", "dark_pages", "tab_preview", "sidebars_start_hidden",
                                     "left", "right", "everywhere", "vertical_tabs", "workspaces"]),
               ("Pasek adresu i wyszukiwanie", ["app_keywords", "suggest", "suggest_net"]),
-              ("Karty i strony", ["tab_drag_split", "link_peek", "restore_tabs", "sleep_tabs", "instant_back", "battery_saver",
+              ("Karty i strony", ["tab_drag_split", "link_peek", "later_tabs", "page_notes", "history_thumbs",
+                                  "restore_tabs", "sleep_tabs", "instant_back", "battery_saver",
                                   "translate_offer", "spellcheck", "sponsorblock", "shortcuts"]),
-              ("Prywatność i bezpieczeństwo", ["adblock", "passwords", "login_guard", "otp_offer"]),
+              ("Prywatność i bezpieczeństwo", ["adblock", "privacy_report", "passwords", "login_guard", "otp_offer"]),
               ("AI i komunikatory", ["assistant", "webapps"]),
               ("Aktualizacje", ["updates", "auto_update", "whats_new"])]
     listed = {f for _, ids in groups for f in ids}
@@ -10386,13 +10469,30 @@ class HistoryDialog(LunaDialog):
         self.search = QLineEdit(); self.search.setObjectName("glassin"); self.search.setPlaceholderText("Szukaj w historii (tytuł lub adres)…")
         self.search.setClearButtonEnabled(True); self.search.textChanged.connect(lambda _: self._t.start(150))
         self.head_widget(self.search, True)
+        self.grid_btn = QToolButton(); self.grid_btn.setObjectName("acct"); self.grid_btn.setCheckable(True)
+        self.grid_btn.setIcon(glyph("grid")); self.grid_btn.setIconSize(QSize(18, 18)); self.grid_btn.setFixedSize(34, 34)
+        self.grid_btn.setToolTip("Miniatury stron / lista"); self.grid_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        thumbs = self.store.feature("history_thumbs")
+        self.grid_btn.setVisible(thumbs); self.grid_btn.setChecked(thumbs and self.store.settings.get("history_grid", True))
+        self.grid_btn.toggled.connect(self._grid_toggled); self.head_widget(self.grid_btn)
         self.count = lbl("", "muted2"); self.body.addWidget(self.count)
         self.list = row_list(True); self.list.itemActivated.connect(lambda it: self.open(it))
         self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.menu)
-        self.panel(self.list, "history")
+        self.grid = QListWidget(); self.grid.setObjectName("thumbgrid"); self.grid.setViewMode(QListView.ViewMode.IconMode)
+        self.grid.setIconSize(QSize(208, 130)); self.grid.setGridSize(QSize(232, 186)); self.grid.setWordWrap(True)
+        self.grid.setResizeMode(QListView.ResizeMode.Adjust); self.grid.setMovement(QListView.Movement.Static)
+        self.grid.setUniformItemSizes(True); self.grid.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.grid.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel); self.grid.setFrameShape(QFrame.Shape.NoFrame)
+        self.grid.viewport().setAutoFillBackground(False); self.grid.itemActivated.connect(lambda it: self.open(it))
+        self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.grid.customContextMenuRequested.connect(lambda pos: self.menu(pos, self.grid))
+        self.views = QStackedWidget(); self.views.setObjectName("clear"); self.views.addWidget(self.list); self.views.addWidget(self.grid)
+        self.views.setCurrentIndex(1 if self.grid_btn.isChecked() else 0)
+        self.panel(self.views, "history")
         self.footer(left=[("Otwórz", lambda: [self.open(i) for i in self.selected()], True), ("Usuń zaznaczone", self.remove_selected)],
                     right=[("Wyczyść całą historię…", self.clear_all)])
         QShortcut(QKeySequence("Delete"), self.list, self.remove_selected)
+        QShortcut(QKeySequence("Delete"), self.grid, self.remove_selected)
         QShortcut(QKeySequence("Ctrl+F"), self, lambda: (self.search.setFocus(), self.search.selectAll()))
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.fill)
         self.fill(); self.search.setFocus()
@@ -10415,13 +10515,35 @@ class HistoryDialog(LunaDialog):
             self._icons[h] = QIcon(str(path)) if path.exists() else glyph("app", "#8c8c8c")
         return self._icons[h]
 
+    def _grid_toggled(self, on):
+        self.store.settings["history_grid"] = bool(on); self.store.save_soon()
+        self.views.setCurrentIndex(1 if on else 0); self.fill()
+
+    def cur_list(self):
+        return self.grid if self.views.currentIndex() == 1 else self.list
+
+    def thumb(self, url):
+        p = thumb_path(url)
+        if p.exists():
+            return QIcon(str(p))
+        pm = QPixmap(208, 130); pm.fill(QColor("#161616")); qp = QPainter(pm)
+        qp.setRenderHint(QPainter.RenderHint.Antialiasing); self.icon(url).paint(qp, QRect(88, 49, 32, 32)); qp.end()
+        return QIcon(pm)
+
     def fill(self):
         q = self.search.text().strip().lower(); words = q.split()
-        self.list.clear(); shown = 0; last = None
+        self.list.clear(); self.grid.clear(); shown = 0; last = None; grid = self.views.currentIndex() == 1
         for h in self.store.history:
             hay = (h.get("name", "") + " " + h["url"]).lower()
             if words and not all(w in hay for w in words):
                 continue
+            if grid:
+                if shown < 300:
+                    title = (h.get("name") or host_of(h["url"]))
+                    when = self.day_label(h.get("t")) + (datetime.fromtimestamp(h["t"]).strftime(", %H:%M") if h.get("t") else "")
+                    it = QListWidgetItem(self.thumb(h["url"]), (title[:30] + ("…" if len(title) > 30 else "")) + "\n" + when)
+                    it.setData(Qt.ItemDataRole.UserRole, h["url"]); it.setToolTip(h["url"]); self.grid.addItem(it)
+                shown += 1; continue
             day = self.day_label(h.get("t"))
             if day != last:
                 self.list.addItem(head_item(day)); last = day
@@ -10438,7 +10560,7 @@ class HistoryDialog(LunaDialog):
             self.show_empty(not shown, "Historia jest pusta", "Odwiedzone strony pojawią się tutaj, pogrupowane według dni.")
 
     def selected(self):
-        return [i for i in self.list.selectedItems() if i.data(Qt.ItemDataRole.UserRole)]
+        return [i for i in self.cur_list().selectedItems() if i.data(Qt.ItemDataRole.UserRole)]
 
     def open(self, it, same_tab=False):
         url = it.data(Qt.ItemDataRole.UserRole) if it is not None else None
@@ -10450,12 +10572,13 @@ class HistoryDialog(LunaDialog):
             self.b.open_url_new_tab(url)
         self.accept()
 
-    def menu(self, pos):
-        it = self.list.itemAt(pos)
+    def menu(self, pos, lst=None):
+        lst = lst or self.list
+        it = lst.itemAt(pos)
         if it is None or not it.data(Qt.ItemDataRole.UserRole):
             return
         if not it.isSelected():
-            self.list.clearSelection(); it.setSelected(True)
+            lst.clearSelection(); it.setSelected(True)
         url = it.data(Qt.ItemDataRole.UserRole); host = host_of(url); m = QMenu(self)
         m.addAction(glyph("plus"), "Otwórz w nowej karcie", lambda: self.open(it))
         m.addAction(glyph("external"), "Otwórz w bieżącej karcie", lambda: self.open(it, True))
@@ -10463,7 +10586,7 @@ class HistoryDialog(LunaDialog):
         m.addSeparator()
         m.addAction(glyph("trash"), "Usuń z historii", self.remove_selected)
         m.addAction(glyph("trash"), f"Usuń wszystko z {host}", lambda: self.remove(lambda h: host_of(h["url"]) == host))
-        m.exec(self.list.viewport().mapToGlobal(pos))
+        m.exec(lst.viewport().mapToGlobal(pos))
 
     def remove(self, pred):
         self.store.remove_history(pred); self.fill()
@@ -10477,6 +10600,38 @@ class HistoryDialog(LunaDialog):
         if luna_confirm(self, "Wyczyścić historię?", "Cała historia przeglądania i sekcja „Ostatnie” zostaną usunięte. "
                         "Tej operacji nie można cofnąć.", "Wyczyść", "trash"):
             self.store.clear_history(); self.fill()
+
+
+class PrivacyReportDialog(LunaDialog):
+    """Raport prywatności: ile zablokowano w tym tygodniu i od początku, szacunek oszczędności, najczęstsze domeny."""
+
+    def __init__(self, browser):
+        super().__init__(browser, "Raport prywatności", "shield", (560, 470),
+                         "Liczby z tego komputera – nic nie jest nigdzie wysyłane.")
+        sh = SHIELD[0] if SHIELD else None
+        week, days = browser.week_blocked()
+        total = sh.total if sh is not None else 0
+        row = QHBoxLayout(); row.setSpacing(10)
+        for big, small in ((f"{week:,}".replace(",", " "), "w tym tygodniu" if days >= 6 else f"od {max(days, 1)} dni"),
+                           (f"{total:,}".replace(",", " "), "od początku"),
+                           (browser._mb(week), "mniej danych (szac.)")):
+            fr = QFrame(); fr.setObjectName("dlgpanel"); v = QVBoxLayout(fr); v.setContentsMargins(14, 12, 14, 12); v.setSpacing(2)
+            v.addWidget(lbl(big, "h2")); v.addWidget(lbl(small, "muted")); row.addWidget(fr, 1)
+        self.body.addLayout(row); self.body.addSpacing(8)
+        agg = {}
+        for d in (sh.by_domain.values() if sh is not None else ()):
+            for dom, c in d.items():
+                agg[dom] = agg.get(dom, 0) + c
+        self.section("Najczęściej blokowane w tej sesji")
+        top = sorted(agg.items(), key=lambda x: -x[1])[:6]
+        for dom, c in top:
+            h = QHBoxLayout(); h.addWidget(lbl(dom)); h.addStretch(1); h.addWidget(lbl(str(c), "muted2")); self.body.addLayout(h)
+        if not top:
+            self.body.addWidget(lbl("Jeszcze nic w tej sesji – otwórz kilka stron.", "muted"))
+        self.body.addStretch(1)
+        self.body.addWidget(lbl("Szacunek danych: ok. 25 KB na zablokowane zapytanie (skrypty i obrazki reklam bywają "
+                                "mniejsze albo dużo większe).", "muted", wrap=True))
+        self.footer(right=[("Zamknij", self.accept, True)])
 
 
 class ClearDataDialog(LunaDialog):
@@ -10588,6 +10743,24 @@ def menu_section(menu, text):
 def menu_row_action(menu, row):
     a = QWidgetAction(menu); a.setDefaultWidget(row); menu.addAction(a)
     return a
+
+
+LATER_WHEN = [("hour", "Za godzinę"), ("evening", "Dziś wieczorem (19:00)"), ("morning", "Jutro rano (8:00)"),
+              ("week", "W przyszły poniedziałek (8:00)"), ("never", "Bez przypomnienia")]
+
+
+def later_due(key, now=None):
+    now = now or datetime.now()
+    if key == "hour":
+        return now + timedelta(hours=1)
+    if key == "evening":
+        d = now.replace(hour=19, minute=0, second=0, microsecond=0)
+        return d if d > now + timedelta(minutes=10) else d + timedelta(days=1)
+    if key == "morning":
+        return (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+    if key == "week":
+        return (now + timedelta(days=7 - now.weekday())).replace(hour=8, minute=0, second=0, microsecond=0)
+    return None
 
 
 # ikony, które można przypiąć do paska obok wyszukiwarki (reszta trafia do menu burgera)
@@ -11155,14 +11328,16 @@ class CommandPalette(QFrame):
     i ustawień. Enter wykonuje; tekst bez dopasowań → otwórz adres albo szukaj w sieci."""
 
     def __init__(self, browser):
-        super().__init__(browser, Qt.WindowType.Popup); self.b = browser
-        self.setObjectName("tabpop"); self.setFixedWidth(620)
-        v = QVBoxLayout(self); v.setContentsMargins(10, 10, 10, 10); v.setSpacing(8)
-        self.edit = QLineEdit(); self.edit.setObjectName("splitaddr")
+        super().__init__(browser, Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
+        self.b = browser
+        self.setObjectName("palette"); self.setFixedWidth(640)   # ciemna, zaokrąglona karta jak menu Luny
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        v = QVBoxLayout(self); v.setContentsMargins(12, 12, 12, 12); v.setSpacing(10)
+        self.edit = QLineEdit(); self.edit.setObjectName("palin")
         self.edit.setPlaceholderText("Polecenie, karta, strona z historii albo ustawienie…")
         self.edit.addAction(glyph("search"), QLineEdit.ActionPosition.LeadingPosition)
         self.edit.textChanged.connect(self.fill); self.edit.installEventFilter(self)
-        self.list = QListWidget(); self.list.setObjectName("splitlist"); self.list.setIconSize(QSize(16, 16))
+        self.list = QListWidget(); self.list.setObjectName("pallist"); self.list.setIconSize(QSize(16, 16))
         self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.list.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.list.itemActivated.connect(self.choose); self.list.itemClicked.connect(self.choose)
@@ -12756,7 +12931,9 @@ class Browser(QMainWindow):
         self.logo_btn = QToolButton(); self.logo_btn.setObjectName("logo"); self.logo_btn.setIcon(QIcon(logo_pixmap(44)))
         self.logo_btn.setIconSize(QSize(22, 22)); self.logo_btn.setFixedSize(28, 28)
         self.logo_btn.setCursor(Qt.CursorShape.PointingHandCursor)   # klikalne logo = karty i grupy
-        self.logo_btn.setToolTip("Karty i grupy (Ctrl+Shift+A)"); self.logo_btn.clicked.connect(self.toggle_tab_popup)
+        self.logo_btn.setToolTip("Karty i grupy (Ctrl+Shift+A) – upuść tu kartę, by odłożyć ją na później")
+        self.logo_btn.clicked.connect(self.toggle_tab_popup)
+        self.logo_btn.setAcceptDrops(True); self._later_drop = _DropFilter(TAB_MIME, self._drop_tab_later, self.logo_btn)
         sl.addWidget(self.logo_btn); sl.addSpacing(2)
         if private:
             pv = QLabel("  Prywatne  "); pv.setObjectName("privchip"); pv.setToolTip("Okno prywatne: bez historii, ciasteczka "
@@ -12776,6 +12953,13 @@ class Browser(QMainWindow):
         self.plus_btn.customContextMenuRequested.connect(
             lambda _: self.container_menu(self.plus_btn.mapToGlobal(QPoint(0, self.plus_btn.height()))))
         sl.addWidget(self.bar); sl.addWidget(self.plus_btn)
+        self.focus_pill = QToolButton(); self.focus_pill.setObjectName("focuspill"); self.focus_pill.hide()
+        self.focus_pill.setIcon(glyph("timer", "#d6d6d6")); self.focus_pill.setIconSize(QSize(15, 15))
+        self.focus_pill.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.focus_pill.setCursor(Qt.CursorShape.PointingHandCursor); self.focus_pill.setToolTip("Tryb skupienia – kliknij, by zakończyć lub przedłużyć")
+        self.focus_pill.clicked.connect(self._focus_pill_menu); sl.addSpacing(6); sl.addWidget(self.focus_pill)
+        self._focus_until, self._focus_len = 0.0, 0
+        self._focus_t = QTimer(self); self._focus_t.timeout.connect(self._focus_tick)
         sl.addStretch()
         self.max_btn = self.btn("max", "Maksymalizuj", self.toggle_max, 30)
         close_btn = self.btn("close", "Zamknij", self.close, 30); close_btn.setObjectName("winclose")
@@ -12926,6 +13110,9 @@ class Browser(QMainWindow):
         if self.primary and can_self_install() and not self.store.settings.get("install_never") \
                 and "--luna-smoke-test" not in sys.argv:
             QTimer.singleShot(2500, self.offer_install)
+        if (self.primary and sys.platform == "win32" and self.store.settings.get("tour_seen")
+                and not self.store.settings.get("default_asked") and not os.environ.get("LUNA_NO_WELCOME")):
+            QTimer.singleShot(25000, self.offer_default_browser)   # raz: propozycja domyślnej przeglądarki
         if self.primary and not self.store.settings.get("tour_seen") and not os.environ.get("LUNA_NO_WELCOME"):
             QTimer.singleShot(900, self.show_tour)   # przewodnik po Lunie – raz (także po aktualizacji do nowego wyglądu)
         elif self.primary and not self.store.settings.get("onboarded"):
@@ -12950,6 +13137,14 @@ class Browser(QMainWindow):
             self.notice.ask(f"Luna została zaktualizowana – {n} {'nowa zmiana' if n == 1 else ('nowe zmiany' if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14 else 'nowych zmian')}.",
                             [("Co nowego?", lambda: WhatsNewDialog(self, changes, up.version()).exec(), True), ("Później", None, False)],
                             icon="star")
+
+    def offer_default_browser(self):
+        st = self.store.settings
+        if st.get("default_asked") or is_default_browser():
+            return
+        st["default_asked"] = True; self.store.save_soon()
+        self.notice.ask("Ustawić Lunę jako domyślną przeglądarkę? Linki z poczty i komunikatorów otworzą się w Lunie.",
+                        [("Ustaw jako domyślną", make_default_browser, True), ("Nie teraz", None, False)], icon="app")
 
     def show_tour(self):
         if not self.isVisible():
@@ -13039,7 +13234,7 @@ class Browser(QMainWindow):
                 ("F11", self.toggle_fullscreen), ("Ctrl+=", lambda: self.zoom(1)), ("Ctrl++", lambda: self.zoom(1)),
                 ("Ctrl+-", lambda: self.zoom(-1)), ("Ctrl+0", lambda: self.zoom(0)), ("Ctrl+D", self.pin_current),
                 ("Ctrl+L", lambda: (self.reveal_toolbar(), self.address.setFocus(), self.address.selectAll())),
-                ("Ctrl+Shift+F", self.toggle_compact)]
+                ("Ctrl+Shift+F", self.toggle_compact), ("Ctrl+Alt+F", self.toggle_focus)]
         self.shortcuts = [QShortcut(QKeySequence(k), self, fn) for k, fn in defs]
 
     def apply_features(self):
@@ -13056,7 +13251,7 @@ class Browser(QMainWindow):
         self.ws_btn.setVisible(False)   # jak w filmie: przestrzenie robocze są w menu Luny i w menu karty
         self.apply_dark()
         vt = self.store.feature("vertical_tabs")
-        self.dock_tabpanel(vt); self.bar.setVisible(not vt); self.plus_btn.setVisible(not vt); self.apply_pins()
+        self.dock_tabpanel(vt); self.apply_focus_ui(); self.apply_pins()
         if SHIELD:
             SHIELD[0].reload()
         bf = self.store.feature("instant_back")
@@ -13098,6 +13293,8 @@ class Browser(QMainWindow):
         przez użytkownika ma pierwszeństwo. Zwraca zbiór paneli, które mogą być rozwinięte."""
         t = self.cur()
         ok = bool(t and t.on_home()) or self.store.feature("everywhere") or self._force_widgets
+        if self.focusing():   # tryb skupienia: bez paneli z widgetami
+            ok = False
         sbs = [sb for sb in (self.host.left, self.host.right)
                if self.store.feature(sb.side) and ok and sb.has_widgets()]
         for sb in (self.host.left, self.host.right):
@@ -13122,6 +13319,248 @@ class Browser(QMainWindow):
     def update_page_bg(self):
         """Panele boczne zawsze na tle Luny (gwiazdy / czerń) – także obok stron WWW."""
         self.bgframe.set_page_color(None)
+
+    # --- tryb skupienia: bez paska kart, paneli i powiadomień komunikatorów; cichy dźwięk na koniec ---
+    def focusing(self):
+        return getattr(self, "_focus_until", 0) > time.time()
+
+    def _focus_left(self):
+        r = max(0, int(self._focus_until - time.time()))
+        return f"{r // 60}:{r % 60:02d}"
+
+    def toggle_focus(self):
+        self.end_focus(done=False) if self.focusing() else self.start_focus(25 * 60)
+
+    def focus_menu(self, m):
+        m.clear()
+        if self.focusing():
+            self.act(m, "plus", "Dodaj 5 minut", lambda: self.start_focus(int(self._focus_until - time.time()) + 300, keep=True))
+            self.act(m, "close", "Zakończ teraz", lambda: self.end_focus(done=False), "Ctrl+Alt+F")
+            return
+        self.act(m, "timer", "25 minut", lambda: self.start_focus(25 * 60), "Ctrl+Alt+F")
+        self.act(m, "timer", "50 minut", lambda: self.start_focus(50 * 60))
+        m.addSeparator()
+        m.addAction("Chowa karty, panele i powiadomienia komunikatorów").setEnabled(False)
+
+    def start_focus(self, seconds, keep=False, from_pomodoro=False):
+        seconds = max(60, int(seconds))
+        self._focus_until = time.time() + seconds
+        if not keep:
+            self._focus_len = seconds; FOCUS["held"] = 0; self._focus_pomo = from_pomodoro
+        FOCUS["until"] = max(FOCUS["until"], self._focus_until)
+        if self.assistant.isVisible():
+            self.assistant.hide()
+        if self.webapps.isVisible():
+            self.webapps.hide()
+        self._focus_t.start(1000); self.apply_focus_ui(); self.update_sidebars(); self._focus_tick()
+        if not keep:
+            ui_sound("pop2", 0.5)
+            self.notice.info(f"Tryb skupienia: {seconds // 60} min. Karty, panele i powiadomienia wrócą po czasie "
+                             "(Ctrl+Alt+F – zakończ).", 5000, "timer")
+
+    def end_focus(self, done=True):
+        if not self._focus_until:
+            return
+        mins = max(1, round(self._focus_len / 60)); held = FOCUS["held"]
+        self._focus_until = 0.0; self._focus_t.stop(); self._focus_pomo = False
+        FOCUS["until"] = max([getattr(w, "_focus_until", 0) for w in list(WINDOWS) if w is not self] + [0.0])
+        self.apply_focus_ui(); self.update_sidebars()
+        if done:
+            ui_sound("chime", 0.35)
+            msg = f"Koniec skupienia – {mins} min za Tobą."
+            if held:
+                msg += f" W tym czasie strony chciały pokazać {held} {'powiadomienie' if held == 1 else 'powiadomień'}."
+            self.notice.ask(msg, [("Jeszcze 25 min", lambda: self.start_focus(25 * 60), False), ("OK", None, True)], icon="timer")
+
+    def _focus_tick(self):
+        if not self._focus_until:
+            return
+        if time.time() >= self._focus_until:
+            self.end_focus(done=True); return
+        self.focus_pill.setText(f" Skupienie · {self._focus_left()}")
+
+    def _focus_pill_menu(self):
+        m = QMenu(self); self.focus_menu(m); m.exec(self.focus_pill.mapToGlobal(QPoint(0, self.focus_pill.height() + 4)))
+
+    def apply_focus_ui(self):
+        on, vt = self.focusing(), self.store.feature("vertical_tabs")
+        self.bar.setVisible(not vt and not on); self.plus_btn.setVisible(not vt and not on)
+        if vt:
+            self.tabpanel.setVisible(not on)
+        self.focus_pill.setVisible(on)
+
+    # --- karty na później: znikają z paska i wracają z przypomnieniem ---
+    def later_items(self):
+        return [d for d in self.store.settings.get("later_tabs", []) if isinstance(d, dict) and d.get("url")]
+
+    def _drop_tab_later(self, data=b""):
+        t = self.tab_from_mime(data) or self._dragging
+        if t is None or t not in self.all_tabs() or not self.store.feature("later_tabs"):
+            return
+        m = QMenu(self); m.addAction("Odłóż kartę na później:").setEnabled(False)
+        for key, label in LATER_WHEN:
+            m.addAction(glyph("moon"), label, lambda k=key: self.postpone_tab(t, k))
+        m.exec(QCursor.pos())
+
+    def postpone_tab(self, t, when="evening"):
+        if t is None or t not in self.all_tabs():
+            return
+        url = t.pending or (t.main.url().toString() if t.main is not None and not t.on_home() else "")
+        if not url.startswith(("http://", "https://", "file:")):
+            self.notice.info("Na później można odłożyć tylko otwartą stronę.", 4000, "moon"); return
+        due = later_due(when)
+        items = [d for d in self.later_items() if d["url"] != url]
+        items.append({"url": url, "title": (t.title_text or url)[:120], "t": int(time.time()),
+                      "due": int(due.timestamp()) if due else 0})
+        self.store.settings["later_tabs"] = items[-60:]; self.store.save_soon()
+        if self.bar.count() <= 1:
+            self.new_tab()
+        self.close_tab(t, remember=False); ui_sound("pop1", 0.5)
+        when_txt = dict(LATER_WHEN)[when].lower() if due else "bez przypomnienia"
+        self.notice.ask(f"Odłożono na później ({when_txt}): {(t.title_text or url)[:50]}",
+                        [("Cofnij", lambda u=url: self.open_later(u), False), ("OK", None, False)], icon="moon")
+
+    def open_later(self, url, activate=True):
+        self.store.settings["later_tabs"] = [d for d in self.later_items() if d["url"] != url]; self.store.save_soon()
+        self.open_url_new_tab(url)
+
+    def later_menu(self, m):
+        if m is None:   # z palety: menu przy kursorze
+            mm = QMenu(self); self.later_menu(mm); mm.exec(QCursor.pos()); return
+        m.clear(); t = self.cur()
+        om = m.addMenu(glyph("moon"), "Odłóż tę kartę")
+        om.setEnabled(bool(t and (t.pending or (t.main is not None and not t.on_home()))))
+        for key, label in LATER_WHEN:
+            om.addAction(label, lambda k=key: self.postpone_tab(self.cur(), k))
+        items = self.later_items()
+        m.addSeparator()
+        if not items:
+            m.addAction("Pusto – przeciągnij kartę na logo Luny").setEnabled(False); return
+        for d in sorted(items, key=lambda d: d.get("due") or 1e12):
+            when = datetime.fromtimestamp(d["due"]).strftime("%d.%m %H:%M") if d.get("due") else "bez przypomnienia"
+            m.addAction(mini_icon(d["title"], d["url"]), f"{d['title'][:48]}  ·  {when}").triggered.connect(
+                lambda _=False, u=d["url"]: self.open_later(u))
+        m.addSeparator()
+        if len(items) > 1:
+            self.act(m, "tabs", f"Otwórz wszystkie ({len(items)})", lambda: [self.open_later(d["url"]) for d in self.later_items()])
+        self.act(m, "trash", "Wyczyść listę", lambda: (self.store.settings.__setitem__("later_tabs", []), self.store.save_soon()))
+
+    def _later_check(self):
+        if not self.primary or not self.store.feature("later_tabs") or self.focusing():
+            return
+        now = time.time(); items = self.later_items()
+        due = [d for d in items if d.get("due") and d["due"] <= now and not d.get("told")]
+        if not due:
+            return
+        for d in due:
+            d["told"] = True
+        self.store.settings["later_tabs"] = items; self.store.save_soon(); ui_sound("chime", 0.3)
+        urls = [d["url"] for d in due]
+        txt = (f"Wraca karta odłożona na później: {due[0]['title'][:50]}" if len(due) == 1
+               else f"Wracają karty odłożone na później: {len(due)}")
+        self.notice.ask(txt, [("Otwórz", lambda: [self.open_later(u) for u in urls], True),
+                              ("Za godzinę", lambda: self._later_snooze(urls), False), ("Później", None, False)], icon="moon")
+
+    def _later_snooze(self, urls):
+        due = int((datetime.now() + timedelta(hours=1)).timestamp())
+        for d in self.later_items():
+            if d["url"] in urls:
+                d["due"], d["told"] = due, False
+        self.store.save_soon()
+
+    # --- notatki do stron ---
+    def page_note(self, url):
+        return (self.store.settings.get("page_notes") or {}).get(note_key(url), "") if self.store.feature("page_notes") else ""
+
+    def edit_page_note(self):
+        web = self.web()
+        if web is None or web.url().scheme() not in ("http", "https"):
+            self.notice.info("Notatkę można dodać do strony internetowej.", 4000, "edit"); return
+        url = web.url().toString(); key = note_key(url)
+        if not key:
+            return
+        txt = luna_prompt(self, "Notatka do strony", f"Pokaże się przy każdej wizycie na {key[:60]}. Puste pole usuwa notatkę.",
+                          self.page_note(url))
+        if txt is None:
+            return
+        notes = dict(self.store.settings.get("page_notes") or {})
+        if txt.strip():
+            notes[key] = txt.strip()[:500]
+        else:
+            notes.pop(key, None)
+        self.store.settings["page_notes"] = notes; self.store.save_soon()
+        self._note_shown = None; self.show_page_note(url)
+
+    def show_page_note(self, url):
+        note = self.page_note(url)
+        if not note or getattr(self, "_note_shown", None) == note_key(url):
+            return
+        self._note_shown = note_key(url)
+        self.notice.ask(f"Twoja notatka: {note}", [("Edytuj", self.edit_page_note, False), ("Ukryj", None, False)], icon="edit")
+
+    # --- miniatury do historii ---
+    def _save_thumb(self, view, url):
+        try:
+            if not view.isVisible() or view.url().toString() != url or view.width() < 200:
+                return
+            p = thumb_path(url)
+            if p.exists() and time.time() - p.stat().st_mtime < 6 * 3600:
+                return
+            pm = view.grab()
+            if pm.isNull():
+                return
+            pm = pm.scaled(QSize(320, 200), Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                           Qt.TransformationMode.SmoothTransformation).copy(0, 0, 320, 200)
+            THUMBS.mkdir(parents=True, exist_ok=True); pm.save(str(p), "JPG", 72)
+            if random.random() < 0.03:   # sprzątanie: najwyżej 1500 miniatur
+                fs = sorted(THUMBS.glob("*.jpg"), key=lambda f: f.stat().st_mtime)
+                for f in fs[:-1500]:
+                    f.unlink(missing_ok=True)
+        except (RuntimeError, OSError):
+            pass
+
+    # --- tygodniowy raport prywatności ---
+    def week_blocked(self):
+        sh = SHIELD[0] if SHIELD else None
+        snaps = self.store.settings.get("shield_days") or {}
+        if sh is None or not snaps:
+            return 0, 0
+        limit = (date.today() - timedelta(days=7)).isoformat()
+        keys = sorted(k for k in snaps if k >= limit) or sorted(snaps)[-1:]
+        start = snaps[keys[0]]
+        return max(0, sh.total - int(start)), (date.today() - date.fromisoformat(keys[0])).days
+
+    def _privacy_check(self):
+        sh = SHIELD[0] if SHIELD else None
+        if not self.primary or sh is None:
+            return
+        st = self.store.settings; snaps = st.setdefault("shield_days", {}); k = date.today().isoformat()
+        if k not in snaps:   # stan licznika na początku dnia
+            snaps[k] = sh.total
+            for old in sorted(snaps)[:-40]:
+                del snaps[old]
+            st.setdefault("privacy_report_at", time.time()); self.store.save_soon()
+        if not self.store.feature("privacy_report") or not self.store.feature("adblock") or self.focusing():
+            return
+        if time.time() - float(st.get("privacy_report_at", time.time())) < 7 * 86400:
+            return
+        t = self.cur()
+        if t is None or not t.on_home() or self.notice.isVisible():
+            return
+        n, days = self.week_blocked()
+        st["privacy_report_at"] = time.time(); self.store.save_soon()
+        if n <= 0:
+            return
+        self.notice.ask(f"Twój tydzień w Lunie: zablokowano {n} reklam i elementów śledzących (ok. {self._mb(n)} mniej danych).",
+                        [("Szczegóły", self.show_privacy_report, False), ("OK", None, True)], icon="shield")
+
+    @staticmethod
+    def _mb(n):
+        mb = n * 25 / 1024   # szacunek: ~25 KB na zablokowane zapytanie
+        return f"{mb:.0f} MB" if mb >= 10 else f"{mb:.1f} MB".replace(".", ",")
+
+    def show_privacy_report(self):
+        PrivacyReportDialog(self).exec()
 
     def toggle_sounds(self):
         on = not self.store.feature("ui_sounds"); self.store.set_feature("ui_sounds", on)
@@ -13415,6 +13854,11 @@ class Browser(QMainWindow):
         lm = sub(); lm.aboutToShow.connect(lambda: self.layouts_menu(lm)); self.layouts_menu(lm)
         kt.tile("layouts", "Układy", None, "Układy podziału", menu=lm)
         menu_row_action(m, kt)
+        fo = m.addMenu(glyph("timer"), "Tryb skupienia" + (f"  ·  zostało {self._focus_left()}" if self.focusing() else ""))
+        self.focus_menu(fo)
+        if self.store.feature("later_tabs"):
+            lt = m.addMenu(glyph("moon"), f"Karty na później ({len(self.later_items())})")
+            lt.aboutToShow.connect(lambda lt=lt: self.later_menu(lt)); self.later_menu(lt)
         if SYNC and SYNC[0].enabled() and SYNC[0].remote:
             om = m.addMenu(glyph("window"), "Karty z innych komputerów")
             for name, ts, tabs in SYNC[0].other_tabs():
@@ -13490,6 +13934,10 @@ class Browser(QMainWindow):
         pt.tile("search", "Obrazem", self.image_search, "Szukaj obrazem – zaznacz fragment (Ctrl+Shift+X)", web is not None)
         pt.tile("print", "Drukuj", self.print_page, "Drukuj (Ctrl+P)", web is not None)
         menu_row_action(m, pt)
+        if self.store.feature("page_notes"):
+            has = bool(web is not None and self.page_note(web.url().toString()))
+            self.act(m, "edit", "Edytuj notatkę do tej strony…" if has else "Notatka do tej strony…", self.edit_page_note, "",
+                     web is not None and web.url().scheme() in ("http", "https"))
         if web is not None and self.store.feature("dark_pages"):
             dom = base_domain(web.url().host())
             ex = self.act(m, "sun", f"Bez ciemnego trybu na {dom}", lambda d=dom: self.set_dark_except(d, d not in DARK["except"]))
@@ -14718,6 +15166,12 @@ class Browser(QMainWindow):
                 ("reload", "Przywróć zamkniętą kartę", "Ctrl+Shift+T", self.restore_closed),
                 ("tabs", "Karty i grupy", "Ctrl+Shift+A", self.toggle_tab_popup),
                 ("history", "Historia", "Ctrl+H", self.show_history),
+                ("timer", "Tryb skupienia – 25 minut", "Ctrl+Alt+F", lambda: self.start_focus(25 * 60)),
+                ("timer", "Tryb skupienia – 50 minut", "", lambda: self.start_focus(50 * 60)),
+                ("moon", "Odłóż tę kartę na później (wieczorem)", "", lambda: self.postpone_tab(self.cur(), "evening")),
+                ("moon", "Karty na później – lista", "", lambda: self.later_menu(None)),
+                ("edit", "Notatka do tej strony", "", self.edit_page_note),
+                ("shield", "Raport prywatności tygodnia", "", self.show_privacy_report),
                 ("bookmark", "Menedżer zakładek – eksport, import, przeniesienie", "Ctrl+Shift+B", self.show_bookmarks),
                 ("plus", "Dodaj stronę do zakładek", "", self.bookmark_current),
                 ("search", "Szukaj obrazem (Google Lens / AI)", "Ctrl+Shift+X", self.image_search),
@@ -15009,7 +15463,7 @@ class Browser(QMainWindow):
     def _sleep_tick(self):
         """Usypia karty nieużywane dłużej niż ustawiony czas (nie: bieżącą, grającą dźwięk ani ładującą się).
         Na baterii (oszczędzanie włączone) – najpóźniej po 5 minutach."""
-        self._check_power()
+        self._check_power(); self._later_check(); self._privacy_check()
         if not self.store.feature("sleep_tabs") and not self.saving():
             return
         limit = int(self.store.settings.get("sleep_after", 15)) * 60
@@ -15293,6 +15747,10 @@ class Browser(QMainWindow):
             if last.view is not None:
                 sm.addAction(glyph("external"), f"Odłącz {nm} stronę do karty", lambda: t.detach_side(last))
             sm.addAction(glyph("close"), f"Zamknij {nm} stronę", t.unsplit)
+        if self.store.feature("later_tabs"):
+            lm = m.addMenu(glyph("moon"), "Odłóż na później"); lm.setEnabled(t.main is not None and not t.on_home() or bool(t.pending))
+            for key, label in LATER_WHEN:
+                lm.addAction(label, lambda k=key: self.postpone_tab(t, k))
         z = m.addAction("Uśpij teraz", lambda: self.sleep_now(t)); z.setEnabled(t is not self.cur() and t.web is not None and not t.asleep)
         m.addSeparator(); m.addAction("Zamknij kartę", lambda: self.close_tab(t))
         m.exec(pos)
@@ -15498,6 +15956,7 @@ class Browser(QMainWindow):
         else:
             m.addAction(f"Zablokowano na tej stronie: {sh.count(url)}").setEnabled(False)
             m.addAction(f"Łącznie od początku: {sh.total}").setEnabled(False)
+            m.addAction(glyph("shield"), "Raport prywatności tygodnia…", self.show_privacy_report)
             if sh.net is not None:
                 m.addAction(f"Aktywnych reguł: {sh.rules_total():,}".replace(",", " ")).setEnabled(False)
             elif sh.status_text():
@@ -15794,6 +16253,10 @@ class Browser(QMainWindow):
                 self.offer_address(view)
             if view.url().scheme() in ("http", "https"):
                 self.check_phishing(view)
+                if view is tab.main and not self.private and self.store.feature("history_thumbs"):
+                    QTimer.singleShot(1800, lambda v=view, u=view.url().toString(): self._save_thumb(v, u))
+                if view is tab.main and tab is self.cur():
+                    self.show_page_note(view.url().toString())
                 if self.vault() is not None:
                     self.offer_totp(view)
         if ok and view is not None:
@@ -15920,6 +16383,172 @@ def self_install(desktop=True):
     return exe
 
 
+# --- Luna jako domyślna przeglądarka (Windows) ---
+PROGID = "LunaHTML"
+BROWSER_KEY = r"Software\Clients\StartMenuInternet\Luna"
+
+
+def _luna_open_command():
+    """Polecenie, którym Windows otwiera link w Lunie (zainstalowana .exe albo python luna.py z repozytorium)."""
+    if getattr(sys, "frozen", False):
+        exe = sys.executable
+        return f'"{exe}" "%1"', f'"{exe}",0'
+    w = Path(sys.executable).with_name("pythonw.exe")
+    py = str(w if w.exists() else Path(sys.executable)); script = str(Path(__file__).resolve())
+    ico = Path(script).with_name("luna.ico")
+    return f'"{py}" "{script}" "%1"', (f'"{ico}",0' if ico.exists() else f'"{py}",0')
+
+
+def register_default_browser():
+    """Rejestruje Lunę w Windows jako przeglądarkę (HKCU, bez uprawnień administratora): skojarzenia http/https
+    i plików .html/.htm/.pdf. Wybór domyślnej przeglądarki zostaje po stronie użytkownika (Ustawienia Windows)."""
+    if sys.platform != "win32":
+        return False
+    import winreg
+    cmd, icon = _luna_open_command()
+
+    def put(path, name, value):
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_WRITE) as k:
+            winreg.SetValueEx(k, name, 0, winreg.REG_SZ, value)
+    try:
+        cls = rf"Software\Classes\{PROGID}"
+        put(cls, "", "Luna HTML"); put(cls, "URL Protocol", "")
+        put(cls + r"\Application", "ApplicationName", "Luna"); put(cls + r"\Application", "ApplicationIcon", icon)
+        put(cls + r"\DefaultIcon", "", icon); put(cls + r"\shell\open\command", "", cmd)
+        put(BROWSER_KEY, "", "Luna")
+        cap = BROWSER_KEY + r"\Capabilities"
+        put(cap, "ApplicationName", "Luna"); put(cap, "ApplicationIcon", icon)
+        put(cap, "ApplicationDescription", "Lekka, ciemna przeglądarka – przejrzysta jak gwieździste niebo.")
+        for scheme in ("http", "https"):
+            put(cap + r"\URLAssociations", scheme, PROGID)
+        for ext in (".html", ".htm", ".xhtml", ".pdf", ".svg"):
+            put(cap + r"\FileAssociations", ext, PROGID)
+        put(cap + r"\StartMenu", "StartMenuInternet", "Luna")
+        put(BROWSER_KEY + r"\DefaultIcon", "", icon); put(BROWSER_KEY + r"\shell\open\command", "", cmd.replace(' "%1"', ""))
+        put(r"Software\RegisteredApplications", "Luna", cap)
+        try:   # Explorer odświeża skojarzenia
+            import ctypes
+            ctypes.windll.shell32.SHChangeNotify(0x08000000, 0, None, None)
+        except Exception:
+            pass
+        return True
+    except OSError:
+        return False
+
+
+def unregister_default_browser():
+    if sys.platform != "win32":
+        return
+    import winreg
+
+    def drop(path):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path, 0, winreg.KEY_ALL_ACCESS) as k:
+                while True:
+                    try:
+                        drop(path + "\\" + winreg.EnumKey(k, 0))
+                    except OSError:
+                        break
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, path)
+        except OSError:
+            pass
+    drop(rf"Software\Classes\{PROGID}"); drop(BROWSER_KEY)
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\RegisteredApplications", 0, winreg.KEY_SET_VALUE) as k:
+            winreg.DeleteValue(k, "Luna")
+    except OSError:
+        pass
+
+
+def is_default_browser():
+    if sys.platform != "win32":
+        return False
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice") as k:
+            return winreg.QueryValueEx(k, "ProgId")[0] == PROGID
+    except OSError:
+        return False
+
+
+def make_default_browser():
+    """Rejestracja + otwarcie właściwej strony Ustawień Windows (Windows 10/11 nie pozwala programom zmienić tego samemu)."""
+    ok = register_default_browser()
+    QDesktopServices.openUrl(QUrl("ms-settings:defaultapps?registeredAppUser=Luna"))
+    return ok
+
+
+def startup_urls(argv):
+    """Linki i pliki przekazane przy uruchomieniu (np. kliknięty link w innym programie, gdy Luna jest domyślna)."""
+    out = []
+    for a in argv[1:]:
+        if not a or a.startswith("--"):
+            continue
+        if re.match(r"^(https?|ftp|file):", a, re.I) or a.lower().startswith("www."):
+            out.append(a)
+        elif os.path.exists(a):
+            out.append(QUrl.fromLocalFile(os.path.abspath(a)).toString())
+    return out
+
+
+def instance_name():
+    return "luna-" + re.sub(r"\W", "_", f"{os.environ.get('USERNAME') or os.environ.get('USER') or 'u'}-{PROFILE or 'glowny'}")
+
+
+def forward_to_running(urls):
+    """Luna z tym profilem już działa: przekaż jej linki (albo prośbę o pokazanie okna). True = przekazano."""
+    from PyQt6.QtNetwork import QLocalSocket
+    sock = QLocalSocket(); sock.connectToServer(instance_name())
+    if not sock.waitForConnected(1500):
+        return False
+    sock.write(json.dumps({"urls": urls}).encode("utf-8")); sock.flush(); sock.waitForBytesWritten(1500)
+    sock.disconnectFromServer()
+    return True
+
+
+def listen_for_instances(app, main=None):
+    """Kolejne uruchomienia Luny (np. link z innego programu) trafiają do tego procesu: nowa karta z linkiem."""
+    from PyQt6.QtNetwork import QLocalServer
+    srv = QLocalServer(app); QLocalServer.removeServer(instance_name())
+    if not srv.listen(instance_name()):
+        return None
+
+    def got():
+        c = srv.nextPendingConnection()
+        if c is None:
+            return
+        buf = bytearray()
+
+        def read():
+            buf.extend(bytes(c.readAll()))
+
+        def done():
+            read()
+            try:
+                urls = json.loads(bytes(buf).decode("utf-8")).get("urls") or []
+            except ValueError:
+                urls = []
+            wins = ([main] if main is not None else []) + list(WINDOWS)   # główne okno nie jest na liście WINDOWS
+            alive = []
+            for x in wins:
+                try:
+                    x.isVisible(); alive.append(x)
+                except RuntimeError:   # okno już zamknięte
+                    pass
+            w = next((x for x in alive if x.isVisible() and not x.private), None) or (alive[0] if alive else None)
+            if w is None:
+                return
+            for u in urls:
+                w.open_url_new_tab(u)
+            if w.isMinimized():
+                w.showNormal()
+            w.raise_(); w.activateWindow()
+        c.readyRead.connect(read); c.disconnected.connect(done)
+    srv.newConnection.connect(got)
+    return srv
+
+
 def self_uninstall(ask=True):
     """Luna.exe --luna-uninstall (z ustawień Windows): pytanie, potem usunięcie skrótów, wpisu i folderu programu.
     Dane użytkownika zostają. Folder znika po zamknięciu Luny (działający plik nie może usunąć sam siebie)."""
@@ -15935,6 +16564,7 @@ def self_uninstall(ask=True):
         except OSError:
             pass
     try:
+        unregister_default_browser()
         winreg.DeleteKey(winreg.HKEY_CURRENT_USER, os.environ.get("LUNA_INSTALL_REGKEY") or INSTALL_KEY)
     except OSError:
         pass
@@ -15995,7 +16625,10 @@ if __name__ == "__main__":
         self_uninstall("--quiet" not in sys.argv)
         sys.exit(0)
     _lock = profile_lock(PROFILE)   # ten sam profil w dwóch procesach zepsułby dane przeglądarki
+    _urls = startup_urls(sys.argv)
     if not _lock.tryLock(200):
+        if forward_to_running(_urls):   # Luna już działa – link otworzy się tam w nowej karcie
+            sys.exit(0)
         QMessageBox.information(None, "Luna", f"Profil „{PROFILE or 'Główny'}” jest już otwarty w innym oknie Luny.")
         sys.exit(0)
     migrate_old_data()
@@ -16003,6 +16636,9 @@ if __name__ == "__main__":
     app.setApplicationName("Luna"); app.setWindowIcon(app_icon())
     app.setStyleSheet(full_style())
     w = Browser(); w.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True); w.show()
+    _srv = listen_for_instances(app, w)
+    for _u in _urls:   # link, którym uruchomiono Lunę (np. z innego programu)
+        QTimer.singleShot(300, lambda u=_u: w.open_url_new_tab(u))
     if "--luna-smoke-test" in sys.argv:   # budowanie wydania: start, wczytanie strony, zamknięcie (kod 0 = działa)
         def _smoke_done():
             t = w.cur()
