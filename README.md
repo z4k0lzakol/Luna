@@ -4,15 +4,19 @@
 
 <h1 align="center">Luna</h1>
 
+<p align="center"><i>Przeglądarka przejrzysta jak gwieździste niebo.</i></p>
+
 <p align="center">
   <b>Lekka, ciemna przeglądarka dla Windows, Linuksa i macOS</b> – z kafelkami, widgetami, podziałem ekranu,<br>
-  wbudowaną blokadą reklam i asystentem AI obok strony.
+  wbudowaną blokadą reklam i asystentem AI obok strony. Nowe wersje instaluje sama.
 </p>
 
 <p align="center"><sub>Projekt jednoosobowy · <a href="#o-projekcie">więcej</a></sub></p>
 
 <p align="center">
-  <a href="https://github.com/z4k0lzakol/Luna/releases/latest"><b>Pobierz</b></a> ·
+  <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Windows-Setup.exe"><b>Pobierz dla Windows</b></a> ·
+  <a href="https://github.com/z4k0lzakol/Luna/releases/latest">Linux i macOS</a> ·
+  <a href="https://z4k0lzakol.github.io/Luna/#film">Film</a> ·
   <a href="#jak-zainstalować">Jak zainstalować</a> ·
   <a href="#co-potrafi">Co potrafi</a> ·
   <a href="#do-czego-się-przyda">Do czego się przyda</a> ·
@@ -23,8 +27,18 @@
 </p>
 
 <p align="center">
-  <img src="docs/img/home.jpg" alt="Ekran główny Luny: kafelki, wyszukiwarka i widgety w panelach bocznych">
+  <img src="docs/img/home.jpg" alt="Ekran główny Luny: zegar, wyszukiwarka i kafelki na tle nocnego nieba, po bokach widgety">
 </p>
+
+<p align="center">
+  <a href="https://z4k0lzakol.github.io/Luna/#film"><img src="docs/img/podglad.gif" width="720" alt="Podgląd filmu: karta przeciągnięta na stronę dzieli ekran – kliknij, aby obejrzeć cały film"></a><br>
+  <b>▶ <a href="https://z4k0lzakol.github.io/Luna/#film">Obejrzyj cały film: Luna w 50 sekund</a></b> (z dźwiękiem) ·
+  <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-film-4K.mp4">pobierz w 4K</a>
+</p>
+
+<p align="center"><sub>
+  🌙 Spokojna jak noc przy pełni · Twoje światło w ciemności sieci · Każda karta na swojej orbicie
+</sub></p>
 
 ---
 
@@ -34,17 +48,27 @@
 - **Prywatna od pierwszej strony.** Blokada reklam i śledzenia jest wbudowana, hasła są szyfrowane na Twoim komputerze, a Luna nie ma własnych serwerów i niczego o Tobie nie zbiera.
 - **Szybka i oszczędna.** Strony wczytują się przez HTTP/3 (QUIC), gdy serwer go obsługuje, a animacje paneli i przewijania chodzą w rytmie odświeżania monitora (także 120/144 Hz). Nieużywane karty usypiają się same, a na baterii Luna zatrzymuje filmy w tle i zwalnia pamięć.
 - **Po polsku.** Cały interfejs, podpowiedzi, menu stron i przewodnik są po polsku; tłumaczenie stron z dowolnego języka jednym kliknięciem.
+- **Spokojna jak noc przy pełni.** Ciemny wygląd z nocnym niebem, płynne animacje i ciche dźwięki (wyciszysz je jednym kliknięciem).
+- **Sama zmienia fazy.** Zainstalowana Luna pobiera nowe wersje w tle, sprawdza ich sumę kontrolną i instaluje je przy zamknięciu.
 
 ## Co potrafi
 
 <table>
 <tr>
 <td width="50%"><img src="docs/img/split.jpg" alt="Podział ekranu na dwie strony"></td>
-<td width="50%"><img src="docs/img/reader.jpg" alt="Tryb czytania"></td>
+<td width="50%"><img src="docs/img/panel.jpg" alt="Panel komunikatorów obok strony"></td>
 </tr>
 <tr>
-<td><b>Podział ekranu</b> – przeciągnij kartę na stronę: dwie albo trzy strony obok siebie, zapisane układy, wspólne przewijanie.</td>
+<td><b>Podział ekranu</b> – <i>każda karta na swojej orbicie</i>: przeciągnij kartę na stronę – dwie albo trzy strony obok siebie, zapisane układy, wspólne przewijanie.</td>
+<td><b>Asystent AI i komunikatory</b> w panelu obok strony – przełącznik u góry.</td>
+</tr>
+<tr>
+<td><img src="docs/img/reader.jpg" alt="Tryb czytania"></td>
+<td><img src="docs/img/tour.png" alt="Przewodnik po Lunie"></td>
+</tr>
+<tr>
 <td><b>Tryb czytania</b> – sam tekst artykułu, bez reklam i rozpraszaczy (F9).</td>
+<td><b>Przewodnik po Lunie</b> – osiem krótkich kroków z animacjami przy pierwszym uruchomieniu.</td>
 </tr>
 </table>
 
@@ -77,15 +101,12 @@
 
 <table>
 <tr>
-<td width="34%"><img src="docs/img/menu.png" alt="Menu Luny w grupach"></td>
-<td width="66%" valign="top">
-<img src="docs/img/palette.png" alt="Paleta poleceń Ctrl+K"><br><br>
-<img src="docs/img/wizard.png" alt="Przewodnik przy pierwszym uruchomieniu">
-</td>
+<td width="40%"><img src="docs/img/menu.png" alt="Menu Luny z kafelkami poleceń"></td>
+<td width="60%" valign="top"><img src="docs/img/palette.png" alt="Paleta poleceń Ctrl+K"></td>
 </tr>
 <tr>
-<td>Menu w podpisanych grupach i wyszukiwarka poleceń.</td>
-<td>Paleta Ctrl+K i przewodnik przy pierwszym uruchomieniu.</td>
+<td>Menu Luny w kafelkach – najczęstsze akcje, Twoje rzeczy i narzędzia strony.</td>
+<td>Paleta Ctrl+K – polecenia, karty i historia w jednym polu.</td>
 </tr>
 </table>
 

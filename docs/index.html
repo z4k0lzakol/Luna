@@ -49,6 +49,13 @@
   .hero h1 { font-size:clamp(38px, 6vw, 64px); line-height:1.08; margin:18px 0 14px; color:var(--hi); letter-spacing:-.02em; }
   .hero p.lead { font-size:clamp(17px, 2.2vw, 20px); color:#b9b9b9; max-width:720px; margin:0 auto 28px; }
   .hero .cta { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .motto { font-size:clamp(17px, 2vw, 20px); color:#e8e2d6; font-style:italic; letter-spacing:.01em; margin:0 0 18px; }
+  .motto::before { content:"☾"; font-style:normal; color:#f3eee6; margin-right:10px; opacity:.85; }
+  .mottos { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-top:30px; }
+  .mottos div { border:1px solid var(--line2); border-radius:14px; padding:18px 20px; color:#d9d3c8; font-style:italic;
+                background:linear-gradient(180deg, rgba(243,238,230,.04), rgba(243,238,230,0)); }
+  .mottos b { display:block; font-style:normal; color:#8c8c8c; font-size:12px; letter-spacing:.12em; text-transform:uppercase; margin-bottom:6px; }
+  @media (max-width:760px) { .mottos { grid-template-columns:1fr; } }
   .pill { display:inline-block; font-size:13px; color:var(--muted); border:1px solid var(--line2); border-radius:999px; padding:4px 12px; }
   .shot { margin:46px auto 0; border-radius:16px; border:1px solid var(--line2); overflow:hidden;
           box-shadow:0 40px 120px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.03); }
@@ -149,6 +156,7 @@
   <div class="wrap">
     <span class="pill">Windows · Linux · macOS · po polsku · bez kont i serwerów</span>
     <h1>Przeglądarka, która mieści<br>cały Twój dzień w jednym oknie</h1>
+    <p class="motto">Przejrzysta jak gwieździste niebo.</p>
     <p style="margin:0 0 14px;font-size:14px;color:#8c8c8c">Projekt jednoosobowy</p>
     <p class="lead">Luna to lekka, ciemna przeglądarka z kafelkami, widgetami, podziałem ekranu, wbudowaną blokadą reklam
       i asystentem AI obok strony. Spokojny wygląd z nocnym niebem, płynne animacje, a nowe wersje instaluje sama.</p>
@@ -164,7 +172,7 @@
 <section id="film">
   <div class="wrap">
     <h2>Luna w 50 sekund</h2>
-    <p class="sub">Podział ekranu, widgety, blokada reklam, asystent AI i komunikatory – zobacz, jak to działa.</p>
+    <p class="sub">Zobacz, jak Luna wschodzi na pulpicie: podział ekranu, widgety, blokada reklam, asystent AI i komunikatory.</p>
     <div class="film"><video controls playsinline preload="metadata" poster="img/film.jpg">
       <source src="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-film.mp4" type="video/mp4">
       Twoja przeglądarka nie odtwarza filmów – <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-film.mp4">pobierz film</a>.</video></div>
@@ -176,6 +184,11 @@
   <div class="wrap">
     <h2>Co potrafi Luna</h2>
     <p class="sub">Funkcje, które w innych przeglądarkach wymagają kilku rozszerzeń, są tu wbudowane – i domyślnie po polsku.</p>
+    <div class="mottos" style="margin:0 0 34px">
+      <div><b>Spokój</b>Spokojna jak noc przy pełni.</div>
+      <div><b>Porządek</b>Każda karta na swojej orbicie.</div>
+      <div><b>Prywatność</b>Bez śladów – jak blask księżyca na wodzie.</div>
+    </div>
     <div class="grid">
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M12 4v16"/></svg></div>
         <h3>Podział ekranu</h3><p>Przeciągnij kartę na stronę – dwie albo trzy strony obok siebie. Zapisane układy i wspólne przewijanie.</p></div>
@@ -196,9 +209,9 @@
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16 14.2c2.6.3 5 2.4 5 5.8"/></svg></div>
         <h3>Profile i synchronizacja</h3><p>Osobna Luna do pracy i do domu. Synchronizacja przez Twój folder OneDrive albo Dysku Google.</p></div>
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg></div>
-        <h3>Spokojny wygląd</h3><p>Nocne niebo w tle, strony w zaokrąglonych ramkach, płynne animacje i ciche dźwięki – wyciszysz je jednym kliknięciem.</p></div>
+        <h3>Nocne niebo</h3><p>Nocne niebo w tle, strony w zaokrąglonych ramkach, płynne animacje i ciche dźwięki – wyciszysz je jednym kliknięciem.</p></div>
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></div>
-        <h3>Aktualizuje się sama</h3><p>Nowa wersja pobiera się w tle, Luna sprawdza jej sumę kontrolną i instaluje ją przy zamknięciu. Karty i dane zostają.</p></div>
+        <h3>Sama zmienia fazy</h3><p>Nowa wersja pobiera się w tle, Luna sprawdza jej sumę kontrolną i instaluje ją przy zamknięciu. Karty i dane zostają.</p></div>
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg></div>
         <h3>Przewodnik na start</h3><p>Przy pierwszym uruchomieniu krótki przewodnik pokazuje, co gdzie jest, i pomaga przenieść dane z innej przeglądarki.</p></div>
     </div>
@@ -358,7 +371,7 @@ python luna.py<button class="copy">Kopiuj</button></div>
 <footer>
   <div class="wrap">
     <span class="brand" style="font-size:15px"><img src="img/logo.png" alt="" style="width:22px;height:22px">Luna</span>
-    <span>Projekt jednoosobowy · wolne oprogramowanie na licencji GNU GPL v3 – bez gwarancji.</span>
+    <span><i>Twoje światło w ciemności sieci.</i> · Projekt jednoosobowy · wolne oprogramowanie na licencji GNU GPL v3 – bez gwarancji.</span>
     <span style="margin-left:auto"><a href="privacy.html">Prywatność</a> · <a href="regulamin.html">Regulamin</a> ·
       <a href="licencje.html">Licencje</a> · <a href="#podpis">Code signing policy</a> · <a href="https://github.com/z4k0lzakol/Luna">GitHub</a></span>
   </div>

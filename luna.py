@@ -9205,10 +9205,11 @@ class WhatsNewDialog(LunaDialog):
 
 TOUR = [
     # (ilustracja, nadtytuł, tytuł, opis, skróty)
-    ("welcome", "WITAJ", "Luna", "Lekka, ciemna przeglądarka, która Ci nie przeszkadza. Pokażemy Ci w minutę, co gdzie jest.", []),
+    ("welcome", "WITAJ", "Luna", "Przeglądarka przejrzysta jak gwieździste niebo – lekka, ciemna i spokojna. "
+     "Pokażemy Ci w minutę, co gdzie jest.", []),
     ("home", "EKRAN GŁÓWNY", "Wszystko zaczyna się tutaj", "Zegar, wyszukiwarka i Twoje aplikacje jako kafelki. Kafelek „+” dodaje "
      "nową aplikację, prawy przycisk na kafelku – edycja albo usunięcie.", ["Ctrl+T", "Ctrl+L"]),
-    ("split", "KARTY I PODZIAŁ EKRANU", "Dwie albo trzy strony obok siebie", "Chwyć kartę i przeciągnij ją w dół, na stronę – "
+    ("split", "KARTY I PODZIAŁ EKRANU", "Każda karta na swojej orbicie", "Chwyć kartę i przeciągnij ją w dół, na stronę – "
      "upuść na połowę ekranu. Trzecią stronę dodasz tak samo albo przyciskiem „+” w nagłówku strony.", ["Ctrl+\\", "Ctrl+Shift+T"]),
     ("toolbar", "PASEK", "Najważniejsze pod ręką", "Tarcza pokazuje, ile reklam i trackerów zablokowała na stronie. Obok: podział "
      "ekranu, asystent AI i widgety. Inne ikony przypniesz w menu Luny → Ikony paska.", ["Ctrl+J"]),
@@ -9218,8 +9219,9 @@ TOUR = [
      "podsumuj ją albo zapytaj o nią w menu „…”. Przełącznik u góry otwiera komunikatory.", ["Ctrl+J", "Ctrl+Shift+K"]),
     ("menu", "MENU LUNY", "Każde polecenie w jednym miejscu", "Kafelki z najczęstszymi akcjami, historia, zakładki, hasła, "
      "narzędzia strony i ustawienia. Albo po prostu wpisz, czego szukasz.", ["Ctrl+K", "Ctrl+,"]),
-    ("privacy", "PRYWATNOŚĆ I AKTUALIZACJE", "Twoje dane zostają u Ciebie", "Bez kont i własnych serwerów, z blokadą śledzenia. "
-     "Luna sama pobiera nowe wersje i instaluje je przy zamknięciu. Dźwięki wyciszysz w menu.", []),
+    ("privacy", "PRYWATNOŚĆ I AKTUALIZACJE", "Twoje światło w ciemności sieci", "Bez kont i własnych serwerów, z blokadą "
+     "śledzenia – bez śladów, jak blask księżyca na wodzie. Luna sama zmienia fazy: pobiera nowe wersje i instaluje je "
+     "przy zamknięciu. Dźwięki wyciszysz w menu.", []),
 ]
 
 
