@@ -32,12 +32,11 @@
 
 <p align="center">
   <a href="https://z4k0lzakol.github.io/Luna/#film"><img src="docs/img/podglad.gif" width="720" alt="Podgląd filmu: karta przeciągnięta na stronę dzieli ekran – kliknij, aby obejrzeć cały film"></a><br>
-  <b>▶ <a href="https://z4k0lzakol.github.io/Luna/#film">Obejrzyj cały film: Luna w 50 sekund</a></b> (z dźwiękiem) ·
-  <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-film-4K.mp4">pobierz w 4K</a>
+  <img src="docs/img/ikony/play.svg" width="16" height="16" alt="" align="absmiddle"> <b><a href="https://z4k0lzakol.github.io/Luna/#film">Obejrzyj cały film: Luna w 50 sekund</a></b> (z dźwiękiem)
 </p>
 
 <p align="center"><sub>
-  🌙 Spokojna jak noc przy pełni · Twoje światło w ciemności sieci · Każda karta na swojej orbicie
+  <img src="docs/img/ikony/ksiezyc.svg" width="16" height="16" alt="" align="absmiddle"> Spokojna jak noc przy pełni · Twoje światło w ciemności sieci · Każda karta na swojej orbicie
 </sub></p>
 
 ---
@@ -122,7 +121,7 @@
 
 ## Jak zainstalować
 
-**[⬇ Pobierz najnowszą wersję](https://github.com/z4k0lzakol/Luna/releases/latest)** i wybierz plik dla swojego systemu:
+<img src="docs/img/ikony/pobierz.svg" width="16" height="16" alt="" align="absmiddle"> **[Pobierz najnowszą wersję](https://github.com/z4k0lzakol/Luna/releases/latest)** i wybierz plik dla swojego systemu:
 
 | System | Plik | Instalacja |
 |---|---|---|

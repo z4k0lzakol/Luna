@@ -6,8 +6,8 @@ Poprawki bezpieczeństwa trafiają do najnowszej wersji z gałęzi `main`. Luna 
 
 | Wersja | Poprawki bezpieczeństwa |
 |---|---|
-| najnowsza z `main` | ✅ |
-| starsze | ❌ – zaktualizuj Lunę |
+| najnowsza z `main` | <img src="docs/img/ikony/tak.svg" width="16" height="16" alt="tak"> |
+| starsze | <img src="docs/img/ikony/nie.svg" width="16" height="16" alt="nie"> zaktualizuj Lunę |
 
 Luna wyświetla strony silnikiem Chromium z biblioteki Qt WebEngine. Poprawki samego silnika przychodzą z aktualizacją pakietu `PyQt6-WebEngine`:
 

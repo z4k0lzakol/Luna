@@ -50,7 +50,8 @@
   .hero p.lead { font-size:clamp(17px, 2.2vw, 20px); color:#b9b9b9; max-width:720px; margin:0 auto 28px; }
   .hero .cta { display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
   .motto { font-size:clamp(17px, 2vw, 20px); color:#e8e2d6; font-style:italic; letter-spacing:.01em; margin:0 0 18px; }
-  .motto::before { content:"☾"; font-style:normal; color:#f3eee6; margin-right:10px; opacity:.85; }
+  .motto::before { content:""; display:inline-block; width:20px; height:20px; vertical-align:-3px; margin-right:10px; opacity:.85;
+                   background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M20 14.6A8.2 8.2 0 0 1 9.4 4a8.2 8.2 0 1 0 10.6 10.6z' fill='none' stroke='%23f3eee6' stroke-width='1.8' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain; }
   .mottos { display:grid; grid-template-columns:repeat(3, 1fr); gap:16px; margin-top:30px; }
   .mottos div { border:1px solid var(--line2); border-radius:14px; padding:18px 20px; color:#d9d3c8; font-style:italic;
                 background:linear-gradient(180deg, rgba(243,238,230,.04), rgba(243,238,230,0)); }
@@ -173,10 +174,10 @@
   <div class="wrap">
     <h2>Luna w 50 sekund</h2>
     <p class="sub">Zobacz, jak Luna wschodzi na pulpicie: podział ekranu, widgety, blokada reklam, asystent AI i komunikatory.</p>
-    <div class="film"><video controls playsinline preload="metadata" poster="img/film.jpg">
-      <source src="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-film.mp4" type="video/mp4">
-      Twoja przeglądarka nie odtwarza filmów – <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-film.mp4">pobierz film</a>.</video></div>
-    <p class="filmnote">Wolisz najwyższą jakość? <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-film-4K.mp4">Film w 4K</a> (3840×2160, 60 kl./s).</p>
+    <div class="film"><video controls playsinline preload="metadata" poster="img/film.jpg"
+      controlslist="nodownload noremoteplayback" disablepictureinpicture oncontextmenu="return false">
+      <source src="https://raw.githubusercontent.com/z4k0lzakol/Luna/media/Luna-film.mp4" type="video/mp4">
+      Twoja przeglądarka nie odtwarza filmów.</video></div>
   </div>
 </section>
 
