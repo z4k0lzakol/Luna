@@ -10699,7 +10699,7 @@ class WeatherPlaceDialog(LunaDialog):
         self.body.addWidget(lbl("Przybliżona lokalizacja na podstawie połączenia z internetem – zmienia się sama, gdy "
                                 "zmienisz miejsce.", "muted", wrap=True))
         self.body.addSpacing(10); self.section("Albo ustaw ręcznie")
-        self.search = QLineEdit(); self.search.setObjectName("glassin"); self.search.setPlaceholderText("Wpisz miejscowość, np. Olsztyn")
+        self.search = QLineEdit(); self.search.setObjectName("glassin"); self.search.setPlaceholderText("Wyszukaj miejscowość")
         self.search.setClearButtonEnabled(True); self.body.addWidget(self.search)
         self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.find)
         self.search.textChanged.connect(lambda _: self._t.start(350)); self.search.returnPressed.connect(self.enter)
