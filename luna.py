@@ -908,6 +908,52 @@ def note_key(url):
     return (u.host().lower().removeprefix("www.") + u.path().rstrip("/")) if u.host() else ""
 
 
+def short_region(admin1):
+    """„Województwo śląskie” → „śląskie” (krótko, do nagłówka widgetu)."""
+    a = (admin1 or "").strip()
+    a = a[len("Województwo "):] if a.startswith("Województwo ") else a
+    return "-".join(w[:1].upper() + w[1:] for w in a.split("-")) if a else a   # z dużej: Warmińsko-Mazurskie
+
+
+def city_results(j):
+    """Wyniki geokodowania Open-Meteo → lista miejscowości bez powtórzeń (ta sama nazwa i region w promieniu ~10 km)."""
+    out = []
+    for r in (j.get("results") if isinstance(j, dict) else None) or []:
+        try:
+            c = {"name": r.get("name") or "?", "region": short_region(r.get("admin1")), "admin1": r.get("admin1") or "",
+                 "admin2": r.get("admin2") or "", "country": r.get("country") or r.get("country_code") or "",
+                 "cc": (r.get("country_code") or "").upper(),
+                 "lat": float(r["latitude"]), "lon": float(r["longitude"]), "pop": r.get("population") or 0}
+        except (KeyError, TypeError, ValueError):
+            continue
+        if any(o["name"] == c["name"] and o["admin1"] == c["admin1"] and abs(o["lat"] - c["lat"]) < 0.1
+               and abs(o["lon"] - c["lon"]) < 0.15 for o in out):
+            continue
+        out.append(c)
+    return out
+
+
+def city_title(c):
+    """Nazwa do listy wyboru: miasto i województwo (w Polsce) albo miasto i region (za granicą)."""
+    if not c.get("region"):
+        return c["name"]
+    return f"{c['name']}, Woj. {c['region']}" if c.get("cc") == "PL" else f"{c['name']}, {c['region']}"
+
+
+def city_details(c):
+    """Opis pod nazwą: powiat, kraj, współrzędne (województwo / region jest już w nazwie)."""
+    parts = []
+    if c.get("admin2") and c["admin2"] != c["name"]:
+        parts.append(" ".join("-".join(x[:1].upper() + x[1:] for x in w.split("-")) for w in c["admin2"].split()))
+    if c.get("admin1") and not c.get("region"):
+        parts.append(c["admin1"])
+    if c.get("country"):
+        parts.append(c["country"])
+    lat, lon = c["lat"], c["lon"]
+    parts.append(f"{abs(lat):.2f}°{'N' if lat >= 0 else 'S'} {abs(lon):.2f}°{'E' if lon >= 0 else 'W'}".replace(".", ","))
+    return " · ".join(parts)
+
+
 def plural(n: int) -> str:
     if n == 1:
         return "aplikacja"
@@ -2294,14 +2340,15 @@ class Store(QObject):
     def fetch_weather(self):
         c = self.settings.get("weather_city")
         if c:
-            self._forecast(c["lat"], c["lon"], c["name"]); return
+            self._forecast(c["lat"], c["lon"], c["name"] + (f" · {c['region']}" if c.get("region") else "")); return
         r = self._request("https://ipwho.is/")
         r.finished.connect(lambda r=r: self._geo_done(r))
 
     def _geo_done(self, r):
         j = self._json(r)
         if isinstance(j, dict) and j.get("latitude") is not None:
-            self._forecast(j["latitude"], j["longitude"], j.get("city") or j.get("region") or "Twoja lokalizacja")
+            self.weather_auto = j.get("city") or j.get("region") or "Twoja lokalizacja"
+            self._forecast(j["latitude"], j["longitude"], self.weather_auto)
         else:
             self.weather = {"error": "Nie udało się ustalić lokalizacji"}; self.weather_changed.emit()
 
@@ -2327,20 +2374,20 @@ class Store(QObject):
         self.weather_ts = time.time()
         self.weather_changed.emit()
 
-    def set_city(self, query):
+    def find_cities(self, query, cb):
+        """Szuka miejscowości (do 10); cb(lista) – każda z województwem/regionem, powiatem, krajem i współrzędnymi,
+        żeby dało się rozróżnić miejscowości o tej samej nazwie (np. dwa Olsztyny)."""
         q = QUrl.toPercentEncoding(query).data().decode()
-        r = self._request(f"https://geocoding-api.open-meteo.com/v1/search?name={q}&count=1&language=pl&format=json")
-        r.finished.connect(lambda r=r: self._city_done(r))
+        r = self._request(f"https://geocoding-api.open-meteo.com/v1/search?name={q}&count=10&language=pl&format=json")
+        r.finished.connect(lambda r=r: cb(city_results(self._json(r))))
 
-    def _city_done(self, r):
-        j = self._json(r)
-        res = j.get("results") if isinstance(j, dict) else None
-        if res:
-            c = res[0]
-            self.settings["weather_city"] = {"name": c.get("name", "?"), "lat": c["latitude"], "lon": c["longitude"]}
-            self.save_settings(); self.fetch_weather()
-        else:
-            self.weather = {"error": "Nie znaleziono takiego miasta"}; self.weather_changed.emit()
+    def auto_city(self):
+        """Pogoda dla przybliżonej lokalizacji (z adresu IP) – odświeża się sama po zmianie miejsca."""
+        self.settings.pop("weather_city", None); self.save_settings(); self.fetch_weather()
+
+    def set_city(self, c):
+        self.settings["weather_city"] = {"name": c["name"], "region": c.get("region", ""), "lat": c["lat"], "lon": c["lon"]}
+        self.save_settings(); self.fetch_weather()
 
     def add_recent(self, name, url):
         self.bump_day(emit=False)
@@ -3877,10 +3924,12 @@ class WeatherWidget(WidgetFrame):
 
     def build(self):
         l = self.lay
-        self.menu.addAction("Zmień miasto…", self.change_city)
+        self.menu.addAction("Lokalizacja: automatycznie lub ręcznie…", self.change_city)
         self.menu.addAction("Wykryj lokalizację automatycznie", self.auto_city)
         self.menu.addAction("Odśwież pogodę", self.refresh_now)
         self.city = lbl("Pogoda", "h3"); l.addWidget(self.city)
+        self.city.setCursor(Qt.CursorShape.PointingHandCursor); self.city.setToolTip("Zmień lokalizację pogody")
+        self.city.mousePressEvent = lambda ev: self.change_city()
         row = QHBoxLayout(); row.setSpacing(10)
         self.icon = QLabel(); self.icon.setFixedSize(60, 60)
         col = QVBoxLayout(); col.setSpacing(0)
@@ -3912,12 +3961,11 @@ class WeatherWidget(WidgetFrame):
         self.desc.setText("Odświeżam…"); self.store.fetch_weather()
 
     def change_city(self):
-        name, ok = QInputDialog.getText(self, "Pogoda", "Miasto:")
-        if ok and name.strip():
-            self.desc.setText("Szukam…"); self.store.set_city(name.strip())
+        if WeatherPlaceDialog(self.window(), self.store).exec():
+            self.desc.setText("Szukam…")
 
     def auto_city(self):
-        self.store.settings.pop("weather_city", None); self.store.save_settings(); self.store.fetch_weather()
+        self.desc.setText("Szukam…"); self.store.auto_city()
 
     def render(self):
         w = self.store.weather
@@ -10632,6 +10680,69 @@ class PrivacyReportDialog(LunaDialog):
         self.body.addWidget(lbl("Szacunek danych: ok. 25 KB na zablokowane zapytanie (skrypty i obrazki reklam bywają "
                                 "mniejsze albo dużo większe).", "muted", wrap=True))
         self.footer(right=[("Zamknij", self.accept, True)])
+
+
+class WeatherPlaceDialog(LunaDialog):
+    """Lokalizacja pogody: automatycznie (przybliżona, z adresu IP) albo ręcznie – wyszukiwarka miejscowości pokazuje
+    województwo, powiat, kraj i współrzędne, więc da się rozróżnić miejscowości o tej samej nazwie."""
+
+    def __init__(self, parent, store):
+        super().__init__(parent, "Lokalizacja pogody", "search", (600, 520))
+        self.store, self.cities, self.seq = store, [], 0
+        c = store.settings.get("weather_city")
+        self.sub.setText(("Teraz: " + c["name"] + (f" · {c['region']}" if c.get("region") else "") + " (ustawione ręcznie)") if c
+                         else ("Teraz: automatycznie" + (f" ({store.weather_auto})" if getattr(store, "weather_auto", "") else "")))
+        self.sub.setVisible(True)
+        auto = QPushButton("  Wykryj automatycznie"); auto.setIcon(glyph("pin")); auto.setCursor(Qt.CursorShape.PointingHandCursor)
+        auto.clicked.connect(self.pick_auto)
+        self.body.addWidget(auto)
+        self.body.addWidget(lbl("Przybliżona lokalizacja na podstawie połączenia z internetem – zmienia się sama, gdy "
+                                "zmienisz miejsce.", "muted", wrap=True))
+        self.body.addSpacing(10); self.section("Albo ustaw ręcznie")
+        self.search = QLineEdit(); self.search.setObjectName("glassin"); self.search.setPlaceholderText("Wpisz miejscowość, np. Olsztyn")
+        self.search.setClearButtonEnabled(True); self.body.addWidget(self.search)
+        self._t = QTimer(self); self._t.setSingleShot(True); self._t.timeout.connect(self.find)
+        self.search.textChanged.connect(lambda _: self._t.start(350)); self.search.returnPressed.connect(self.enter)
+        self.list = row_list(); self.list.itemActivated.connect(lambda _: self.ok())
+        self.panel(self.list, "search", "Wyszukaj miejscowość", "Lista pokaże województwo, powiat i współrzędne.")
+        self.show_empty(True)
+        self.footer(right=[("Anuluj", self.reject), ("Wybierz", self.ok, True)])
+        self.search.setFocus()
+
+    def find(self):
+        q = self.search.text().strip()
+        if len(q) < 2:
+            self.cities = []; self.list.clear(); self.show_empty(True, "Wyszukaj miejscowość",
+                                                                   "Lista pokaże województwo, powiat i współrzędne."); return
+        self.seq += 1; n = self.seq
+        self.show_empty(True, "Szukam…", "")
+        self.store.find_cities(q, lambda cs, n=n: self.fill(cs, n))
+
+    def fill(self, cities, n):
+        if n != self.seq or not self.isVisible():
+            return
+        self.cities = cities; self.list.clear()
+        for k, c in enumerate(cities):
+            side = f"{c['pop']:,} mieszk.".replace(",", " ") if c.get("pop") else ""
+            self.list.addItem(row_item(city_title(c), city_details(c), side, glyph("pin", "#8c8c8c"), k))
+        if cities:
+            self.list.setCurrentRow(0); self.show_empty(False)
+        else:
+            self.show_empty(True, "Nie znaleziono", f"Brak miejscowości „{self.search.text().strip()}”.")
+
+    def enter(self):
+        if self._t.isActive():
+            self._t.stop(); self.find()
+        elif self.cities:
+            self.ok()
+
+    def ok(self):
+        it = self.list.currentItem()
+        if it is not None and it.data(Qt.ItemDataRole.UserRole) is not None and self.cities:
+            self.store.set_city(self.cities[it.data(Qt.ItemDataRole.UserRole)]); self.accept()
+
+    def pick_auto(self):
+        self.store.auto_city(); self.accept()
 
 
 class ClearDataDialog(LunaDialog):
