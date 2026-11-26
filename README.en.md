@@ -119,6 +119,12 @@
 </tr>
 </table>
 
+## Luna on your phone
+
+<p align="center"><img src="docs/img/telefon.jpg" alt="Luna on Android: home screen with widgets, Luna menu, messengers with logos, two pages on one screen and widgets"></p>
+
+The same Luna on Android – **[download `Luna-Android.apk`](https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk)** (preview, Android 7 and newer). A home screen with widgets, a bar within thumb's reach (swipe sideways for the next tab, up for all tabs), a menu sheet, the AI assistant and messengers, two pages on one screen, search suggestions, a landscape layout with a top bar, and ad blocking, YouTube included. Code: [`mobile/`](mobile/). The iPhone version is ready in the code and will follow once it has an Apple signature.
+
 ## What it's good for
 
 | Who | What they get |

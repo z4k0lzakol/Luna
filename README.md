@@ -119,6 +119,12 @@
 </tr>
 </table>
 
+## Luna na telefonie
+
+<p align="center"><img src="docs/img/telefon.jpg" alt="Luna na Androidzie: ekran główny z widgetami, menu Luny, komunikatory z logo, dwie strony na jednym ekranie i widgety"></p>
+
+Ta sama Luna na Androidzie – **[pobierz `Luna-Android.apk`](https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk)** (wersja testowa, Android 7 i nowsze). Ekran główny z widgetami, pasek pod kciukiem (przesuń w bok – sąsiednia karta, w górę – wszystkie karty), menu w arkuszu od dołu, asystent AI i komunikatory, dwie strony na jednym ekranie, podpowiedzi wyszukiwania, układ poziomy z paskiem u góry i blokada reklam także na YouTube. Kod: [`mobile/`](mobile/). Wersja na iPhone'a jest gotowa w kodzie i pojawi się po uzyskaniu podpisu Apple.
+
 ## Do czego się przyda
 
 | Kto | Co dostaje |
