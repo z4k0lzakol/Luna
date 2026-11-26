@@ -177,7 +177,7 @@ Plany na kolejne wersje:
 - [x] **Instalator** dla Windows, AppImage dla Linuksa i obraz .dmg dla macOS – bez instalowania Pythona.
 - [x] **Wydania na GitHubie** – każda wersja z instrukcją i plikami do pobrania; Luna sama wykrywa nowe wydania.
 - [ ] **Podpis cyfrowy** – Windows i macOS nie pokażą już ostrzeżeń przy pierwszym uruchomieniu.
-- [ ] **Luna na telefon** – aplikacja na Androida i iPhone'a w tym samym wyglądzie, z synchronizacją.
+- [ ] **Luna na telefon** – wersja testowa w folderze [`mobile/`](mobile/) (Flutter, Android i iOS): ekran główny z widgetami, karty i przestrzenie, menu w arkuszu, asystent AI i komunikatory, dwie strony na ekranie, podpowiedzi wyszukiwania, układ poziomy i blokada reklam. Plik APK dla Androida buduje GitHub; na iPhone'a potrzebne jest jeszcze konto Apple Developer.
 - [x] **Luna jako domyślna przeglądarka** – linki z poczty i innych programów otwierają się w Lunie.
 - [ ] **Jasny motyw i kolor akcentu**, archiwum starych kart, wersja przenośna (na pendrive).
 
