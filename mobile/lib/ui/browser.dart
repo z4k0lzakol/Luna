@@ -697,8 +697,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Widget _bar(TabData cur, {bool top = false}) {
-    final blocked = s.blockedByTab[cur.id] ?? 0;
-    final allowed = !cur.isHome && s.allowedHere(cur.host);
     final count = cur.private ? s.privateTabs.length : s.openTabs.length;
     if (_editing) {
       final list = (_sugg.isNotEmpty || _net.isNotEmpty)
