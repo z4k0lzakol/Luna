@@ -1,7 +1,10 @@
-## Co nowego w 1.0.10
+## Co nowego w 1.0.11
 
-- **Luna na telefonie (Android, wersja testowa)** – plik `Luna-Android.apk`: ekran główny z gwiazdami, zegarem, kafelkami i widgetami, strony w zaokrąglonych ramkach z paskiem na dole, karty i przestrzenie (Otwarte, Na później, Prywatne), menu Luny w arkuszu, asystent AI i komunikatory, dwie strony na ekranie, podpowiedzi wyszukiwania, układ poziomy z paskiem u góry, blokada reklam i śledzenia (także na YouTube) i tryb czytania.
-- **Logo komunikatorów i usług AI** – WhatsApp, Messenger, Telegram, Instagram, Discord, Signal, Claude, Gemini i DeepSeek mają swoje logo zamiast samej litery (na komputerze i na telefonie).
+- **Luna na Androida: poprawka obrotu ekranu** – po obróceniu telefonu strona nie zostaje już czarna.
+- **Luna na Androida: animacje jak na komputerze** – ekran główny, widgety, karty i menu pojawiają się po kolei, druga strona podziału wjeżdża, a strona po przełączeniu karty wsuwa się z boku.
+- **Luna na Androida: płynniejsze animacje** – pasek, arkusze i przejścia działają kilka razy płynniej niż w 1.0.10.
+
+W 1.0.10: pierwsza wersja Luny na Androida (`Luna-Android.apk`) i logo komunikatorów oraz usług AI.
 
 Wersja na iPhone'a jest gotowa w kodzie, ale do instalacji potrzebny jest podpis Apple (konto Apple Developer) – pojawi się później.
 
