@@ -112,7 +112,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
         allowsInlineMediaPlayback: true,
         mediaPlaybackRequiresUserGesture: true,
         textZoom: _zoom[t.id] ?? 100,
-        useHybridComposition: true,
+        // tryb tekstury: animacje Luny nad stroną są kilka razy płynniejsze niż w trybie hybrydowym (pomiar w emulatorze)
+        useHybridComposition: const String.fromEnvironment('LUNA_HC', defaultValue: '0') == '1',
         transparentBackground: false,
       );
 
@@ -670,6 +671,31 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   // ------------------------------------------------------------------ pasek
+  Widget _shieldButton(TabData cur) {
+    final blocked = s.blockedByTab[cur.id] ?? 0;
+    final allowed = !cur.isHome && s.allowedHere(cur.host);
+    return Stack(clipBehavior: Clip.none, children: [
+      SquareButton(
+        label: 'Tarcza: zablokowano $blocked',
+        onTap: _shield,
+        child: Icon(s.adblock && !allowed ? Icons.shield_outlined : Icons.remove_moderator_outlined, size: 20, color: C.text2),
+      ),
+      if (blocked > 0 && s.adblock && !allowed)
+        Positioned(
+          top: -5,
+          right: -5,
+          child: Container(
+            constraints: const BoxConstraints(minWidth: 18),
+            height: 18,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: C.text, borderRadius: BorderRadius.circular(9)),
+            child: Text(blocked > 99 ? '99+' : '$blocked', style: const TextStyle(color: Color(0xFF111111), fontSize: 10, fontWeight: FontWeight.w600)),
+          ),
+        ),
+    ]);
+  }
+
   Widget _bar(TabData cur, {bool top = false}) {
     final blocked = s.blockedByTab[cur.id] ?? 0;
     final allowed = !cur.isHome && s.allowedHere(cur.host);
@@ -743,26 +769,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       return Column(mainAxisSize: MainAxisSize.min, children: top ? [field, list] : [list, field]);
     }
 
-    final shield = Stack(clipBehavior: Clip.none, children: [
-      SquareButton(
-        label: 'Tarcza: zablokowano $blocked',
-        onTap: _shield,
-        child: Icon(s.adblock && !allowed ? Icons.shield_outlined : Icons.remove_moderator_outlined, size: 20, color: C.text2),
-      ),
-      if (blocked > 0 && s.adblock && !allowed)
-        Positioned(
-          top: -5,
-          right: -5,
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 18),
-            height: 18,
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: C.text, borderRadius: BorderRadius.circular(9)),
-            child: Text(blocked > 99 ? '99+' : '$blocked', style: const TextStyle(color: Color(0xFF111111), fontSize: 10, fontWeight: FontWeight.w600)),
-          ),
-        ),
-    ]);
+    final shield = ValueListenableBuilder<int>(valueListenable: s.blocks, builder: (_, __, ___) => _shieldButton(cur));
     final address = Expanded(
       child: Material(
         color: C.field,

@@ -304,6 +304,8 @@ class LunaState extends ChangeNotifier {
   }
 
   Timer? _blockTimer;
+  /// Zmienia się, gdy rośnie licznik tarczy – odświeża tylko plakietkę, nie cały ekran.
+  final blocks = ValueNotifier<int>(0);
 
   /// Licznik tarczy – odświeżenie paska najwyżej co pół sekundy (strona potrafi mieć dziesiątki blokad naraz).
   void countBlocked(String tabId) {
@@ -312,7 +314,7 @@ class LunaState extends ChangeNotifier {
     _blockTimer ??= Timer(const Duration(milliseconds: 500), () {
       _blockTimer = null;
       _save();
-      notifyListeners();
+      blocks.value++;
     });
   }
 

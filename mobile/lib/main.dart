@@ -1,5 +1,6 @@
 // Luna na telefonie (Android, iOS) – prywatna przeglądarka w wyglądzie Luny z komputera.
 import 'dart:io';
+import 'dart:ui' show FrameTiming;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import 'ui/guide.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (const bool.fromEnvironment('LUNA_PERF')) _perf();
   final s = LunaState();
   await s.load();
   var ua = '';
@@ -89,4 +91,21 @@ Future<void> _links(LunaState s) async {
     final first = await ch.invokeMethod<String>('initialLink');
     if (first != null && first.isNotEmpty) s.newTab(url: first);
   } catch (_) {}
+}
+
+/// Pomiar płynności (tylko w buildzie z --dart-define=LUNA_PERF=true): co 2 s liczba klatek i klatek spóźnionych.
+void _perf() {
+  final frames = <FrameTiming>[];
+  WidgetsBinding.instance.addTimingsCallback(frames.addAll);
+  Stream.periodic(const Duration(seconds: 2)).listen((_) {
+    if (frames.isEmpty) return;
+    final total = frames.map((f) => f.totalSpan.inMicroseconds / 1000).toList()..sort();
+    final build = frames.map((f) => f.buildDuration.inMicroseconds / 1000).reduce((a, b) => a > b ? a : b);
+    final raster = frames.map((f) => f.rasterDuration.inMicroseconds / 1000).reduce((a, b) => a > b ? a : b);
+    final jank = total.where((t) => t > 16.7).length;
+    // ignore: avoid_print
+    print('LUNAPERF n=${total.length} jank=$jank p50=${total[total.length ~/ 2].toStringAsFixed(1)} '
+        'p90=${total[(total.length * 0.9).floor()].toStringAsFixed(1)} maxBuild=${build.toStringAsFixed(1)} maxRaster=${raster.toStringAsFixed(1)}');
+    frames.clear();
+  });
 }
