@@ -1,10 +1,9 @@
-## Co nowego w 1.0.4
+## Co nowego w 1.0.10
 
-- **YouTube: szybszy start filmów** – gdy YouTube po zablokowaniu reklamy każe czekać na film, Luna od razu wczytuje go ponownie w trybie bez reklam (start po ok. 5 s zamiast 11 s).
-- **YouTube: filmy startują same** – film otwarty z paska adresu, zakładki albo linku spoza YouTube uruchamia się bez klikania, jak w Chrome. Na innych stronach odtwarzanie nadal wymaga kliknięcia.
-- **tvn24.pl bez pustych miejsc po reklamach** – zniknął pas „REKLAMA” nad nagłówkiem i szare prostokąty między artykułami.
+- **Luna na telefonie (Android, wersja testowa)** – plik `Luna-Android.apk`: ekran główny z gwiazdami, zegarem, kafelkami i widgetami, strony w zaokrąglonych ramkach z paskiem na dole, karty i przestrzenie (Otwarte, Na później, Prywatne), menu Luny w arkuszu, asystent AI i komunikatory, dwie strony na ekranie, podpowiedzi wyszukiwania, układ poziomy z paskiem u góry, blokada reklam i śledzenia (także na YouTube) i tryb czytania.
+- **Logo komunikatorów i usług AI** – WhatsApp, Messenger, Telegram, Instagram, Discord, Signal, Claude, Gemini i DeepSeek mają swoje logo zamiast samej litery (na komputerze i na telefonie).
 
-W 1.0.3: szybsze wczytywanie stron (HTTP/3) i płynniejsze animacje na monitorach 120/144 Hz.
+Wersja na iPhone'a jest gotowa w kodzie, ale do instalacji potrzebny jest podpis Apple (konto Apple Developer) – pojawi się później.
 
 ## Pobierz Lunę
 
@@ -15,6 +14,7 @@ W 1.0.3: szybsze wczytywanie stron (HTTP/3) i płynniejsze animacje na monitorac
 | **Linux** (x86_64) | `Luna-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. |
 | Linux (archiwum) | `Luna-Linux-x86_64.tar.gz` | Rozpakuj i uruchom `Luna/Luna`. |
 | **macOS** (Apple M1 i nowsze) | `Luna-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk na Lunie → **Otwórz**. |
+| **Android** 7 i nowsze (wersja testowa) | `Luna-Android.apk` | Pobierz na telefonie i otwórz. Android zapyta o zgodę na instalację aplikacji spoza Sklepu Play – zezwól przeglądarce, z której pobierasz. |
 
 **Inteligentna kontrola aplikacji (Windows 11).** Jeśli jest włączona, Windows na razie zablokuje Lunę z wydania – nie pozwala uruchamiać nowych programów bez podpisu cyfrowego, a podpis Luny jest w przygotowaniu. Do tego czasu uruchom Lunę z kodu źródłowego (instrukcja w README).
 

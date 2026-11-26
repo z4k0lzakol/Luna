@@ -40,6 +40,11 @@ try:
     from PyQt6.QtSvg import QSvgRenderer   # tło wektorowe (SVG)
 except ImportError:
     QSvgRenderer = None
+try:
+    from brand_icons import brand_svg   # logo komunikatorów i usług AI (Simple Icons, CC0)
+except ImportError:
+    def brand_svg(name, color=None):
+        return None
 from PyQt6.QtWebEngineCore import (QWebEngineProfile, QWebEnginePage, QWebEngineUrlRequestInterceptor, QWebEngineScript,
                                    QWebEngineDownloadRequest, QWebEngineSettings)
 try:   # Qt 6.8+: uprawnienia stron (kamera, mikrofon, powiadomienia…) i wybór ekranu do udostępnienia
@@ -55,7 +60,7 @@ except Exception:
     _SMTC = _SMTC_STATUS = _DataReader = None
 import adblock   # wbudowana blokada reklam (adblock/); rejestruje własny schemat – musi być przed QApplication
 
-VERSION = "1.0.9"   # wersja wydania (tag vX.Y.Z na GitHubie musi się zgadzać); kopia z gita pokazuje dodatkowo commit
+VERSION = "1.0.10"   # wersja wydania (tag vX.Y.Z na GitHubie musi się zgadzać); kopia z gita pokazuje dodatkowo commit
 RELEASES_API = "https://api.github.com/repos/z4k0lzakol/Luna/releases/latest"
 RELEASES_URL = "https://github.com/z4k0lzakol/Luna/releases/latest"
 
@@ -1243,13 +1248,39 @@ def make_icon(name: str, url: str = "", count: int = 0) -> QIcon:
     return QIcon(pm)
 
 
+def draw_brand(p: QPainter, name: str, rect: QRectF, color=None) -> bool:
+    """Rysuje logo usługi (komunikator, AI) w prostokącie; False, gdy Luna nie ma jego logo."""
+    svg = brand_svg(name, color)
+    if not svg or QSvgRenderer is None:
+        return False
+    r = QSvgRenderer(svg.encode("utf-8"))
+    if not r.isValid():
+        return False
+    r.render(p, rect)
+    return True
+
+
+def brand_icon(name: str, color=None, size: int = 32):
+    """Logo usługi jako ikona albo None."""
+    if not brand_svg(name):
+        return None
+    pm = QPixmap(size, size); pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    ok = draw_brand(p, name, QRectF(0, 0, size, size), color); p.end()
+    return QIcon(pm) if ok else None
+
+
 def mini_icon(name: str, url: str = "") -> QIcon:
-    """Okrągła ikonka wyszukiwarki / AI: favicon na jasnym kółku albo monogram."""
+    """Okrągła ikonka wyszukiwarki / AI / komunikatora: logo usługi na kółku w jej kolorze, favicon albo monogram."""
     S = 64
     pm = QPixmap(S, S); pm.fill(Qt.GlobalColor.transparent)
     p = QPainter(pm)
     p.setRenderHint(QPainter.RenderHint.Antialiasing); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     p.setPen(Qt.PenStyle.NoPen)
+    if ChatRow.COLORS.get(name) and brand_svg(name):
+        p.setBrush(QColor(ChatRow.COLORS[name])); p.drawEllipse(0, 0, S, S)
+        draw_brand(p, name, QRectF(16, 16, 32, 32), "#ffffff"); p.end()
+        return QIcon(pm)
     path = icon_path(url) if url else None
     fav = QPixmap(str(path)) if path and path.exists() else QPixmap()
     if not fav.isNull():
@@ -12219,10 +12250,11 @@ class ChatRow(QAbstractButton):
             pen = QPen(QColor("#3a3a3a"), 1.4); pen.setStyle(Qt.PenStyle.DashLine); p.setPen(pen); p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(av.adjusted(1, 1, -1, -1)); p.setPen(QPen(QColor("#9a9a9a"), 2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             c = av.center(); p.drawLine(QPointF(c.x(), c.y() - 7), QPointF(c.x(), c.y() + 7)); p.drawLine(QPointF(c.x() - 7, c.y()), QPointF(c.x() + 7, c.y()))
-        else:   # jak w filmie: kolorowy krążek z literą
+        else:   # kolorowy krążek z logo usługi (albo literą, gdy Luna nie ma logo)
             p.setBrush(QColor(self.COLORS.get(self.name, "#3a3a3a"))); p.drawEllipse(av)
-            f = QFont(self.font()); f.setPixelSize(16); f.setWeight(QFont.Weight.ExtraBold); p.setFont(f); p.setPen(QColor("#ffffff"))
-            p.drawText(av, Qt.AlignmentFlag.AlignCenter, (self.name or "?")[0].upper())
+            if not draw_brand(p, self.name, av.adjusted(10, 10, -10, -10), "#ffffff"):
+                f = QFont(self.font()); f.setPixelSize(16); f.setWeight(QFont.Weight.ExtraBold); p.setFont(f); p.setPen(QColor("#ffffff"))
+                p.drawText(av, Qt.AlignmentFlag.AlignCenter, (self.name or "?")[0].upper())
         right = r.width() - 12
         if self.count:
             txt = str(self.count) if self.count < 100 else "99+"
@@ -12361,6 +12393,9 @@ class Assistant(QWidget):
                 b.setFixedSize(36, 32)
             else:
                 b.setText(name); b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+                ic = brand_icon(name)   # logo usługi AI przed nazwą (Claude, Gemini, DeepSeek)
+                if ic is not None:
+                    b.setIcon(ic); b.setIconSize(QSize(15, 15))
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.clicked.connect(lambda _=False, n=name: self.select(n))
             b.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)

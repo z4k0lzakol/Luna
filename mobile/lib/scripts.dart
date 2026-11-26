@@ -85,3 +85,20 @@ String darkScript(bool on) => '''
 
 /// Zaznaczony tekst (do asystenta AI).
 const selectionScript = "(window.getSelection && window.getSelection().toString()) || ''";
+
+/// Okna zgody na ciasteczka YouTube i Google: Luna wybiera „Odrzuć wszystko” (na komputerze robią to listy filtrów).
+const consentScript = r'''
+(function () {
+  if (!/(^|\.)(youtube\.com|google\.[a-z.]+)$/.test(location.hostname) || window.__lunaConsent) return;
+  window.__lunaConsent = true;
+  var RX = /^(reject all|odrzuć wszystko|alle ablehnen|tout refuser|rechazar todo)$/i, n = 0;
+  var t = setInterval(function () {
+    if (++n > 40) return clearInterval(t);
+    var bs = document.querySelectorAll('button, [role="button"], tp-yt-paper-button, ytm-button-renderer a');
+    for (var i = 0; i < bs.length; i++) {
+      var x = (bs[i].innerText || bs[i].getAttribute('aria-label') || '').trim();
+      if (RX.test(x)) { bs[i].click(); clearInterval(t); return; }
+    }
+  }, 500);
+})();
+''';

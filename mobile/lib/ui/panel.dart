@@ -5,6 +5,9 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+
+import '../brands.dart';
 
 import '../state.dart';
 import 'common.dart';
@@ -86,6 +89,7 @@ class _PanelSheetState extends State<PanelSheet> {
               Wrap(spacing: 6, runSpacing: 6, children: [
                 for (var i = 0; i < aiProviders.length; i++)
                   ChoiceChip(
+                    avatar: BrandLogo(aiProviders[i].name, size: 16),
                     label: Text(aiProviders[i].name),
                     selected: i == _prov,
                     showCheckmark: false,
@@ -149,7 +153,7 @@ class _PanelSheetState extends State<PanelSheet> {
                   leading: CircleAvatar(
                       radius: 21,
                       backgroundColor: m.$3,
-                      child: Text(m.$1[0], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600))),
+                      child: BrandLogo(m.$1, size: 22, color: Colors.white, fallback: Text(m.$1[0], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)))),
                   title: Text(m.$1, style: const TextStyle(fontWeight: FontWeight.w500)),
                   subtitle: const Text('Dotknij, aby otworzyć', style: TextStyle(color: Color(0xFF8F8F8F), fontSize: 12.5)),
                   onTap: () => _openApp(m.$1, m.$2),
@@ -247,4 +251,26 @@ class AppPage extends StatelessWidget {
           ]),
         ),
       );
+}
+
+/// Logo usługi (Simple Icons, CC0) – w kolorze marki albo podanym; gdy Luna nie ma logo: [fallback].
+class BrandLogo extends StatelessWidget {
+  final String name;
+  final double size;
+  final Color? color;
+  final Widget? fallback;
+  const BrandLogo(this.name, {super.key, this.size = 18, this.color, this.fallback});
+
+  @override
+  Widget build(BuildContext context) {
+    final b = brands[name];
+    if (b == null) return fallback ?? SizedBox(width: size, height: size);
+    final c = color ?? Color(b.$1);
+    final hex = (c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0');
+    return SvgPicture.string(
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#$hex" d="${b.$2}"/></svg>',
+      width: size,
+      height: size,
+    );
+  }
 }

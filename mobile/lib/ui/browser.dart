@@ -46,7 +46,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
   final _alive = <String>[];
   final _thumbs = <String, Uint8List>{};
   final _zoom = <String, int>{};
-  final _progress = <String, double>{};
+  final _progress = <String, ValueNotifier<double>>{}; // pasek postępu odświeża tylko siebie, nie cały ekran
   final _lastY = <String, int>{};
 
   bool _barVisible = true;
@@ -62,6 +62,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   late final UnmodifiableListView<UserScript> _scripts = UnmodifiableListView([
     UserScript(source: youtubeScript, injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START, forMainFrameOnly: true),
+    UserScript(source: consentScript, injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END, forMainFrameOnly: true),
   ]);
 
   @override
@@ -135,10 +136,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           s.blockedByTab[t.id] = 0;
           if (t.id == s.currentId && !_barVisible) setState(() => _barVisible = true);
         },
-        onProgressChanged: (c, p) {
-          _progress[t.id] = p / 100;
-          if (t.id == s.currentId || t.id == _sBot || t.id == _sTop) setState(() {});
-        },
+        onProgressChanged: (c, p) => _progress.putIfAbsent(t.id, () => ValueNotifier(1)).value = p / 100,
         onLoadStop: (c, u) async {
           _ptr[t.id]?.endRefreshing();
           if (u == null) return;
@@ -224,7 +222,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
       return HomeView(s: s, onOpen: (u) => _openIn(t, u), onSpaces: _spaces, onLater: () => _openTabs(segment: 1), onSearch: _startEditing);
     }
     final active = t.id == s.currentId;
-    final progress = _progress[t.id] ?? 1;
+    final progress = _progress.putIfAbsent(t.id, () => ValueNotifier(1));
     final landscape = MediaQuery.of(context).orientation == Orientation.landscape;
     Widget nav(IconData i, String tip, VoidCallback f) => IconButton(
         tooltip: tip, onPressed: f, visualDensity: VisualDensity.compact, icon: Icon(i, size: 18, color: active ? const Color(0xFFBDBDBD) : C.muted));
@@ -269,12 +267,24 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 borderRadius: BorderRadius.circular(s.focus && !_split ? 0 : 20),
                 child: Stack(children: [
                   Positioned.fill(child: _webview(t)),
-                  if (progress < 1)
-                    Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 0,
-                        child: LinearProgressIndicator(value: progress, minHeight: 2, backgroundColor: Colors.transparent, color: C.cream)),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: ValueListenableBuilder<double>(
+                      valueListenable: progress,
+                      builder: (_, v, __) => AnimatedOpacity(
+                        opacity: v < 1 ? 1 : 0,
+                        duration: const Duration(milliseconds: 250),
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween(end: v),
+                          duration: const Duration(milliseconds: 200),
+                          curve: Curves.easeOutCubic,
+                          builder: (_, x, __) => LinearProgressIndicator(value: x, minHeight: 2, backgroundColor: Colors.transparent, color: C.cream),
+                        ),
+                      ),
+                    ),
+                  ),
                 ]),
               ),
             ),
@@ -452,7 +462,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Future<void> _openTabs({int segment = 0}) async {
-    await _thumb(s.currentId);
+    // miniatura bieżącej karty – najwyżej 150 ms, żeby siatka kart otwierała się bez czekania
+    await _thumb(s.currentId).timeout(const Duration(milliseconds: 150), onTimeout: () {});
     if (!mounted) return;
     await Navigator.push(
         context,
@@ -866,12 +877,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
                 body: SafeArea(
                   bottom: false,
                   child: Column(children: [
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      child: showBar
-                          ? _bar(cur, top: true)
-                          : GestureDetector(
+                    BarSlot(
+                      visible: showBar,
+                      top: true,
+                      child: _bar(cur, top: true),
+                      hidden: GestureDetector(
                               onTap: () => setState(() => _barVisible = true),
                               child: Container(
                                 height: 12,
@@ -923,12 +933,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
                         ),
                     ]),
                   ),
-                  AnimatedSize(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                    child: showBar
-                        ? SafeArea(top: false, child: _bar(cur))
-                        : GestureDetector(
+                  BarSlot(
+                    visible: showBar,
+                    child: SafeArea(top: false, child: _bar(cur)),
+                    hidden: GestureDetector(
                             onTap: () => setState(() => _barVisible = true),
                             child: Container(
                               height: MediaQuery.of(context).padding.bottom + 10,
@@ -943,4 +951,58 @@ class _BrowserScreenState extends State<BrowserScreen> {
           );
         },
       );
+}
+
+/// Pasek, który chowa się przesunięciem (bez zmiany rozmiaru strony w każdej klatce): przy chowaniu najpierw
+/// zjeżdża, a dopiero potem zwalnia miejsce; przy pokazaniu najpierw zajmuje miejsce, potem wjeżdża.
+class BarSlot extends StatefulWidget {
+  final bool visible;
+  final bool top;
+  final Widget child;
+  final Widget hidden;
+  const BarSlot({super.key, required this.visible, required this.child, required this.hidden, this.top = false});
+
+  @override
+  State<BarSlot> createState() => _BarSlotState();
+}
+
+class _BarSlotState extends State<BarSlot> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 220), reverseDuration: const Duration(milliseconds: 180), value: widget.visible ? 1 : 0);
+  late bool _laid = widget.visible;
+
+  @override
+  void didUpdateWidget(BarSlot old) {
+    super.didUpdateWidget(old);
+    if (widget.visible == old.visible) return;
+    if (widget.visible) {
+      setState(() => _laid = true);
+      _c.forward();
+    } else {
+      _c.reverse().then((_) {
+        if (mounted && !widget.visible) setState(() => _laid = false);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_laid) return widget.hidden;
+    return ClipRect(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (_, child) {
+          final v = Curves.easeOutCubic.transform(_c.value);
+          return FractionalTranslation(translation: Offset(0, (widget.top ? -1 : 1) * (1 - v)), child: Opacity(opacity: 0.4 + 0.6 * v, child: child));
+        },
+        child: widget.child,
+      ),
+    );
+  }
 }

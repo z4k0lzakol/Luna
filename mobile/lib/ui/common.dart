@@ -2,6 +2,7 @@
 // czarne tło z gwiazdami, płaskie ciemne karty, małe etykiety wersalikami, kremowy przycisk główny.
 import 'dart:math';
 
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
 class C {
@@ -27,6 +28,12 @@ ThemeData lunaTheme() {
     textTheme: base.textTheme.apply(bodyColor: C.text, displayColor: C.text),
     dividerColor: C.border,
     splashFactory: InkRipple.splashFactory,
+    // przejścia między ekranami: krótkie przenikanie z lekkim przesunięciem (jak w Lunie na komputerze);
+    // na iPhonie zostaje systemowe przesuwanie z gestem „wstecz” od krawędzi
+    pageTransitionsTheme: const PageTransitionsTheme(builders: {
+      TargetPlatform.android: _LunaTransitions(),
+      TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+    }),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? const Color(0xFF111111) : C.muted),
       trackColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? C.cream : C.card2),
@@ -40,7 +47,11 @@ class StarField extends StatelessWidget {
   const StarField({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context) => CustomPaint(painter: _Stars(), child: child);
+  Widget build(BuildContext context) => Stack(fit: StackFit.expand, children: [
+        // gwiazdy na osobnej warstwie – nie są przemalowywane, gdy zmienia się zegar czy widgety
+        RepaintBoundary(child: CustomPaint(painter: _Stars())),
+        child,
+      ]);
 }
 
 class _Stars extends CustomPainter {
@@ -213,6 +224,12 @@ class Segmented extends StatelessWidget {
 Future<T?> showLunaSheet<T>(BuildContext context, WidgetBuilder builder, {double heightFactor = 0.86}) {
   return showModalBottomSheet<T>(
     context: context,
+    sheetAnimationStyle: AnimationStyle(
+      duration: const Duration(milliseconds: 280),
+      reverseDuration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      reverseCurve: Curves.easeInCubic,
+    ),
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: C.sheet,
@@ -268,4 +285,23 @@ void toast(BuildContext context, String text) {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: C.border2)),
       duration: const Duration(milliseconds: 2200),
     ));
+}
+
+class _LunaTransitions extends PageTransitionsBuilder {
+  const _LunaTransitions();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 260);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 200);
+
+  @override
+  Widget buildTransitions<T>(PageRoute<T> route, BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
+    final a = CurvedAnimation(parent: animation, curve: Curves.easeOutCubic, reverseCurve: Curves.easeInCubic);
+    return FadeTransition(
+      opacity: a,
+      child: SlideTransition(position: Tween(begin: const Offset(0.06, 0), end: Offset.zero).animate(a), child: child),
+    );
+  }
 }
