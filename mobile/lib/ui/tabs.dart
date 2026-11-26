@@ -139,7 +139,10 @@ class _TabsScreenState extends State<TabsScreen> {
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
                         childAspectRatio: 0.78,
-                        children: [for (final t in (_seg == 0 ? open : priv)) _card(t)],
+                        children: [
+                          for (final (i, t) in (_seg == 0 ? open : priv).indexed)
+                            Reveal(i, key: ValueKey('$_seg-${t.id}'), stepMs: 40, child: _card(t)),
+                        ],
                       ),
               ),
             ]);

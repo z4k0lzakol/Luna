@@ -305,3 +305,69 @@ class _LunaTransitions extends PageTransitionsBuilder {
     );
   }
 }
+
+/// Łagodne pojawienie się (przenikanie i lekki wjazd od dołu) z opóźnieniem zależnym od kolejności –
+/// jak widgety pojawiające się po kolei w Lunie na komputerze.
+class Reveal extends StatefulWidget {
+  final int index;
+  final Widget child;
+  final Offset from;
+  final int stepMs;
+  const Reveal(this.index, {super.key, required this.child, this.from = const Offset(0, 0.08), this.stepMs = 55});
+
+  @override
+  State<Reveal> createState() => _RevealState();
+}
+
+class _RevealState extends State<Reveal> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 420));
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(Duration(milliseconds: widget.stepMs * widget.index.clamp(0, 12)), () {
+      if (mounted) _c.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: _a,
+        child: SlideTransition(position: Tween(begin: widget.from, end: Offset.zero).animate(_a), child: widget.child),
+      );
+}
+
+/// Wjazd nowo pokazanej treści (np. strona po przełączeniu karty, druga strona podziału).
+class EnterAnim extends StatefulWidget {
+  final Widget child;
+  final Offset from;
+  final int ms;
+  const EnterAnim({super.key, required this.child, this.from = const Offset(0, 0.04), this.ms = 280});
+
+  @override
+  State<EnterAnim> createState() => _EnterAnimState();
+}
+
+class _EnterAnimState extends State<EnterAnim> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: Duration(milliseconds: widget.ms))..forward();
+  late final Animation<double> _a = CurvedAnimation(parent: _c, curve: Curves.easeOutCubic);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: Tween(begin: 0.35, end: 1.0).animate(_a),
+        child: SlideTransition(position: Tween(begin: widget.from, end: Offset.zero).animate(_a), child: widget.child),
+      );
+}

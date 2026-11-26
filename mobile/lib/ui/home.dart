@@ -112,27 +112,33 @@ class _HomeViewState extends State<HomeView> {
           );
     final clock = <Widget>[
           SizedBox(height: landscape ? 8 : 48),
-          Center(
-              child: Text('${two(_now.hour)}:${two(_now.minute)}',
-                  style: TextStyle(fontSize: clockSize, fontWeight: FontWeight.w200, letterSpacing: -1.5, height: 1))),
+          // ekran główny pojawia się po kolei: zegar, data, wyszukiwarka, kafelki, widgety (jak na komputerze)
+          Reveal(0,
+              child: Center(
+                  child: Text('${two(_now.hour)}:${two(_now.minute)}',
+                      style: TextStyle(fontSize: clockSize, fontWeight: FontWeight.w200, letterSpacing: -1.5, height: 1)))),
           const SizedBox(height: 6),
-          Center(
-              child: Text('${weekdaysPl[_now.weekday - 1]}, ${_now.day} ${monthsPl[_now.month - 1]}',
-                  style: const TextStyle(fontSize: 15, color: C.muted))),
+          Reveal(1,
+              child: Center(
+                  child: Text('${weekdaysPl[_now.weekday - 1]}, ${_now.day} ${monthsPl[_now.month - 1]}',
+                      style: const TextStyle(fontSize: 15, color: C.muted)))),
           const SizedBox(height: 30),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _searchBox()),
+          Reveal(2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _searchBox())),
           const SizedBox(height: 26),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Wrap(alignment: WrapAlignment.center, spacing: 10, runSpacing: 14, children: [
-              for (final e in s.tiles) _tile(e.title.isEmpty ? '?' : e.title[0].toUpperCase(), e.title, () => widget.onOpen(e.url), () => _tileMenu(e)),
-              _tile('+', 'Dodaj', _addTile, null),
+              for (final (i, e) in s.tiles.indexed)
+                Reveal(3 + i,
+                    from: const Offset(0, 0.25),
+                    child: _tile(e.title.isEmpty ? '?' : e.title[0].toUpperCase(), e.title, () => widget.onOpen(e.url), () => _tileMenu(e))),
+              Reveal(3 + s.tiles.length, from: const Offset(0, 0.25), child: _tile('+', 'Dodaj', _addTile, null)),
             ]),
           ),
     ];
     final widgets = <Widget>[
           if (s.later.isNotEmpty)
-            Padding(
+            Reveal(5, child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 26, 16, 0),
               child: LunaCard(
                 onTap: widget.onLater,
@@ -145,7 +151,7 @@ class _HomeViewState extends State<HomeView> {
                   if (s.later.length > 1) Text('+${s.later.length - 1}', style: const TextStyle(fontSize: 12, color: C.label)),
                 ]),
               ),
-            ),
+            )),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
             child: Column(children: [
@@ -156,13 +162,13 @@ class _HomeViewState extends State<HomeView> {
               const SizedBox(height: 8),
               IntrinsicHeight(
                 child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  if (s.weatherOn) Expanded(child: WeatherSmall(s)),
+                  if (s.weatherOn) Expanded(child: Reveal(6, child: WeatherSmall(s))),
                   if (s.weatherOn) const SizedBox(width: 10),
-                  Expanded(child: StreakSmall(s)),
+                  Expanded(child: Reveal(7, child: StreakSmall(s))),
                 ]),
               ),
               const SizedBox(height: 10),
-              TasksCard(s, compact: true),
+              Reveal(8, child: TasksCard(s, compact: true)),
             ]),
           ),
     ];

@@ -59,6 +59,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   String? _sTop, _sBot; // dwie strony: górna i dolna
   double _ratio = 0.5;
+  double _dir = 0; // kierunek wjazdu strony po przełączeniu karty (-1 / 0 / 1)
 
   late final UnmodifiableListView<UserScript> _scripts = UnmodifiableListView([
     UserScript(source: youtubeScript, injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START, forMainFrameOnly: true),
@@ -296,7 +297,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
   }
 
   Widget _page(TabData t, {bool bottomPane = false}) =>
-      KeyedSubtree(key: _keys.putIfAbsent(t.id, () => GlobalKey()), child: _frame(t, bottomPane: bottomPane));
+      // osobny klucz dla każdej orientacji: po obrocie telefonu strona dostaje nowy widok (Android nie przenosi widoku
+      // strony w trybie tekstury do zupełnie innego układu – zostawał czarny ekran); strona wczytuje się wtedy od nowa
+      KeyedSubtree(
+          key: _keys.putIfAbsent('${t.id}-${MediaQuery.of(context).orientation.name}', () => GlobalKey()),
+          child: _frame(t, bottomPane: bottomPane));
 
   Widget _content(TabData cur) {
     final shown = <String>{};
@@ -321,7 +326,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   width: 22,
                   child: Center(child: Container(width: 5, height: 44, decoration: BoxDecoration(color: const Color(0xFF6A6A6A), borderRadius: BorderRadius.circular(3))))),
             ),
-            Expanded(child: _page(bot, bottomPane: true)),
+            Expanded(child: EnterAnim(key: ValueKey('split-${bot.id}'), from: const Offset(0.25, 0), ms: 340, child: _page(bot, bottomPane: true))),
           ]);
         }
         return Column(children: [
@@ -341,12 +346,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   child: Center(child: Container(width: 44, height: 5, decoration: BoxDecoration(color: const Color(0xFF6A6A6A), borderRadius: BorderRadius.circular(3))))),
             ),
           ),
-          Expanded(child: _page(bot, bottomPane: true)),
+          Expanded(child: EnterAnim(key: ValueKey('split-${bot.id}'), from: const Offset(0, 0.25), ms: 340, child: _page(bot, bottomPane: true))),
         ]);
       });
     } else {
       shown.add(cur.id);
-      main = _page(cur);
+      main = EnterAnim(key: ValueKey('main-${cur.id}'), from: Offset(_dir * 0.06, 0), child: _page(cur));
     }
     final hidden = [for (final id in _alive) if (!shown.contains(id)) s.byId(id)].whereType<TabData>().where((t) => !t.isHome).toList();
     return Stack(children: [
@@ -845,7 +850,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return GestureDetector(
       onHorizontalDragEnd: (d) {
         final v = d.primaryVelocity ?? 0;
-        if (v.abs() > 350) s.step(v < 0 ? 1 : -1);
+        if (v.abs() > 350) {
+          _dir = v < 0 ? 1 : -1;
+          s.step(v < 0 ? 1 : -1);
+          Future.delayed(const Duration(milliseconds: 400), () => _dir = 0);
+        }
       },
       onVerticalDragEnd: (d) {
         if ((d.primaryVelocity ?? 0) < -350) _openTabs();
@@ -857,11 +866,20 @@ class _BrowserScreenState extends State<BrowserScreen> {
     );
   }
 
+  Orientation? _orient;
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
         animation: s,
         builder: (ctx, _) {
           final cur = s.current;
+          final o = MediaQuery.of(context).orientation;
+          if (_orient != null && _orient != o) {
+            _ctls.clear();
+            _ptr.clear();
+            _keys.removeWhere((k, _) => !k.endsWith('-${o.name}'));
+          }
+          _orient = o;
           if (!cur.isHome) _touch(cur.id);
           if (_split) {
             _touch(_sTop!);

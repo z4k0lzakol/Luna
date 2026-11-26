@@ -100,13 +100,16 @@ class _MenuSheetState extends State<MenuSheet> {
         if (found.isEmpty) const Padding(padding: EdgeInsets.all(16), child: Text('Nic nie znaleziono', style: TextStyle(color: C.muted))),
         _grid(found),
       ] else ...[
-        _grid(_top),
-        for (final s in _sections) ...[
-          const SizedBox(height: 10),
-          SectionLabel(s.$1),
-          const SizedBox(height: 6),
-          _grid(s.$2),
-        ],
+        Reveal(0, stepMs: 35, child: _grid(_top)),
+        for (final (i, s) in _sections.indexed)
+          Reveal(i + 1,
+              stepMs: 35,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                const SizedBox(height: 10),
+                SectionLabel(s.$1),
+                const SizedBox(height: 6),
+                _grid(s.$2),
+              ])),
         if (widget.onPage) ...[
           const SizedBox(height: 10),
           Container(

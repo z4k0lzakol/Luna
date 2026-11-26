@@ -321,7 +321,7 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
               const Text('Widgety', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w500)),
             ]),
             const SizedBox(height: 8),
-            LunaCard(
+            Reveal(0, child: LunaCard(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const _CardHead('ZEGAR'),
                 const SizedBox(height: 6),
@@ -333,10 +333,10 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                 Text('${weekdaysPl[_now.weekday - 1]}, ${_now.day} ${monthsPl[_now.month - 1]} ${_now.year}',
                     style: const TextStyle(fontSize: 13, color: C.muted)),
               ]),
-            ),
+            )),
             const SizedBox(height: 12),
             if (s.weatherOn)
-              ValueListenableBuilder<WeatherData?>(
+              Reveal(1, child: ValueListenableBuilder<WeatherData?>(
                 valueListenable: Weather.instance.data,
                 builder: (ctx, w, _) => LunaCard(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -376,11 +376,11 @@ class _WidgetsScreenState extends State<WidgetsScreen> {
                     const Text('Dane pogodowe: Open-Meteo.com (CC BY 4.0)', style: TextStyle(fontSize: 11, color: Color(0xFF6F6F6F))),
                   ]),
                 ),
-              ),
+              )),
             if (s.weatherOn) const SizedBox(height: 12),
-            StreakSmall(s),
+            Reveal(2, child: StreakSmall(s)),
             const SizedBox(height: 12),
-            TasksCard(s),
+            Reveal(3, child: TasksCard(s)),
           ]),
         ),
       ),
