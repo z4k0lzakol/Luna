@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Luna – lekka, ciemna przeglądarka dla Windows, Linuksa i macOS</title>
-<meta name="description" content="Luna to lekka, ciemna przeglądarka dla Windows, Linuksa i macOS z kafelkami, widgetami, podziałem ekranu, wbudowaną blokadą reklam i asystentem AI.">
-<meta property="og:title" content="Luna – lekka, ciemna przeglądarka dla Windows, Linuksa i macOS">
+<title>Luna – lekka, ciemna przeglądarka dla Windows, Linuksa, macOS i Androida</title>
+<meta name="description" content="Luna to lekka, ciemna przeglądarka dla Windows, Linuksa, macOS i Androida z kafelkami, widgetami, podziałem ekranu, wbudowaną blokadą reklam i asystentem AI.">
+<meta property="og:title" content="Luna – lekka, ciemna przeglądarka dla Windows, Linuksa, macOS i Androida">
 <meta property="og:description" content="Kafelki, widgety, podział ekranu, blokada reklam i AI obok strony – w jednym oknie.">
 <meta property="og:image" content="img/home.jpg">
 <link rel="icon" href="favicon.ico" sizes="any">
@@ -155,7 +155,7 @@
 
 <header class="hero">
   <div class="wrap">
-    <span class="pill">Windows · Linux · macOS · po polsku · bez kont i serwerów</span>
+    <span class="pill">Windows · Linux · macOS · Android · po polsku · bez kont i serwerów</span>
     <h1>Przeglądarka, która mieści<br>cały Twój dzień w jednym oknie</h1>
     <p class="motto">Przejrzysta jak gwieździste niebo.</p>
     <p style="margin:0 0 14px;font-size:14px;color:#8c8c8c">Projekt jednoosobowy</p>
@@ -164,7 +164,7 @@
     <div class="cta">
       <a class="btn primary" href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Windows-Setup.exe">Pobierz Lunę dla Windows</a>
       <a class="btn" href="#film">Zobacz film</a>
-      <a class="btn" href="#uruchom">Linux i macOS</a>
+      <a class="btn" href="#uruchom">Linux, macOS i Android</a>
     </div>
     <div class="shot"><img src="img/home.jpg" alt="Ekran główny Luny: zegar, wyszukiwarka i kafelki na tle nocnego nieba, a po bokach widgety serii, zadań, zegara, pogody i rynków" width="1440" height="900"></div>
   </div>
@@ -264,7 +264,7 @@
 <section id="uruchom">
   <div class="wrap">
     <h2>Pobierz i zainstaluj</h2>
-    <p class="sub">Gotowe pliki dla Windows, Linuksa i macOS – bez instalowania Pythona. Wszystkie są na stronie
+    <p class="sub">Gotowe pliki dla Windows, Linuksa, macOS i Androida – bez instalowania Pythona. Wszystkie są na stronie
       <a href="https://github.com/z4k0lzakol/Luna/releases/latest">najnowszego wydania</a>.</p>
     <div class="grid">
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/></svg></div>
@@ -297,12 +297,13 @@ python luna.py<button class="copy">Kopiuj</button></div>
     <div class="road">
       <div class="phase now"><span class="tag">Teraz</span><h3>Luna 1.0</h3><ul>
         <li>instalator Windows, AppImage dla Linuksa, .dmg dla macOS,</li><li>podział ekranu, profile, AI, komunikatory,</li>
-        <li>blokada reklam, hasła, 2FA,</li><li>nowy wygląd, dźwięki i automatyczne aktualizacje.</li></ul></div>
+        <li>blokada reklam, hasła, 2FA,</li><li>nowy wygląd, dźwięki i automatyczne aktualizacje,</li>
+        <li>Luna na Androida (wersja testowa).</li></ul></div>
       <div class="phase"><span class="tag">Wkrótce</span><h3>Podpis i wygoda</h3><ul>
         <li>podpis cyfrowy (bez ostrzeżeń przy instalacji),</li>
         <li>jasny motyw i kolor akcentu.</li></ul></div>
       <div class="phase"><span class="tag">Później</span><h3>Luna na telefon</h3><ul>
-        <li>aplikacja na Androida,</li><li>aplikacja na iPhone'a i iPada,</li>
+        <li>aplikacja na iPhone'a i iPada,</li><li>pełna wersja na Androida w Sklepie Play,</li>
         <li>połączenie z komputerem kodem QR.</li></ul></div>
     </div>
     <div class="flow"><span class="box">Pobierz Lunę</span><span class="arr">→</span>
@@ -318,9 +319,10 @@ python luna.py<button class="copy">Kopiuj</button></div>
       <p>Luna wyświetla strony silnikiem Chromium (przez Qt WebEngine), więc strony działają jak w Chrome. Nie ma w niej usług ani kont
         Google – interfejs, blokada reklam, hasła i wszystkie funkcje są własne.</p></details>
     <details><summary>Kto tworzy Lunę?</summary>
-      <p>Jedna osoba – <a href="https://github.com/z4k0lzakol">z4k0lzakol</a>. Każda zmiana przechodzi automatyczne testy,
-        a wydania są budowane i sprawdzane na GitHubie – ale to projekt hobbystyczny, nie zespół programistów. Błędy zgłaszaj na
-        <a href="https://github.com/z4k0lzakol/Luna/issues">GitHubie</a>, a ważne dane trzymaj też w kopii zapasowej.</p></details>
+      <p>Jeden autor – <a href="https://github.com/z4k0lzakol">z4k0lzakol</a>, który odpowiada za kod, przegląd zmian i wydania.
+        Jakości pilnują automatyczne testy uruchamiające prawdziwą Lunę oraz testy uruchomienia i instalacji każdego wydania na GitHubie.
+        Program jest udostępniany bez gwarancji, więc ważne dane warto mieć także w kopii zapasowej. Błędy zgłaszaj na
+        <a href="https://github.com/z4k0lzakol/Luna/issues">GitHubie</a>.</p></details>
     <details><summary>Czy Luna jest darmowa?</summary>
       <p>Tak. Luna jest wolnym oprogramowaniem na licencji GNU GPL v3: bez opłat, reklam i zbierania danych. Możesz ją też zmieniać
         i udostępniać dalej na warunkach licencji. Szczegóły w <a href="regulamin.html">regulaminie</a>.</p></details>
@@ -345,7 +347,9 @@ python luna.py<button class="copy">Kopiuj</button></div>
       <p>Tak – są gotowe pliki: AppImage dla Linuksa i .dmg dla macOS (Apple M1 i nowsze). To pierwsze wydania na tych systemach;
         część funkcji powstała z myślą o Windows (np. sterowanie odtwarzaczami przez system), więc mogą działać inaczej.</p></details>
     <details><summary>A na telefonie?</summary>
-      <p>Jeszcze nie. Aplikacja na Androida i iPhone'a jest w planach – w tym samym wyglądzie, z Twoimi danymi z komputera dzięki synchronizacji.</p></details>
+      <p>Tak, na Androida – w wersji testowej: pobierz <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk"><code>Luna-Android.apk</code></a>
+        na telefonie. Ten sam wygląd, karty i przestrzenie, menu, asystent AI, komunikatory, widgety i blokada reklam. Wersja na iPhone'a
+        jest gotowa w kodzie i pojawi się po uzyskaniu podpisu Apple.</p></details>
   </div>
 </section>
 

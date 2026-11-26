@@ -16,8 +16,16 @@
 <p align="center"><sub>A one-person project · interface in Polish · <a href="#about-the-project">more</a></sub></p>
 
 <p align="center">
+  <a href="https://github.com/z4k0lzakol/Luna/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/z4k0lzakol/Luna?label=release&color=f3efe6&labelColor=1b1b1b"></a>
+  <a href="https://github.com/z4k0lzakol/Luna/actions/workflows/release.yml"><img alt="Build" src="https://img.shields.io/github/actions/workflow/status/z4k0lzakol/Luna/release.yml?label=build&labelColor=1b1b1b"></a>
+  <a href="LICENSE"><img alt="License GPL v3" src="https://img.shields.io/badge/license-GPL%20v3-f3efe6?labelColor=1b1b1b"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS%20%C2%B7%20Android-f3efe6?labelColor=1b1b1b">
+</p>
+
+<p align="center">
   <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Windows-Setup.exe"><b>Download for Windows</b></a> ·
   <a href="https://github.com/z4k0lzakol/Luna/releases/latest">Linux and macOS</a> ·
+  <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk">Android</a> ·
   <a href="https://z4k0lzakol.github.io/Luna/en/#film">Film</a> ·
   <a href="#how-to-install">How to install</a> ·
   <a href="#what-it-can-do">What it can do</a> ·
@@ -130,6 +138,7 @@
 | **Windows 10 / 11** | `Luna-Windows.zip` | Unzip it (right-click → **Extract All**) and run `Luna.exe`. Luna will offer to install itself: a Start menu and desktop shortcut, and uninstalling from Windows Settings. There's also a classic installer, `Luna-Windows-Setup.exe`. |
 | **Linux** (x86_64) | `Luna-Linux-x86_64.AppImage` | Make it executable (`chmod +x`) and double-click to run. A `.tar.gz` archive is also available. |
 | **macOS** (Apple M1 and newer) | `Luna-macOS-arm64.dmg` | Open it and drag Luna into Applications. The first time: right-click → **Open**. |
+| **Android** 7 and newer (preview) | `Luna-Android.apk` | Download it on your phone and open it – Android will ask you to allow installing apps from outside the Play Store. |
 
 **Smart App Control (Windows 11):** if you have it turned on, Windows will block the released Luna for now – this feature doesn't allow new programs without a digital signature to run, and Luna doesn't have one yet (signing is in the works). Until then, run Luna from source (see below) – that way it isn't blocked.
 
@@ -177,11 +186,25 @@ Plans for upcoming versions:
 - [x] **Installer** for Windows, AppImage for Linux and a .dmg image for macOS – no Python needed.
 - [x] **Releases on GitHub** – every version with instructions and downloadable files; Luna detects new releases by itself.
 - [ ] **Digital signature** – Windows and macOS will no longer show warnings on first launch.
-- [ ] **Luna on your phone** – an Android and iPhone app with the same look, plus sync.
+- [x] **Luna for Android** (preview, [`mobile/`](mobile/)) – home screen with widgets, tabs and spaces, menu sheet, AI assistant and messengers, two pages on screen, search suggestions, landscape layout and ad blocking.
+- [ ] **Luna for iPhone and iPad** – the app is ready in the code; publishing it requires an Apple signature.
+- [ ] **Pairing your phone with your computer** – bookmarks and tabs via QR code, without Luna servers.
 - [x] **Luna as your default browser** – links from email and other programs open in Luna.
 - [ ] **Light theme and accent color**, an archive of old tabs, a portable version (for a USB stick).
 
 Installation goes like this: **download → install → the tour brings over your data from your previous browser** – and that's it.
+
+## Technology and development
+
+| Part | Technology |
+|---|---|
+| Luna for desktop | Python 3.12+, PyQt6 and Qt WebEngine (Chromium engine) – one program for Windows, Linux and macOS |
+| Ad blocking | its own engine compatible with the uBlock Origin / Adblock Plus list syntax (`adblock/`): network rules, cosmetic rules and page scripts |
+| Luna for phones | Flutter (Dart), pages rendered by the system engine: Android WebView, WebKit on iPhone (`mobile/`) |
+| Releases | GitHub Actions: tagging a version `v…` builds Windows, Linux, macOS and Android packages; every build passes a launch test, and the Windows installer an install/uninstall test |
+| Project website | GitHub Pages (`docs/`) |
+
+**Tests.** `python tests/test_site_features.py` runs a real Luna on a temporary profile and checks more than 120 features; the ad-blocking engine has its own tests in `tests/adblock/`, and the phone app is checked with `flutter analyze`. How to contribute: [contributing guide](CONTRIBUTING.md) (in Polish).
 
 ## Code signing policy
 
@@ -207,11 +230,11 @@ Terms of use: [terms](https://z4k0lzakol.github.io/Luna/regulamin.html) (in Poli
 
 ## About the project
 
-**Luna is a one-person project** – it's made by one person, [z4k0lzakol](https://github.com/z4k0lzakol). Every change goes through automated tests (a real Luna on a temporary profile), and releases are built and checked on GitHub – but this is a hobby project, not a team of developers. [Report](https://github.com/z4k0lzakol/Luna/issues/new/choose) bugs, and keep a backup of anything important.
+Luna is developed by a single maintainer – [z4k0lzakol](https://github.com/z4k0lzakol), who is responsible for the code, reviews and releases. Quality is guarded by automated tests that run a real Luna, tests of the ad-blocking engine, and launch and install tests of every release on GitHub. The software is provided without warranty (GNU GPL v3), so keep a backup of anything important. Report bugs and ideas through [GitHub issues](https://github.com/z4k0lzakol/Luna/issues/new/choose).
 
 ## Contributing
 
-Found a bug or have an idea? Open an [issue](https://github.com/z4k0lzakol/Luna/issues/new/choose). Guidelines (in Polish): [how to help](CONTRIBUTING.md) · [code of conduct](CODE_OF_CONDUCT.md) · report security vulnerabilities privately – [security](SECURITY.md).
+Have an idea or spotted a bug? Open an [issue](https://github.com/z4k0lzakol/Luna/issues/new/choose). Guidelines (in Polish): [how to help](CONTRIBUTING.md) · [code of conduct](CODE_OF_CONDUCT.md) · report security vulnerabilities privately – [security](SECURITY.md).
 
 ## Privacy
 

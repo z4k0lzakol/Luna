@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Luna – a light, dark browser for Windows, Linux and macOS</title>
-<meta name="description" content="Luna is a light, dark web browser for Windows, Linux and macOS with tiles, widgets, split screen, built-in ad blocking and an AI assistant.">
-<meta property="og:title" content="Luna – a light, dark browser for Windows, Linux and macOS">
+<title>Luna – a light, dark browser for Windows, Linux, macOS and Android</title>
+<meta name="description" content="Luna is a light, dark web browser for Windows, Linux, macOS and Android with tiles, widgets, split screen, built-in ad blocking and an AI assistant.">
+<meta property="og:title" content="Luna – a light, dark browser for Windows, Linux, macOS and Android">
 <meta property="og:description" content="Tiles, widgets, split screen, ad blocking and AI next to the page – all in one window.">
 <meta property="og:image" content="../img/home.jpg">
 <link rel="icon" href="../favicon.ico" sizes="any">
@@ -157,7 +157,7 @@
 
 <header class="hero">
   <div class="wrap">
-    <span class="pill">Windows · Linux · macOS · interface in Polish · no accounts, no servers</span>
+    <span class="pill">Windows · Linux · macOS · Android · interface in Polish · no accounts, no servers</span>
     <h1>The browser that fits<br>your whole day in one window</h1>
     <p class="motto">A browser as clear as a starry sky.</p>
     <p style="margin:0 0 14px;font-size:14px;color:#8c8c8c">A one-person project</p>
@@ -166,7 +166,7 @@
     <div class="cta">
       <a class="btn primary" href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Windows-Setup.exe">Download Luna for Windows</a>
       <a class="btn" href="#film">Watch the film</a>
-      <a class="btn" href="#uruchom">Linux and macOS</a>
+      <a class="btn" href="#uruchom">Linux, macOS and Android</a>
     </div>
     <div class="shot"><img src="../img/home.jpg" alt="Luna's home screen: a clock, search box and tiles against a night sky, with streak, tasks, clock, weather and markets widgets on the sides" width="1440" height="900"></div>
   </div>
@@ -266,7 +266,7 @@
 <section id="uruchom">
   <div class="wrap">
     <h2>Download and install</h2>
-    <p class="sub">Ready-made builds for Windows, Linux and macOS – no Python needed. You'll find them all on the
+    <p class="sub">Ready-made builds for Windows, Linux, macOS and Android – no Python needed. You'll find them all on the
       <a href="https://github.com/z4k0lzakol/Luna/releases/latest">latest release</a> page.</p>
     <div class="grid">
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="7" rx="1"/><rect x="13" y="4" width="8" height="7" rx="1"/><rect x="3" y="13" width="8" height="7" rx="1"/><rect x="13" y="13" width="8" height="7" rx="1"/></svg></div>
@@ -275,6 +275,8 @@
         <h3>Linux</h3><p>Download <code>Luna-Linux-x86_64.AppImage</code>, make it executable (<code>chmod +x</code>) and double-click to run.</p></div>
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M15 4c-1.2.1-2.5.9-3 2 1.3 0 2.6-.8 3-2zM12 8c-1.5 0-2.3-.8-3.7-.8C6.4 7.2 5 8.8 5 11.5 5 15.3 7.6 20 9.6 20c1 0 1.4-.6 2.5-.6s1.4.6 2.5.6c1.4 0 3-2.3 3.6-4.2-1.6-.7-2.4-2.1-2.4-3.6 0-1.4.8-2.6 1.9-3.3-.8-1-1.9-1.6-3.1-1.6-1.4 0-2 .7-2.1.7z"/></svg></div>
         <h3>macOS</h3><p>Download <code>Luna-macOS-arm64.dmg</code> (Apple M1 and newer) and drag Luna into Applications. The first time: right-click → Open.</p></div>
+      <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 18.5h4"/></svg></div>
+        <h3>Android (preview)</h3><p>On your phone, download <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk"><code>Luna-Android.apk</code></a> and open it – Android will ask you to allow installing from outside the Play Store. An iPhone version will follow (it requires an Apple signature).</p></div>
     </div>
     <p class="note"><b>Smart App Control (Windows 11):</b> if you have it turned on, Windows will block the released Luna for now – it doesn't allow new programs without a digital signature to run, and Luna's signature is still in the works. Until then, run Luna from source (see below). Without a signature, Windows may show “Windows protected your PC” on first launch
       (click <b>More info → Run anyway</b>), and macOS may warn about an unidentified developer. The first launch opens a tour
@@ -297,12 +299,13 @@ python luna.py<button class="copy">Copy</button></div>
     <div class="road">
       <div class="phase now"><span class="tag">Now</span><h3>Luna 1.0</h3><ul>
         <li>Windows installer, AppImage for Linux, .dmg for macOS,</li><li>split screen, profiles, AI, messengers,</li>
-        <li>ad blocking, passwords, 2FA,</li><li>a new look, sounds and auto-update.</li></ul></div>
+        <li>ad blocking, passwords, 2FA,</li><li>a new look, sounds and auto-update,</li>
+        <li>Luna for Android (preview).</li></ul></div>
       <div class="phase"><span class="tag">Soon</span><h3>Signing and comfort</h3><ul>
         <li>a digital signature (no more install warnings),</li>
         <li>a light theme and accent color.</li></ul></div>
       <div class="phase"><span class="tag">Later</span><h3>Luna on your phone</h3><ul>
-        <li>an Android app,</li><li>an app for iPhone and iPad,</li>
+        <li>an app for iPhone and iPad,</li><li>the full Android version on Google Play,</li>
         <li>pairing with your computer via QR code.</li></ul></div>
     </div>
     <div class="flow"><span class="box">Download Luna</span><span class="arr">→</span>
@@ -321,9 +324,10 @@ python luna.py<button class="copy">Copy</button></div>
       <p>Luna renders pages with the Chromium engine (via Qt WebEngine), so websites work just like in Chrome. But there are no Google
         services or accounts inside – the interface, ad blocking, passwords and every feature are Luna's own.</p></details>
     <details><summary>Who makes Luna?</summary>
-      <p>One person – <a href="https://github.com/z4k0lzakol">z4k0lzakol</a>. Every change goes through automated tests,
-        and releases are built and checked on GitHub – but this is a hobby project, not a team of developers. Report bugs on
-        <a href="https://github.com/z4k0lzakol/Luna/issues">GitHub</a>, and keep a backup of anything important.</p></details>
+      <p>A single maintainer – <a href="https://github.com/z4k0lzakol">z4k0lzakol</a>, who is responsible for the code, reviews and releases.
+        Quality is guarded by automated tests that run a real Luna, and by launch and install tests of every release on GitHub.
+        The software is provided without warranty, so keep a backup of anything important. Report bugs on
+        <a href="https://github.com/z4k0lzakol/Luna/issues">GitHub</a>.</p></details>
     <details><summary>Is Luna free?</summary>
       <p>Yes. Luna is free software under the GNU GPL v3: no fees, no ads, no data collection. You can also modify
         and share it under the terms of the license. Details in the <a href="../regulamin.html">terms of use</a> (in Polish).</p></details>
@@ -348,7 +352,9 @@ python luna.py<button class="copy">Copy</button></div>
       <p>Yes – there are ready-made builds: an AppImage for Linux and a .dmg for macOS (Apple M1 and newer). These are the first releases for those systems;
         some features were designed with Windows in mind (e.g. controlling media players through the system), so they may behave differently.</p></details>
     <details><summary>What about phones?</summary>
-      <p>Not yet. An app for Android and iPhone is planned – with the same look, and your data from your computer thanks to sync.</p></details>
+      <p>Yes, on Android – as a preview: download <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk"><code>Luna-Android.apk</code></a>
+        on your phone. The same look, tabs and spaces, menu, AI assistant, messengers, widgets and ad blocking. The iPhone version is
+        ready in the code and will follow once it has an Apple signature.</p></details>
   </div>
 </section>
 

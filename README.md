@@ -16,8 +16,16 @@
 <p align="center"><sub>Projekt jednoosobowy · <a href="#o-projekcie">więcej</a></sub></p>
 
 <p align="center">
+  <a href="https://github.com/z4k0lzakol/Luna/releases/latest"><img alt="Najnowsze wydanie" src="https://img.shields.io/github/v/release/z4k0lzakol/Luna?label=wydanie&color=f3efe6&labelColor=1b1b1b"></a>
+  <a href="https://github.com/z4k0lzakol/Luna/actions/workflows/release.yml"><img alt="Budowanie" src="https://img.shields.io/github/actions/workflow/status/z4k0lzakol/Luna/release.yml?label=budowanie&labelColor=1b1b1b"></a>
+  <a href="LICENSE"><img alt="Licencja GPL v3" src="https://img.shields.io/badge/licencja-GPL%20v3-f3efe6?labelColor=1b1b1b"></a>
+  <img alt="Platformy" src="https://img.shields.io/badge/platformy-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS%20%C2%B7%20Android-f3efe6?labelColor=1b1b1b">
+</p>
+
+<p align="center">
   <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Windows-Setup.exe"><b>Pobierz dla Windows</b></a> ·
   <a href="https://github.com/z4k0lzakol/Luna/releases/latest">Linux i macOS</a> ·
+  <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk">Android</a> ·
   <a href="https://z4k0lzakol.github.io/Luna/#film">Film</a> ·
   <a href="#jak-zainstalować">Jak zainstalować</a> ·
   <a href="#co-potrafi">Co potrafi</a> ·
@@ -130,6 +138,7 @@
 | **Windows 10 / 11** | `Luna-Windows.zip` | Rozpakuj (prawy przycisk → **Wyodrębnij wszystkie**) i uruchom `Luna.exe`. Luna sama zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. Jest też klasyczny instalator `Luna-Windows-Setup.exe`. |
 | **Linux** (x86_64) | `Luna-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. Jest też archiwum `.tar.gz`. |
 | **macOS** (Apple M1 i nowsze) | `Luna-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → **Otwórz**. |
+| **Android** 7 i nowsze (wersja testowa) | `Luna-Android.apk` | Pobierz na telefonie i otwórz – Android zapyta o zgodę na instalację spoza Sklepu Play. |
 
 **Inteligentna kontrola aplikacji (Windows 11):** jeśli jest u Ciebie włączona, Windows na razie zablokuje Lunę z wydania – ta funkcja nie pozwala uruchamiać nowych programów bez podpisu cyfrowego, a Luna jeszcze go nie ma (podpis jest w przygotowaniu). Do tego czasu uruchom Lunę z kodu źródłowego (poniżej) – tak działa bez blokady.
 
@@ -177,11 +186,25 @@ Plany na kolejne wersje:
 - [x] **Instalator** dla Windows, AppImage dla Linuksa i obraz .dmg dla macOS – bez instalowania Pythona.
 - [x] **Wydania na GitHubie** – każda wersja z instrukcją i plikami do pobrania; Luna sama wykrywa nowe wydania.
 - [ ] **Podpis cyfrowy** – Windows i macOS nie pokażą już ostrzeżeń przy pierwszym uruchomieniu.
-- [ ] **Luna na telefon** – wersja testowa w folderze [`mobile/`](mobile/) (Flutter, Android i iOS): ekran główny z widgetami, karty i przestrzenie, menu w arkuszu, asystent AI i komunikatory, dwie strony na ekranie, podpowiedzi wyszukiwania, układ poziomy i blokada reklam. Plik APK dla Androida buduje GitHub; na iPhone'a potrzebne jest jeszcze konto Apple Developer.
+- [x] **Luna na Androida** (wersja testowa, [`mobile/`](mobile/)) – ekran główny z widgetami, karty i przestrzenie, menu w arkuszu, asystent AI i komunikatory, dwie strony na ekranie, podpowiedzi wyszukiwania, układ poziomy i blokada reklam.
+- [ ] **Luna na iPhone'a i iPada** – aplikacja jest gotowa w kodzie; do udostępnienia potrzebny jest podpis Apple.
+- [ ] **Połączenie telefonu z komputerem** – zakładki i karty przez kod QR, bez serwerów Luny.
 - [x] **Luna jako domyślna przeglądarka** – linki z poczty i innych programów otwierają się w Lunie.
 - [ ] **Jasny motyw i kolor akcentu**, archiwum starych kart, wersja przenośna (na pendrive).
 
 Instalacja wygląda tak: **pobierz → zainstaluj → przewodnik przenosi Twoje dane z poprzedniej przeglądarki** – i to wszystko.
+
+## Technologie i rozwój
+
+| Część | Technologia |
+|---|---|
+| Luna na komputer | Python 3.12+, PyQt6 i Qt WebEngine (silnik Chromium) – jeden program na Windows, Linuksa i macOS |
+| Blokada reklam | własny silnik zgodny ze składnią list uBlock Origin / Adblock Plus (`adblock/`), reguły sieciowe, kosmetyczne i skrypty stron |
+| Luna na telefon | Flutter (Dart), strony w systemowym silniku: Android WebView, na iPhonie WebKit (`mobile/`) |
+| Wydania | GitHub Actions: po oznaczeniu wersji tagiem `v…` powstają pliki dla Windows, Linuksa, macOS i Androida; każdy build przechodzi test uruchomienia, a instalator Windows – test instalacji i odinstalowania |
+| Strona projektu | GitHub Pages (`docs/`) |
+
+**Testy.** `python tests/test_site_features.py` uruchamia prawdziwą Lunę na tymczasowym profilu i sprawdza ponad 120 funkcji; silnik blokady ma osobne testy w `tests/adblock/`, a aplikację na telefon sprawdza `flutter analyze`. Zasady zgłaszania zmian: [jak pomóc](CONTRIBUTING.md).
 
 ## Code signing policy
 
@@ -207,11 +230,11 @@ Zasady korzystania: [regulamin](https://z4k0lzakol.github.io/Luna/regulamin.html
 
 ## O projekcie
 
-**Luna to projekt jednoosobowy** – tworzy go jedna osoba, [z4k0lzakol](https://github.com/z4k0lzakol). Każda zmiana przechodzi automatyczne testy (prawdziwa Luna na tymczasowym profilu), a wydania są budowane i sprawdzane na GitHubie – ale to projekt hobbystyczny, nie zespół programistów. [Zgłaszaj](https://github.com/z4k0lzakol/Luna/issues/new/choose) błędy, a ważne dane trzymaj też w kopii zapasowej.
+Lunę rozwija jeden autor – [z4k0lzakol](https://github.com/z4k0lzakol), który odpowiada za kod, przegląd zmian i wydania. Jakości pilnują automatyczne testy uruchamiające prawdziwą Lunę, testy silnika blokady oraz testy uruchomienia i instalacji każdego wydania na GitHubie. Program jest udostępniany bez gwarancji (GNU GPL v3), dlatego ważne dane warto mieć także w kopii zapasowej. Błędy i pomysły zgłaszaj przez [zgłoszenia na GitHubie](https://github.com/z4k0lzakol/Luna/issues/new/choose).
 
 ## Współpraca
 
-Znalazłeś błąd albo masz pomysł? Otwórz [zgłoszenie](https://github.com/z4k0lzakol/Luna/issues/new/choose). Zasady: [jak pomóc](CONTRIBUTING.md) · [kodeks postępowania](CODE_OF_CONDUCT.md) · luki bezpieczeństwa zgłaszaj prywatnie – [bezpieczeństwo](SECURITY.md).
+Masz pomysł albo zauważyłeś błąd? Otwórz [zgłoszenie](https://github.com/z4k0lzakol/Luna/issues/new/choose). Zasady: [jak pomóc](CONTRIBUTING.md) · [kodeks postępowania](CODE_OF_CONDUCT.md) · luki bezpieczeństwa zgłaszaj prywatnie – [bezpieczeństwo](SECURITY.md).
 
 ## Prywatność
 
@@ -219,4 +242,4 @@ Luna działa w całości na Twoim komputerze i nie ma własnych serwerów. Logow
 
 ---
 
-<p align="center"><sub>Luna · silnik Chromium przez Qt WebEngine · napisana w Pythonie (PyQt6)</sub></p>
+<p align="center"><sub>Luna · komputer: Python, PyQt6 i Qt WebEngine (Chromium) · telefon: Flutter · licencja GNU GPL v3</sub></p>
