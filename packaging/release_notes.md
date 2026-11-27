@@ -1,10 +1,10 @@
-## Co nowego w 1.0.11
+## Co nowego w 1.0.12
 
-- **Luna na Androida: poprawka obrotu ekranu** – po obróceniu telefonu strona nie zostaje już czarna.
-- **Luna na Androida: animacje jak na komputerze** – ekran główny, widgety, karty i menu pojawiają się po kolei, druga strona podziału wjeżdża, a strona po przełączeniu karty wsuwa się z boku.
-- **Luna na Androida: płynniejsze animacje** – pasek, arkusze i przejścia działają kilka razy płynniej niż w 1.0.10.
+- **macOS: Luna aktualizuje się sama** – pobiera nową wersję w tle, sprawdza jej sumę kontrolną i instaluje ją przy zamknięciu (albo od razu po kliknięciu). Ostrzeżenie Apple trzeba więc ominąć tylko raz, przy pierwszej instalacji.
+- **macOS: instrukcja w obrazie .dmg** – okno instalatora pokazuje, jak otworzyć Lunę bez podpisu Apple, a obok leży plik „Jak otworzyć Lunę.txt”.
+- **macOS: instalacja jednym poleceniem** – w Terminalu, bez ostrzeżenia „nie została otwarta” (polecenie niżej).
 
-W 1.0.10: pierwsza wersja Luny na Androida (`Luna-Android.apk`) i logo komunikatorów oraz usług AI.
+W 1.0.11: poprawka obrotu ekranu i płynniejsze animacje w Lunie na Androida.
 
 Wersja na iPhone'a jest gotowa w kodzie, ale do instalacji potrzebny jest podpis Apple (konto Apple Developer) – pojawi się później.
 
