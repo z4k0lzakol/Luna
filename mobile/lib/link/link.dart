@@ -23,8 +23,8 @@ String b64u(List<int> b) => base64Url.encode(b).replaceAll('=', '');
 List<int> unb64u(String s) => base64Url.decode(s + '=' * ((4 - s.length % 4) % 4));
 String fingerprintDer(List<int> der) => crypto.sha256.convert(der).toString();
 
-List<int> pemToDer(String pem) =>
-    base64.decode(pem.split('\n').where((l) => l.isNotEmpty && !l.startsWith('-----')).join());
+List<int> pemToDer(String pem) => // basic_utils zapisuje PEM z końcami linii \r\n
+    base64.decode(pem.split(RegExp(r'\r?\n')).map((l) => l.trim()).where((l) => l.isNotEmpty && !l.startsWith('-----')).join());
 
 class LinkError implements Exception {
   final String message;
