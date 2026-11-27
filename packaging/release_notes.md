@@ -1,3 +1,9 @@
+## Co nowego w 1.0.15
+
+- **Połączone urządzenia na Windows: kod QR działa** – w 1.0.14 Luna z wydania na Windows nie tworzyła certyfikatu, więc parowanie się nie zaczynało. Gdy połączenia nie da się włączyć, ustawienia pokazują teraz powód.
+- **Telefon: bez zawieszania przy włączaniu połączenia** – certyfikat liczy się w tle, a błędy w tle nie zamykają aplikacji.
+- **Menu Luny pod przyciskiem** – otwiera się równo pod burgerem; na niższych ekranach ma niższe kafelki zamiast wychodzić nad pasek.
+
 ## Co nowego w 1.0.14
 
 **Połączone urządzenia** – Luna na komputerze i na telefonie łączy się bezpośrednio w tej samej sieci Wi-Fi, bez serwerów Luny i bez kont ([film](https://z4k0lzakol.github.io/Luna/#polaczenie)):
