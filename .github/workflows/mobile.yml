@@ -35,7 +35,35 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
-      - run: flutter build apk --release
+      - name: Wersja i klucz podpisu
+        working-directory: .
+        env:
+          KS: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          # wersja z luna.py (jak na komputerze): 1.0.12 → numer kompilacji 10012 (Android przyjmuje tylko rosnące numery)
+          v=$(python3 -c "import re;print(re.search(r'^VERSION = \"([^\"]+)\"', open('luna.py', encoding='utf-8').read(), re.M).group(1))")
+          IFS=. read -r a b c <<< "$v"
+          echo "LUNA_VERSION=$v" >> "$GITHUB_ENV"
+          echo "LUNA_BUILD=$((a * 1000000 + b * 1000 + c))" >> "$GITHUB_ENV"
+          if [ -n "$KS" ]; then
+            echo "$KS" | base64 -d > "$RUNNER_TEMP/luna-release.jks"
+            { echo "LUNA_KEYSTORE=$RUNNER_TEMP/luna-release.jks"; echo "LUNA_KEYSTORE_PASSWORD=$KS_PASSWORD"; echo "LUNA_KEY_ALIAS=${KS_ALIAS:-luna}"; } >> "$GITHUB_ENV"
+            echo "Podpis: stały klucz wydań"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "::error::Brak sekretu ANDROID_KEYSTORE_BASE64 – wydanie bez stałego klucza nie zainstaluje się jako aktualizacja"; exit 1
+          else
+            echo "::warning::Brak sekretu ANDROID_KEYSTORE_BASE64 – APK podpisany kluczem testowym"
+          fi
+      - name: Budowanie APK
+        run: |
+          # do 3 prób – Maven Central bywa przeciążony (HTTP 429) i Gradle nie pobiera wtedy wtyczek
+          for i in 1 2 3; do
+            flutter build apk --release --build-name="$LUNA_VERSION" --build-number="$LUNA_BUILD" --dart-define=LUNA_VERSION="$LUNA_VERSION" && exit 0
+            echo "Próba $i nieudana"; sleep 60
+          done
+          exit 1
       - name: Nazwa pliku
         run: cp build/app/outputs/flutter-apk/app-release.apk ../Luna-Android.apk
       - uses: actions/upload-artifact@v4

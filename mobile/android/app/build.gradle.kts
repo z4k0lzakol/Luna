@@ -29,11 +29,24 @@ android {
         versionName = flutter.versionName
     }
 
+    // Stały klucz wydań (GitHub Actions: sekrety ANDROID_KEYSTORE_* → zmienne LUNA_KEYSTORE*). Android instaluje
+    // aktualizację tylko z tym samym podpisem, więc każde wydanie musi być podpisane tym samym kluczem.
+    // Bez zmiennych (budowanie u siebie) – klucz testowy (debug).
+    val ks = System.getenv("LUNA_KEYSTORE")?.takeIf { it.isNotBlank() && file(it).exists() }
+    signingConfigs {
+        if (ks != null) {
+            create("release") {
+                storeFile = file(ks)
+                storePassword = System.getenv("LUNA_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("LUNA_KEY_ALIAS") ?: "luna"
+                keyPassword = System.getenv("LUNA_KEY_PASSWORD") ?: System.getenv("LUNA_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName(if (ks != null) "release" else "debug")
         }
     }
 }
@@ -46,4 +59,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("androidx.core:core:1.13.1")   // FileProvider – przekazanie pobranego APK do instalatora Androida
 }

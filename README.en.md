@@ -163,7 +163,7 @@ curl -fsSL https://raw.githubusercontent.com/z4k0lzakol/Luna/main/packaging/inst
 
 If you prefer the .dmg: after the first attempt to open it, go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Luna (or in Terminal: `xattr -dr com.apple.quarantine /Applications/Luna.app`). You only need to do it once – after that Luna downloads and installs new versions itself, without the warning. The .dmg also includes these instructions.
 
-On first launch a **tour** opens: it brings over your bookmarks, history and passwords from Chrome, Edge, Brave, Opera or Vivaldi and helps you set up the look, widgets and AI. Luna downloads and installs new versions by itself (Windows and macOS); on Linux it offers to download them.
+On first launch a **tour** opens: it brings over your bookmarks, history and passwords from Chrome, Edge, Brave, Opera or Vivaldi and helps you set up the look, widgets and AI. Luna downloads and installs new versions by itself (Windows, macOS and Linux); on Android it downloads them and opens the install prompt.
 
 The Linux and macOS versions are the first releases for those systems – some features were designed with Windows in mind (e.g. controlling media players through the system). [Report it](https://github.com/z4k0lzakol/Luna/issues/new/choose) if something doesn't work.
 

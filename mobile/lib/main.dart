@@ -11,6 +11,7 @@ import 'state.dart';
 import 'ui/browser.dart';
 import 'ui/common.dart';
 import 'ui/guide.dart';
+import 'update.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +35,7 @@ Future<void> main() async {
   runApp(LunaApp(s: s, userAgent: ua));
   _links(s);
   AdBlock.instance.init().then((_) => blockerVersion.value++);
+  Updater.instance.checkLater();
 }
 
 class LunaApp extends StatefulWidget {
@@ -69,6 +71,7 @@ class _LunaAppState extends State<LunaApp> with WidgetsBindingObserver {
   Widget build(BuildContext context) => MaterialApp(
         title: 'Luna',
         debugShowCheckedModeBanner: false,
+        scaffoldMessengerKey: messengerKey,
         theme: lunaTheme(),
         home: _guide
             ? GuideScreen(onDone: () {

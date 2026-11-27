@@ -4,6 +4,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../adblock.dart';
 import '../state.dart';
+import '../update.dart';
 import 'common.dart';
 import 'tabs.dart';
 import 'widgets.dart';
@@ -386,6 +387,14 @@ class SettingsScreen extends StatelessWidget {
                   'Wolne oprogramowanie na licencji GNU GPL v3, bez gwarancji. Projekt jednoosobowy.',
                   style: TextStyle(color: C.muted, height: 1.5, fontSize: 13)),
             ),
+            if (Updater.instance.supported)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Sprawdź aktualizacje'),
+                subtitle: const Text('Wersja $kVersion', style: TextStyle(color: C.muted, fontSize: 12.5)),
+                trailing: const Icon(Icons.system_update_outlined, size: 20),
+                onTap: () => Updater.instance.check(interactive: true),
+              ),
             for (final l in [
               ('Strona Luny', 'https://z4k0lzakol.github.io/Luna/'),
               ('Prywatność', 'https://z4k0lzakol.github.io/Luna/privacy.html'),

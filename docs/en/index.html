@@ -300,7 +300,7 @@
     <p class="note"><b>Smart App Control (Windows 11):</b> if you have it turned on, Windows will block the released Luna for now – it doesn't allow new programs without a digital signature to run, and Luna's signature is still in the works. Until then, run Luna from source (see below). Without a signature, Windows may show “Windows protected your PC” on first launch
       (click <b>More info → Run anyway</b>), and macOS may say “Luna” Not Opened (the workaround is in the macOS card above). The first launch opens a tour
       that shows you where everything is and brings over your bookmarks, history and passwords. Luna downloads and installs new versions by itself
-      (on Windows and macOS – after verifying the checksum, when you close it; you can turn this off in Settings → Updates).</p>
+      (on Windows, macOS and Linux – after verifying the checksum, when you close it; you can turn this off in Settings → Updates).</p>
     <details style="margin-top:18px"><summary>Running from source (for developers)</summary>
       <p>With Python 3.12 or newer:</p>
       <div class="cmd">git clone https://github.com/z4k0lzakol/Luna.git
@@ -358,9 +358,9 @@ python luna.py<button class="copy">Copy</button></div>
     <details><summary>Do Chrome extensions work?</summary>
       <p>No, but the most popular ones are built in: ad blocking, a password manager, a translator, dark mode, SponsorBlock and screenshots.</p></details>
     <details><summary>How do I update Luna?</summary>
-      <p>You don't have to. The installed Luna (Windows and macOS) checks for new releases on its own, downloads them in the background, verifies the checksum
+      <p>You don't have to. The installed Luna (Windows, macOS and Linux) checks for new releases on its own, downloads them in the background, verifies the checksum
         (and on Windows the signature), and installs it when you close the browser – or right away if you click “Restart and update”. Your tabs, passwords and
-        settings stay. On Linux, Luna lets you know when a new version is out. On a Mac this means you get past Apple's warning only once, on first install.</p></details>
+        settings stay. On Android, Luna downloads the new version and opens the system install prompt. On a Mac this means you get past Apple's warning only once, on first install.</p></details>
     <details><summary>How do I move my data from another browser?</summary>
       <p>The first-launch tour imports bookmarks, history and passwords from Chrome, Edge, Brave, Opera and Vivaldi. Bookmarks from
         Firefox or Safari can be loaded from an HTML file (Bookmarks → Import file).</p></details>
