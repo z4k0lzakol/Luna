@@ -121,6 +121,11 @@
 
 ## Luna on your phone
 
+<p align="center">
+  <a href="https://z4k0lzakol.github.io/Luna/en/#telefon"><img src="docs/img/podglad-telefon.gif" width="300" alt="Film preview: the Luna menu on a phone and two pages on one screen – click to watch the whole film"></a><br>
+  <img src="docs/img/ikony/play.svg" width="16" height="16" alt="" align="absmiddle"> <b><a href="https://z4k0lzakol.github.io/Luna/en/#telefon">Watch the film: Luna on your phone</a></b> (with sound)
+</p>
+
 <p align="center"><img src="docs/img/telefon.jpg" alt="Luna on Android: home screen with widgets, Luna menu, messengers with logos, two pages on one screen and widgets"></p>
 
 The same Luna on Android – **[download `Luna-Android.apk`](https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk)** (preview, Android 7 and newer). A home screen with widgets, a bar within thumb's reach (swipe sideways for the next tab, up for all tabs), a menu sheet, the AI assistant and messengers, two pages on one screen, search suggestions, a landscape layout with a top bar, and ad blocking, YouTube included. Code: [`mobile/`](mobile/). The iPhone version is ready in the code and will follow once it has an Apple signature.
