@@ -69,13 +69,13 @@ void main() {
       ..port = b.port!;
 
     await b.openOn(a.id, 'https://example.com/x', 'X');
-    expect(ha.log, contains(['open', 'https://example.com/x', 'X']));
+    expect(ha.log, anyElement(equals(['open', 'https://example.com/x', 'X'])));
     await expectLater(b.openOn(a.id, 'file:///etc/passwd'), throwsA(isA<LinkError>()));
     expect(await b.tabsOf(a.id), [
       {'url': 'https://tel.example.org/', 'title': 'Z telefonu'}
     ]);
     await a.clipTo(b.id, 'zażółć');
-    expect(hb.log, contains(['clip', 'zażółć']));
+    expect(hb.log, anyElement(equals(['clip', 'zażółć'])));
 
     final src = File('${tmp.path}/zdjęcie.jpg')..writeAsBytesSync(List.generate(3 * 1024 * 1024 + 7, (i) => (i * 31) % 256));
     var last = 0;
@@ -178,11 +178,11 @@ void main() {
     seen.removeWhere((m) => m['ev'] == 'done');
     cmd({'cmd': 'clip', 'text': 'z komputera'});
     await wait('done');
-    expect(ht.log, contains(['clip', 'z komputera']));
+    expect(ht.log, anyElement(equals(['clip', 'z komputera'])));
     seen.removeWhere((m) => m['ev'] == 'done');
     cmd({'cmd': 'notify', 'title': 'Pobieranie skończone', 'body': 'a.zip'});
     await wait('done');
-    expect(ht.log, contains(['notify', 'Pobieranie skończone', 'a.zip']));
+    expect(ht.log, anyElement(equals(['notify', 'Pobieranie skończone', 'a.zip'])));
     seen.removeWhere((m) => m['ev'] == 'done');
     cmd({'cmd': 'files', 'name': 'dokument.pdf', 'kb': 600});
     final sent = await wait('sent');
