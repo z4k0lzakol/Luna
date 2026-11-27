@@ -28,11 +28,19 @@ CHUNK = 1 << 20
 
 
 def available():
+    """True, gdy działa część cryptography potrzebna do certyfikatu (moduł _rust z bibliotekami DLL)."""
+    return not unavailable_reason()
+
+
+def unavailable_reason():
     try:
-        import cryptography  # noqa: F401
-        return True
-    except ImportError:
-        return False
+        from cryptography import x509  # noqa: F401
+        from cryptography.hazmat.primitives.asymmetric import ec  # noqa: F401
+        return ""
+    except ImportError as e:
+        return f"{type(e).__name__}: {e}"
+    except Exception as e:   # np. błąd wczytania biblioteki DLL
+        return f"{type(e).__name__}: {e}"
 
 
 def b64u(b):

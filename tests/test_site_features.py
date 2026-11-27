@@ -277,6 +277,7 @@ def EXTRA(t):
     totp()
     sync()
     link_devices()
+    burger_position()
 
 
 def ai_page():
@@ -542,6 +543,21 @@ def link_devices():
     phone.stop()
 
 
+def burger_position():
+    """Menu Luny otwiera się pod burgerem, wyrównane do jego prawej krawędzi, i mieści się na ekranie."""
+    from PyQt6.QtCore import QPoint as QP
+    b, m = w.burger, w.burger_m
+    w.raise_(); w.activateWindow(); wait(200)
+    b.click(); until(lambda: m.isVisible(), 3000); wait(300)
+    bt = b.mapToGlobal(QP(0, 0)); scr = b.screen().availableGeometry()
+    under = m.y() >= bt.y() + b.height() - 1 or m.y() + m.height() >= scr.bottom() - 8
+    check("burger menu opens under the button, right-aligned", m.isVisible() and under
+          and abs((m.x() + m.width()) - (bt.x() + b.width())) <= 8 and m.y() + m.height() <= scr.bottom() + 1,
+          (m.geometry(), bt, b.size(), scr))
+    b.click(); wait(300)
+    check("clicking the burger again closes the menu", not m.isVisible())
+
+
 def _try(fn):
     try:
         return fn()
@@ -601,12 +617,12 @@ def menu_texts(fn):
     Treść jest odczytywana w chwili otwarcia, a nie z menu widocznego po chwili: w Windows menu podręczne zamyka się
     samo, gdy okno Luny straci aktywność (inne okno dostanie fokus), i wtedy test losowo nie widział żadnego menu."""
     from PyQt6.QtWidgets import QMenu
-    seen, orig = [], QMenu.popup
+    seen, orig = [], QMenu.__dict__["popup"]   # deskryptor z klasy – po przywróceniu wiąże się z obiektem jak wcześniej
 
     def popup(m, *a, **k):
         seen.append(([x.text() for x in m.actions() if x.text()],
                      {x.text(): [y.text() for y in x.menu().actions()] for x in m.actions() if x.menu()}, m))
-        return orig(m, *a, **k)
+        return orig.__get__(m, QMenu)(*a, **k)
     QMenu.popup = popup
     try:
         fn()

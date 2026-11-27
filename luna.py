@@ -9456,6 +9456,7 @@ class LinkManager(QObject, luna_link.Handler):
         QObject.__init__(self, QApplication.instance())
         self.store = store; self.gui = _GuiCall(); self.link = None
         self.remote_tabs = {}            # id → (nazwa, czas, [karty])
+        self.error = ""
         self._tabs_cache = []; self._clip_ignore = None; self._busy_sync = set()
         self._tt = QTimer(self); self._tt.timeout.connect(self._refresh_tabs)
         self._st = QTimer(self); self._st.timeout.connect(lambda: self.sync_all())
@@ -9484,8 +9485,10 @@ class LinkManager(QObject, luna_link.Handler):
             self.link = luna_link.Link(LINK_STATE, self, name=self.default_name(), dev_type="desktop")
         try:
             self.link.start()
-        except (OSError, luna_link.LinkError) as e:
-            self.status.emit(f"Nie udało się włączyć połączenia: {e}"); return False
+        except Exception as e:   # także błąd biblioteki cryptography w zbudowanej Lunie – bez cichej awarii
+            self.error = f"Nie udało się włączyć połączenia: {e}"
+            self.status.emit(self.error); self.peers_sig.emit(); return False
+        self.error = ""
         self._refresh_tabs(); self._tt.start(8000); self._st.start(3 * 60 * 1000)
         QTimer.singleShot(4000, lambda: self.sync_all())
         self.peers_sig.emit()
@@ -9809,11 +9812,14 @@ def page_devices(dlg):
                     "wspólne zakładki, karty, schowek i pilot. Połączenie jest bezpośrednie i szyfrowane – bez serwerów Luny.")
     st = dlg.store; lm = link_manager(st)
     if not lm.available():
-        l.addWidget(lbl("Ta wersja Luny nie ma pakietu „cryptography”, potrzebnego do szyfrowanego połączenia. "
-                        "Zainstaluj go (pip install cryptography) albo użyj Luny z wydania.", "muted2", wrap=True))
+        l.addWidget(lbl("Połączenie urządzeń nie działa w tej wersji Luny: brakuje działającej biblioteki szyfrowania "
+                        "(„cryptography”). Zaktualizuj Lunę albo, przy uruchamianiu z kodu, zainstaluj ją: pip install cryptography.",
+                        "muted2", wrap=True))
+        l.addWidget(lbl(luna_link.unavailable_reason()[:300], "muted", wrap=True))
         l.addStretch(1); return scroll_page(w)
     l.addWidget(switch_row("Połączenie urządzeń", "Wyłączone: Luna nie ogłasza się w sieci i nie przyjmuje połączeń.",
                            lm.on(), lambda v: (lm.set_on(v), refresh())))
+    err = lbl("", "muted2", wrap=True); err.setStyleSheet("color:#ff8a80"); l.addWidget(err)
     box = QWidget(); box.setObjectName("clear"); bl = QVBoxLayout(box); bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(6)
     l.addWidget(box)
     bl.addWidget(lbl("Nazwa tego komputera", "h3"))
@@ -9844,7 +9850,8 @@ def page_devices(dlg):
 
     def refresh():
         try:
-            box.setEnabled(lm.on())
+            err.setText(lm.error); err.setVisible(bool(lm.error))
+            box.setEnabled(lm.on() and not lm.error)
             if lm.link:
                 ne.setText(lm.link.name)
             clear(peers_box); clear(near_box)
@@ -9885,6 +9892,8 @@ def page_devices(dlg):
             lm.set_on(True); refresh()
         if lm.link and lm.link.running():
             PairDialog(dlg.browser).exec(); refresh()
+        else:
+            QMessageBox.warning(dlg, "Sparuj urządzenie", lm.error or "Nie udało się włączyć połączenia urządzeń.")
 
     def send_any():
         devs = [(p["name"], pid) for pid, p in lm.peers().items()] + \
@@ -11496,14 +11505,16 @@ class MenuRow(QWidget):
 
 class MenuTiles(QWidget):
     """Rząd kafelków w menu Luny (styl kafelków ekranu głównego): ikona + krótki podpis; kliknięcie zamyka menu."""
+    COMPACT = False   # niższe kafelki, gdy menu nie mieści się pod przyciskiem (Browser.show_burger)
 
     def __init__(self, menu):
         super().__init__(); self.menu = menu; self.setObjectName("clear")
-        self.h = QHBoxLayout(self); self.h.setContentsMargins(2, 4, 2, 4); self.h.setSpacing(6)
+        m = 2 if MenuTiles.COMPACT else 4
+        self.h = QHBoxLayout(self); self.h.setContentsMargins(2, m, 2, m); self.h.setSpacing(6)
 
     def tile(self, kind, text, fn, tip="", enabled=True, checked=None, menu=None, icon=None):
         b = QToolButton(); b.setObjectName("menutile"); b.setIcon(icon or glyph(kind, "#d6d6d6")); b.setIconSize(QSize(20, 20))
-        b.setText(text); b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon); b.setFixedHeight(62)
+        b.setText(text); b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon); b.setFixedHeight(50 if MenuTiles.COMPACT else 62)
         b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         b.setToolTip(tip or text); b.setCursor(Qt.CursorShape.PointingHandCursor); b.setEnabled(enabled)
         b.pressed.connect(lambda: ui_sound("click", 0.6))
@@ -13829,9 +13840,12 @@ class Browser(QMainWindow):
         self.dl_btn.setIcon(download_icon()); self.dl_btn.hide(); rg.addWidget(self.dl_btn)
         self._dl_t = QTimer(self); self._dl_t.setSingleShot(True); self._dl_t.timeout.connect(self.update_dl_btn)
         DOWNLOADS[0].changed.connect(self._dl_changed); self.update_dl_btn()
-        self.burger =self.btn("menu", "Menu Luny", lambda: None)   # skrajnie po prawej
-        self.burger.setObjectName("acct"); self.burger.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        bmn = QMenu(self.burger); bmn.setObjectName("burger"); bmn.aboutToShow.connect(self.burger_menu); self.burger.setMenu(bmn)
+        self.burger = self.btn("menu", "Menu Luny", lambda: self.show_burger())   # skrajnie po prawej
+        self.burger.setObjectName("acct")
+        # menu otwiera Luna (show_burger), a nie sam przycisk: Qt ustalał pozycję, zanim menu było zbudowane,
+        # i gdy wysokie menu nie mieściło się pod przyciskiem, wypychał je pod górną krawędź ekranu
+        bmn = QMenu(self.burger); bmn.setObjectName("burger"); self.burger_m = bmn
+        bmn.aboutToHide.connect(lambda: (self.burger.setDown(False), setattr(self, "_burger_shut", time.monotonic())))
         bmn.setWindowFlags(bmn.windowFlags() | Qt.WindowType.FramelessWindowHint | Qt.WindowType.NoDropShadowWindowHint)
         bmn.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)   # zaokrąglone rogi menu (jak ramki ekranu głównego)
         rg.addSpacing(18); rg.addWidget(self.burger)
@@ -14613,10 +14627,31 @@ class Browser(QMainWindow):
         t = self.cur()
         return t.web if t is not None and t.web is not None and not t.on_home() else None
 
+    def show_burger(self):
+        """Menu Luny pod przyciskiem, wyrównane do jego prawej krawędzi. Gdy pod przyciskiem brakuje miejsca,
+        kafelki robią się niższe; dopiero gdy i to nie wystarcza, menu zaczyna się wyżej (ale nie nad paskiem kart)."""
+        m, b = self.burger_m, self.burger
+        if m.isVisible() or time.monotonic() - getattr(self, "_burger_shut", 0) < .3:
+            m.close(); return   # klik w burger przy otwartym menu tylko je zamyka
+        scr = (b.screen() or QGuiApplication.primaryScreen()).availableGeometry()
+        top_left = b.mapToGlobal(QPoint(0, 0)); below = top_left.y() + b.height() + 4
+        MenuTiles.COMPACT = False
+        self.burger_menu(); m.ensurePolished(); size = m.sizeHint()
+        if size.height() > scr.bottom() - below - 6:   # ciaśniej: niższe kafelki i mniejsze odstępy (budowa od nowa)
+            MenuTiles.COMPACT = True
+            try:
+                self.burger_menu()
+            finally:
+                MenuTiles.COMPACT = False
+            m.ensurePolished(); size = m.sizeHint()
+        x = max(scr.left() + 6, min(top_left.x() + b.width() - size.width(), scr.right() - size.width() - 6))
+        y = below if below + size.height() <= scr.bottom() - 6 else max(scr.top(), scr.bottom() - 6 - size.height())
+        b.setDown(True); m.popup(QPoint(x, y))
+
     def burger_menu(self):
         """Menu Luny w stylu ekranu głównego: rzędy kafelków (podmenu otwierają się z kafelka) i krótka lista –
         mieści się w jednej kolumnie. Wszystkie polecenia i skróty jak wcześniej."""
-        m = self.burger.menu(); m.clear(); web = self.web()
+        m = self.burger_m; m.clear(); web = self.web()
         menu_row_action(m, MenuSearch(lambda: (m.close(), QTimer.singleShot(0, self.palette))))
         sub = lambda: QMenu(m)   # podmenu kafelka (zamyka całe menu po wyborze)
         qt = MenuTiles(m)
@@ -17457,6 +17492,14 @@ if __name__ == "__main__":
         def _smoke_done():
             t = w.cur()
             ok = t is not None
+            why = luna_link.unavailable_reason()   # połączone urządzenia: certyfikat wymaga działającej cryptography
+            if not why:
+                try:
+                    luna_link.make_cert("0" * 16)
+                except Exception as e:
+                    why = f"{type(e).__name__}: {e}"
+            if why:
+                print("LUNA SMOKE: połączone urządzenia nie działają –", why, flush=True); ok = False
             print("LUNA SMOKE", "OK" if ok else "FAIL", VERSION, flush=True)
             w.quit_all(); QTimer.singleShot(1500, lambda: os._exit(0 if ok else 1))
         QTimer.singleShot(12000, _smoke_done)

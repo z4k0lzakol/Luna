@@ -1,6 +1,6 @@
 // Luna na telefonie (Android, iOS) – prywatna przeglądarka w wyglądzie Luny z komputera.
 import 'dart:io';
-import 'dart:ui' show FrameTiming;
+import 'dart:ui' show FrameTiming, PlatformDispatcher;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,6 +16,12 @@ import 'update.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // błąd w tle (sieć, połączone urządzenia) zostaje w dzienniku – nie zamyka Luny
+  PlatformDispatcher.instance.onError = (e, st) {
+    debugPrint('Luna: nieobsłużony błąd: $e
+$st');
+    return true;
+  };
   if (const bool.fromEnvironment('LUNA_PERF')) _perf();
   final s = LunaState();
   await s.load();
