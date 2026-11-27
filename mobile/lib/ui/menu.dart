@@ -30,12 +30,16 @@ const _sections = <(String, List<MenuItemDef>)>[
     MenuItemDef('addBookmark', Icons.bookmark_add_outlined, 'Dodaj zakładkę'),
     MenuItemDef('notes', Icons.sticky_note_2_outlined, 'Notatki'),
     MenuItemDef('widgets', Icons.grid_view_outlined, 'Widgety', ['pogoda', 'zadania']),
+    MenuItemDef('devices', Icons.devices_outlined, 'Urządzenia', ['połączone', 'komputer', 'telefon', 'synchronizacja', 'parowanie']),
+    MenuItemDef('sendFiles', Icons.upload_file, 'Wyślij pliki', ['localsend', 'zdjęcia', 'komputer']),
+    MenuItemDef('remote', Icons.settings_remote_outlined, 'Pilot', ['komputer', 'film', 'sterowanie']),
   ]),
   ('Ta strona', [
     MenuItemDef('reader', Icons.chrome_reader_mode_outlined, 'Czytanie'),
     MenuItemDef('translate', Icons.translate, 'Tłumacz'),
     MenuItemDef('dark', Icons.dark_mode_outlined, 'Ciemny tryb'),
     MenuItemDef('copy', Icons.link, 'Kopiuj adres', ['udostępnij']),
+    MenuItemDef('sendTab', Icons.send_to_mobile_outlined, 'Na urządzenie', ['wyślij', 'komputer', 'udostępnij']),
   ]),
   ('Dostosuj Lunę', [
     MenuItemDef('focus', Icons.center_focus_strong_outlined, 'Skupienie', ['tryb skupienia']),

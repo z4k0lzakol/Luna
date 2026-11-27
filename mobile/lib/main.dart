@@ -10,6 +10,7 @@ import 'adblock.dart';
 import 'state.dart';
 import 'ui/browser.dart';
 import 'ui/common.dart';
+import 'link/manager.dart';
 import 'ui/guide.dart';
 import 'update.dart';
 
@@ -36,6 +37,7 @@ Future<void> main() async {
   _links(s);
   AdBlock.instance.init().then((_) => blockerVersion.value++);
   Updater.instance.checkLater();
+  LinkManager(s).init();   // połączone urządzenia – startują tylko gdy włączone
 }
 
 class LunaApp extends StatefulWidget {
@@ -72,6 +74,7 @@ class _LunaAppState extends State<LunaApp> with WidgetsBindingObserver {
         title: 'Luna',
         debugShowCheckedModeBanner: false,
         scaffoldMessengerKey: messengerKey,
+        navigatorKey: navigatorKey,
         theme: lunaTheme(),
         home: _guide
             ? GuideScreen(onDone: () {
