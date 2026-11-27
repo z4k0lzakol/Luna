@@ -148,14 +148,22 @@ Ta sama Luna na Androidzie – **[pobierz `Luna-Android.apk`](https://github.com
 |---|---|---|
 | **Windows 10 / 11** | `Luna-Windows.zip` | Rozpakuj (prawy przycisk → **Wyodrębnij wszystkie**) i uruchom `Luna.exe`. Luna sama zaproponuje instalację: skrót w menu Start i na pulpicie, odinstalowanie w ustawieniach Windows. Jest też klasyczny instalator `Luna-Windows-Setup.exe`. |
 | **Linux** (x86_64) | `Luna-Linux-x86_64.AppImage` | Nadaj prawo uruchamiania (`chmod +x`) i uruchom dwuklikiem. Jest też archiwum `.tar.gz`. |
-| **macOS** (Apple M1 i nowsze) | `Luna-macOS-arm64.dmg` | Otwórz i przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → **Otwórz**. |
+| **macOS** (Apple M1 i nowsze) | `Luna-macOS-arm64.dmg` | Najprościej jednym poleceniem w Terminalu (niżej). Albo otwórz .dmg, przeciągnij Lunę do Aplikacji i za pierwszym razem zezwól w **Ustawieniach systemowych → Prywatność i ochrona → Otwórz mimo to**. |
 | **Android** 7 i nowsze (wersja testowa) | `Luna-Android.apk` | Pobierz na telefonie i otwórz – Android zapyta o zgodę na instalację spoza Sklepu Play. |
 
 **Inteligentna kontrola aplikacji (Windows 11):** jeśli jest u Ciebie włączona, Windows na razie zablokuje Lunę z wydania – ta funkcja nie pozwala uruchamiać nowych programów bez podpisu cyfrowego, a Luna jeszcze go nie ma (podpis jest w przygotowaniu). Do tego czasu uruchom Lunę z kodu źródłowego (poniżej) – tak działa bez blokady.
 
-Bez podpisu cyfrowego przy pierwszym uruchomieniu Windows może też pokazać „System Windows ochronił ten komputer” (kliknij **Więcej informacji → Uruchom mimo to**), a macOS – ostrzeżenie o nieznanym deweloperze.
+Bez podpisu cyfrowego przy pierwszym uruchomieniu Windows może też pokazać „System Windows ochronił ten komputer” (kliknij **Więcej informacji → Uruchom mimo to**), a macOS – „Rzecz »Luna« nie została otwarta” (jak to ominąć – niżej).
 
-Przy pierwszym uruchomieniu otworzy się **przewodnik**: przeniesie zakładki, historię i hasła z Chrome, Edge, Brave, Opery albo Vivaldi i pomoże ustawić wygląd, widgety i AI. Nowe wersje Luna wykryje sama i zaproponuje ich pobranie.
+**macOS bez ostrzeżenia.** Luna nie ma jeszcze podpisu Apple, więc .dmg pobrany przeglądarką macOS blokuje komunikatem „Rzecz »Luna« nie została otwarta”. Najprościej zainstalować ją jednym poleceniem w Terminalu – pobierze najnowszą wersję, skopiuje do Aplikacji i uruchomi bez ostrzeżenia:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/z4k0lzakol/Luna/main/packaging/install-mac.sh | bash
+```
+
+Jeśli wolisz .dmg: po pierwszej próbie otwarcia wejdź w **Ustawienia systemowe → Prywatność i ochrona**, przewiń w dół i kliknij **Otwórz mimo to** przy Lunie (albo w Terminalu: `xattr -dr com.apple.quarantine /Applications/Luna.app`). Wystarczy raz – kolejne wersje Luna pobiera i instaluje sama, już bez ostrzeżenia. Instrukcja jest też w samym .dmg.
+
+Przy pierwszym uruchomieniu otworzy się **przewodnik**: przeniesie zakładki, historię i hasła z Chrome, Edge, Brave, Opery albo Vivaldi i pomoże ustawić wygląd, widgety i AI. Nowe wersje Luna pobiera i instaluje sama (Windows i macOS); na Linuksie proponuje ich pobranie.
 
 Wersje na Linuksa i macOS to pierwsze wydania na tych systemach – część funkcji powstała z myślą o Windows (np. sterowanie odtwarzaczami przez system). [Zgłoś](https://github.com/z4k0lzakol/Luna/issues/new/choose), jeśli coś nie działa.
 

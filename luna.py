@@ -2798,8 +2798,8 @@ FEATURES = {  # id: (nazwa, opis, domyślnie)
                      "CC BY-NC-SA 4.0). Wysyłane są tylko 4 znaki skrótu identyfikatora filmu.", True),
     "updates": ("Sprawdzanie aktualizacji", "Po starcie i co 12 godzin Luna sprawdza w tle, czy na GitHubie jest nowa wersja, "
                 "i proponuje aktualizację jednym kliknięciem.", True),
-    "auto_update": ("Automatyczne aktualizacje", "Zainstalowana Luna (Windows) sama pobiera nową wersję w tle, sprawdza sumę "
-                    "kontrolną i podpis cyfrowy, a instaluje ją przy zamknięciu albo od razu po kliknięciu – bez ręcznego "
+    "auto_update": ("Automatyczne aktualizacje", "Zainstalowana Luna (Windows i macOS) sama pobiera nową wersję w tle, sprawdza "
+                    "sumę kontrolną (na Windows także podpis cyfrowy), a instaluje ją przy zamknięciu albo od razu po kliknięciu – bez ręcznego "
                     "pobierania instalatora. Karty, hasła i ustawienia zostają.", True),
     "webapps": ("Panel aplikacji", "Komunikatory (WhatsApp, Messenger, Telegram…) i dowolne strony w panelu z boku – "
                 "przycisk na górnym pasku (Ctrl+Shift+K). Wyłączony: żadna z tych stron nie działa w tle.", True),
@@ -10121,9 +10121,11 @@ class ReleaseCheck(QObject):
 
 
 class AutoInstaller(QObject):
-    """Automatyczna aktualizacja zainstalowanej Luny (Windows): pobiera instalator nowego wydania w tle, sprawdza sumę
-    SHA-256 z pliku SHA256SUMS.txt tego samego wydania i podpis cyfrowy (Authenticode = Valid), a potem instaluje go
-    po cichu (Inno Setup, bez uprawnień administratora) – przy zamknięciu Luny albo od razu z ponownym uruchomieniem."""
+    """Automatyczna aktualizacja zainstalowanej Luny: pobiera nowe wydanie w tle i sprawdza sumę SHA-256 z pliku
+    SHA256SUMS.txt tego samego wydania, a potem instaluje je po cichu – przy zamknięciu Luny albo od razu z ponownym
+    uruchomieniem. Windows: instalator Inno Setup (bez uprawnień administratora) i podpis Authenticode.
+    macOS: obraz .dmg, z którego Luna.app podmienia się w miejscu. Plik pobrany przez Lunę nie dostaje znacznika
+    kwarantanny, więc Gatekeeper nie blokuje nowej wersji – ostrzeżenie widać tylko przy pierwszej instalacji."""
     ready = pyqtSignal(str, str)   # wersja, ścieżka sprawdzonego instalatora
     failed = pyqtSignal(str)
     progress = pyqtSignal(int)     # procent pobrania
@@ -10133,10 +10135,16 @@ class AutoInstaller(QObject):
 
     @staticmethod
     def supported():
-        return getattr(sys, "frozen", False) and sys.platform == "win32" and not can_self_install()
+        if not getattr(sys, "frozen", False):
+            return False
+        if sys.platform == "win32":
+            return not can_self_install()
+        return sys.platform == "darwin" and mac_app_bundle() is not None
 
     @staticmethod
     def folder():
+        if sys.platform == "darwin":
+            return BASE_HOME / "Library" / "Caches" / "Luna-aktualizacje"
         return Path(os.environ.get("LOCALAPPDATA", str(BASE_HOME))) / "Luna-aktualizacje"
 
     def fetch(self, ver, assets):
@@ -10144,7 +10152,8 @@ class AutoInstaller(QObject):
             return
         if self.ver == ver and self.path:
             self.ready.emit(ver, self.path); return
-        name = next((n for n in assets if re.fullmatch(r"Luna-(?:[\d.]+-)?Windows-Setup\.exe", n or "")), None)
+        pat = r"Luna-(?:[\d.]+-)?macOS-arm64\.dmg" if sys.platform == "darwin" else r"Luna-(?:[\d.]+-)?Windows-Setup\.exe"
+        name = next((n for n in assets if re.fullmatch(pat, n or "")), None)
         sums = assets.get("SHA256SUMS.txt")
         if not name or not sums:
             self.failed.emit("w wydaniu brakuje instalatora albo sum kontrolnych"); return
@@ -10187,6 +10196,9 @@ class AutoInstaller(QObject):
                 if h.hexdigest() != want:
                     part.unlink(missing_ok=True); raise RuntimeError("suma kontrolna się nie zgadza – plik odrzucony")
                 os.replace(part, dest)
+            if sys.platform == "darwin":   # bez podpisu Apple: wystarcza zgodna suma SHA-256 z tego samego wydania
+                self.ver, self.path = ver, str(dest)
+                self.ready.emit(ver, str(dest)); return
             ps = "(Get-AuthenticodeSignature -LiteralPath $env:L_FILE).Status.ToString()"
             r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps], capture_output=True, text=True,
                                env=dict(os.environ, L_FILE=str(dest)), timeout=60, creationflags=0x08000000,
@@ -10208,6 +10220,8 @@ class AutoInstaller(QObject):
         if self.launched or not self.path or not Path(self.path).exists():
             return False
         import subprocess
+        if sys.platform == "darwin":
+            return self._install_mac(relaunch)
         ps = ("Start-Sleep -Seconds 2; "
               "Start-Process -FilePath $env:L_SETUP -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',"
               "'/CLOSEAPPLICATIONS' -Wait; "
@@ -10220,6 +10234,53 @@ class AutoInstaller(QObject):
             return False
         self.launched = True
         return True
+
+
+    # podmiana Luna.app po zamknięciu Luny: kopia z .dmg obok (Luna.app.new), zamiana nazw, przy błędzie powrót starej
+    MAC_SCRIPT = r'''
+for i in $(seq 1 240); do kill -0 "$L_PID" 2>/dev/null || break; sleep 0.5; done
+MNT="$(mktemp -d)"
+if hdiutil attach "$L_DMG" -nobrowse -readonly -noautoopen -mountpoint "$MNT" -quiet; then
+  rm -rf "$L_APP.new" "$L_APP.old"
+  if ditto "$MNT/Luna.app" "$L_APP.new"; then
+    xattr -dr com.apple.quarantine "$L_APP.new" 2>/dev/null
+    if mv "$L_APP" "$L_APP.old"; then
+      if mv "$L_APP.new" "$L_APP"; then rm -rf "$L_APP.old"; else mv "$L_APP.old" "$L_APP"; fi
+    fi
+  fi
+  rm -rf "$L_APP.new"
+  hdiutil detach "$MNT" -quiet || hdiutil detach "$MNT" -force -quiet
+fi
+rmdir "$MNT" 2>/dev/null
+[ -n "$L_RUN" ] && open "$L_APP"
+'''
+
+    def _install_mac(self, relaunch):
+        import subprocess
+        app = mac_app_bundle()
+        if not app:
+            return False
+        env = dict(os.environ, L_DMG=self.path, L_APP=str(app), L_PID=str(os.getpid()), L_RUN="1" if relaunch else "")
+        try:
+            subprocess.Popen(["/bin/bash", "-c", self.MAC_SCRIPT], env=env, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+        except OSError:
+            return False
+        self.launched = True
+        return True
+
+
+def mac_app_bundle():
+    """Folder Luna.app uruchomionej Luny (macOS), o ile Luna może go podmienić – czyli nie działa z obrazu .dmg ani
+    z kopii tymczasowej Gatekeepera (App Translocation) i ma prawo zapisu w folderze z aplikacją."""
+    try:
+        app = Path(sys.executable).resolve().parents[2]
+    except (IndexError, OSError):
+        return None
+    s = str(app)
+    if app.suffix != ".app" or "/AppTranslocation/" in s or s.startswith("/Volumes/"):
+        return None
+    return app if os.access(app.parent, os.W_OK) and os.access(app, os.W_OK) else None
 
 
 AUTOINST = []

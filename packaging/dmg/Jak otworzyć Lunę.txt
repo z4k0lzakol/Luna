@@ -1,0 +1,40 @@
+﻿JAK OTWORZYĆ LUNĘ NA MACU
+=========================
+
+1. Przeciągnij ikonę Luny na folder Aplikacje (w tym oknie).
+
+2. Otwórz Lunę z Aplikacji. Za pierwszym razem macOS napisze:
+   „Rzecz »Luna« nie została otwarta. Apple nie może zweryfikować…”
+   Kliknij „Gotowe” (nie „Przenieś do Kosza”).
+
+3. Wejdź w  Ustawienia systemowe → Prywatność i ochrona,
+   przewiń na sam dół i przy Lunie kliknij „Otwórz mimo to”.
+   Potwierdź hasłem albo Touch ID.
+
+Wystarczy raz. Kolejne wersje Luna pobiera i instaluje sama
+(Ustawienia Luny → Aktualizacje), bez tego ostrzeżenia.
+
+
+DLACZEGO TO OSTRZEŻENIE?
+Luna jest darmowym projektem jednoosobowym i nie ma jeszcze płatnego
+podpisu Apple (Developer ID). macOS ostrzega przed każdym programem bez
+takiego podpisu – nie znaczy to, że Luna jest szkodliwa. Kod źródłowy
+jest jawny: https://github.com/z4k0lzakol/Luna
+
+
+ZAMIAST KROKÓW 2–3 (dla wprawionych)
+W Terminalu:
+
+    xattr -dr com.apple.quarantine /Applications/Luna.app
+
+Albo zainstaluj Lunę od razu bez ostrzeżenia jednym poleceniem:
+
+    curl -fsSL https://raw.githubusercontent.com/z4k0lzakol/Luna/main/packaging/install-mac.sh | bash
+
+
+------------------------------------------------------------------
+HOW TO OPEN LUNA (English)
+1. Drag Luna onto the Applications folder.
+2. Open it. macOS will say "Luna" Not Opened – click Done.
+3. System Settings → Privacy & Security → scroll down → Open Anyway.
+Only once – Luna installs its own updates afterwards.

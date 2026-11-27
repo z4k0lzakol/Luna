@@ -291,14 +291,14 @@
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3c-2.5 0-4 2.2-4 5 0 1.6.5 2.6.5 3.6S6 15 6 17.5 8.5 21 12 21s6-1 6-3.5-2.5-4.9-2.5-5.9S16 9.6 16 8c0-2.8-1.5-5-4-5z"/></svg></div>
         <h3>Linux</h3><p>Pobierz <code>Luna-Linux-x86_64.AppImage</code>, nadaj prawo uruchamiania (<code>chmod +x</code>) i uruchom dwuklikiem.</p></div>
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M15 4c-1.2.1-2.5.9-3 2 1.3 0 2.6-.8 3-2zM12 8c-1.5 0-2.3-.8-3.7-.8C6.4 7.2 5 8.8 5 11.5 5 15.3 7.6 20 9.6 20c1 0 1.4-.6 2.5-.6s1.4.6 2.5.6c1.4 0 3-2.3 3.6-4.2-1.6-.7-2.4-2.1-2.4-3.6 0-1.4.8-2.6 1.9-3.3-.8-1-1.9-1.6-3.1-1.6-1.4 0-2 .7-2.1.7z"/></svg></div>
-        <h3>macOS</h3><p>Pobierz <code>Luna-macOS-arm64.dmg</code> (Apple M1 i nowsze), przeciągnij Lunę do Aplikacji. Za pierwszym razem: prawy przycisk → Otwórz.</p></div>
+        <h3>macOS</h3><p>Apple M1 i nowsze. Najprościej jednym poleceniem w Terminalu – Luna trafi do Aplikacji i uruchomi się bez ostrzeżenia:</p><div class="cmd">curl -fsSL https://raw.githubusercontent.com/z4k0lzakol/Luna/main/packaging/install-mac.sh | bash</div><p>Albo pobierz <code>Luna-macOS-arm64.dmg</code> i przeciągnij Lunę do Aplikacji – za pierwszym razem macOS ją zablokuje, wtedy wejdź w <b>Ustawienia systemowe → Prywatność i ochrona → Otwórz mimo to</b>.</p></div>
       <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 18.5h4"/></svg></div>
         <h3>Android (wersja testowa)</h3><p>Na telefonie pobierz <a href="https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk"><code>Luna-Android.apk</code></a> i otwórz – Android zapyta o zgodę na instalację spoza Sklepu Play. Wersja na iPhone'a pojawi się później (wymaga podpisu Apple).</p></div>
     </div>
     <p class="note"><b>Inteligentna kontrola aplikacji (Windows 11):</b> jeśli jest u Ciebie włączona, Windows na razie zablokuje Lunę z wydania – nie pozwala uruchamiać nowych programów bez podpisu cyfrowego, a podpis Luny jest w przygotowaniu. Do tego czasu uruchom Lunę z kodu źródłowego (poniżej). Bez podpisu przy pierwszym uruchomieniu Windows może pokazać „System Windows ochronił ten komputer”
-      (kliknij <b>Więcej informacji → Uruchom mimo to</b>), a macOS – ostrzeżenie o nieznanym deweloperze. Pierwsze uruchomienie otworzy przewodnik,
+      (kliknij <b>Więcej informacji → Uruchom mimo to</b>), a macOS – „Rzecz »Luna« nie została otwarta” (obejście – w karcie macOS wyżej). Pierwsze uruchomienie otworzy przewodnik,
       który pokaże, co gdzie jest, i przeniesie Twoje zakładki, historię i hasła. Nowe wersje Luna pobiera i instaluje sama
-      (na Windows – po sprawdzeniu sumy kontrolnej, przy zamknięciu; wyłączysz to w Ustawienia → Aktualizacje).</p>
+      (na Windows i macOS – po sprawdzeniu sumy kontrolnej, przy zamknięciu; wyłączysz to w Ustawienia → Aktualizacje).</p>
     <details style="margin-top:18px"><summary>Uruchomienie z kodu źródłowego (dla twórców)</summary>
       <p>Z Pythonem 3.12 lub nowszym:</p>
       <div class="cmd">git clone https://github.com/z4k0lzakol/Luna.git
@@ -353,9 +353,9 @@ python luna.py<button class="copy">Kopiuj</button></div>
     <details><summary>Czy działają rozszerzenia z Chrome?</summary>
       <p>Nie, ale najczęściej używane rzeczy są wbudowane: blokada reklam, menedżer haseł, tłumacz, tryb ciemny, SponsorBlock, zrzuty ekranu.</p></details>
     <details><summary>Jak zaktualizować Lunę?</summary>
-      <p>Nie musisz. Zainstalowana Luna (Windows) sama sprawdza nowe wydania, pobiera instalator w tle, sprawdza jego sumę kontrolną
-        i podpis, a instaluje go przy zamknięciu – albo od razu po kliknięciu „Uruchom ponownie i zaktualizuj”. Karty, hasła i
-        ustawienia zostają. Na Linuksie i macOS Luna informuje o nowej wersji.</p></details>
+      <p>Nie musisz. Zainstalowana Luna (Windows i macOS) sama sprawdza nowe wydania, pobiera je w tle, sprawdza sumę kontrolną
+        (na Windows także podpis), a instaluje go przy zamknięciu – albo od razu po kliknięciu „Uruchom ponownie i zaktualizuj”. Karty, hasła i
+        ustawienia zostają. Na Linuksie Luna informuje o nowej wersji. Na Macu dzięki temu ostrzeżenie Apple omijasz tylko raz, przy pierwszej instalacji.</p></details>
     <details><summary>Jak przenieść dane z innej przeglądarki?</summary>
       <p>Przewodnik przy pierwszym uruchomieniu importuje zakładki, historię i hasła z Chrome, Edge, Brave, Opery i Vivaldi. Zakładki z
         Firefoksa albo Safari wczytasz z pliku HTML (Zakładki → Importuj plik).</p></details>

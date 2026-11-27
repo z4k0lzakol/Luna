@@ -148,14 +148,22 @@ The same Luna on Android – **[download `Luna-Android.apk`](https://github.com/
 |---|---|---|
 | **Windows 10 / 11** | `Luna-Windows.zip` | Unzip it (right-click → **Extract All**) and run `Luna.exe`. Luna will offer to install itself: a Start menu and desktop shortcut, and uninstalling from Windows Settings. There's also a classic installer, `Luna-Windows-Setup.exe`. |
 | **Linux** (x86_64) | `Luna-Linux-x86_64.AppImage` | Make it executable (`chmod +x`) and double-click to run. A `.tar.gz` archive is also available. |
-| **macOS** (Apple M1 and newer) | `Luna-macOS-arm64.dmg` | Open it and drag Luna into Applications. The first time: right-click → **Open**. |
+| **macOS** (Apple M1 and newer) | `Luna-macOS-arm64.dmg` | Easiest with one command in Terminal (below). Or open the .dmg, drag Luna into Applications and the first time allow it in **System Settings → Privacy & Security → Open Anyway**. |
 | **Android** 7 and newer (preview) | `Luna-Android.apk` | Download it on your phone and open it – Android will ask you to allow installing apps from outside the Play Store. |
 
 **Smart App Control (Windows 11):** if you have it turned on, Windows will block the released Luna for now – this feature doesn't allow new programs without a digital signature to run, and Luna doesn't have one yet (signing is in the works). Until then, run Luna from source (see below) – that way it isn't blocked.
 
-Without a digital signature, Windows may also show “Windows protected your PC” on first launch (click **More info → Run anyway**), and macOS may warn about an unidentified developer.
+Without a digital signature, Windows may also show “Windows protected your PC” on first launch (click **More info → Run anyway**), and macOS may say “Luna” Not Opened (how to get past it – below).
 
-On first launch a **tour** opens: it brings over your bookmarks, history and passwords from Chrome, Edge, Brave, Opera or Vivaldi and helps you set up the look, widgets and AI. Luna detects new versions by itself and offers to download them.
+**macOS without the warning.** Luna isn't signed by Apple yet, so macOS blocks a .dmg downloaded in a browser with ““Luna” Not Opened”. The easiest way is one command in Terminal – it downloads the latest version, copies it into Applications and opens it without the warning:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/z4k0lzakol/Luna/main/packaging/install-mac.sh | bash
+```
+
+If you prefer the .dmg: after the first attempt to open it, go to **System Settings → Privacy & Security**, scroll down and click **Open Anyway** next to Luna (or in Terminal: `xattr -dr com.apple.quarantine /Applications/Luna.app`). You only need to do it once – after that Luna downloads and installs new versions itself, without the warning. The .dmg also includes these instructions.
+
+On first launch a **tour** opens: it brings over your bookmarks, history and passwords from Chrome, Edge, Brave, Opera or Vivaldi and helps you set up the look, widgets and AI. Luna downloads and installs new versions by itself (Windows and macOS); on Linux it offers to download them.
 
 The Linux and macOS versions are the first releases for those systems – some features were designed with Windows in mind (e.g. controlling media players through the system). [Report it](https://github.com/z4k0lzakol/Luna/issues/new/choose) if something doesn't work.
 

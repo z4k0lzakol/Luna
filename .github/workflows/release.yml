@@ -192,10 +192,29 @@ jobs:
 
       - name: Obraz DMG (macOS)
         if: runner.os == 'macOS'
+        # okno z tłem (packaging/dmg_background.py): „przeciągnij do Aplikacji” + jak otworzyć Lunę bez podpisu Apple,
+        # obok plik „Jak otworzyć Lunę.txt”; gdy create-dmg zawiedzie (AppleScript w Finderze), zwykły .dmg bez tła
         run: |
           codesign --force --deep --sign - dist/Luna.app
-          mkdir -p dist/dmg && cp -R dist/Luna.app dist/dmg/ && ln -s /Applications dist/dmg/Aplikacje
-          hdiutil create -volname "Luna" -srcfolder dist/dmg -ov -format UDZO "dist/Luna-${{ steps.ver.outputs.v }}-macOS-arm64.dmg"
+          DMG="dist/Luna-${{ steps.ver.outputs.v }}-macOS-arm64.dmg"
+          HELP="Jak otworzyć Lunę.txt"
+          mkdir -p dist/dmg && cp -R dist/Luna.app dist/dmg/ && cp "packaging/dmg/$HELP" dist/dmg/ && ln -s /Applications dist/dmg/Aplikacje
+          python packaging/dmg_background.py dist/dmg-tlo
+          tiffutil -cathidpicheck dist/dmg-tlo/tlo.png dist/dmg-tlo/tlo@2x.png -out dist/dmg-tlo/tlo.tiff
+          brew install create-dmg || true
+          for i in 1 2 3; do
+            rm -f "$DMG"
+            create-dmg --volname "Luna" --background dist/dmg-tlo/tlo.tiff \
+              --window-pos 200 120 --window-size 660 480 --icon-size 72 --text-size 12 \
+              --icon "Luna.app" 165 150 --icon "Aplikacje" 495 150 --icon "$HELP" 330 400 \
+              "$DMG" dist/dmg/ && [ -f "$DMG" ] && break
+            echo "create-dmg – próba $i nieudana"; sleep 5
+          done
+          if [ ! -f "$DMG" ]; then
+            echo "::warning::create-dmg nie zadziałał – .dmg bez tła (z plikiem „$HELP”)"
+            hdiutil create -volname "Luna" -srcfolder dist/dmg -ov -format UDZO "$DMG"
+          fi
+          hdiutil verify "$DMG"
 
       - uses: actions/upload-artifact@v4
         with:
