@@ -4,6 +4,7 @@ PyQt6-WebEngine>=6.7
 
 # opcjonalne (Luna działa bez nich)
 psutil                                                       # monitor zasobów i menedżer zadań
+cryptography                                                 # połączone urządzenia (szyfrowane połączenie z telefonem)
 keyring; sys_platform != "win32"                             # hasła w pęku kluczy systemu (Linux, macOS)
 winrt-Windows.Media.Control; sys_platform == "win32"         # sterowanie Spotify i innymi odtwarzaczami (Windows)
 winrt-Windows.Storage.Streams; sys_platform == "win32"       # okładki utworów w widgecie audio (Windows)

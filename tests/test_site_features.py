@@ -134,7 +134,8 @@ luna = importlib.util.module_from_spec(spec)
 sys.modules["luna"] = luna
 spec.loader.exec_module(luna)
 from PyQt6.QtCore import QTimer, QEventLoop, QPoint, Qt  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QPushButton  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QLabel, QPushButton  # noqa: E402
+from pathlib import Path  # noqa: E402
 from PyQt6.QtTest import QTest  # noqa: E402
 
 app = QApplication([sys.argv[0]])
@@ -275,6 +276,7 @@ def EXTRA(t):
     link_peek()
     totp()
     sync()
+    link_devices()
 
 
 def ai_page():
@@ -421,6 +423,130 @@ def sync():
     open(os.path.join(folder, "Luna-sync", "cccccc.lunasync"), "wb").write(luna.backup_encrypt(remote, "inne-haslo"))
     sm.read_all()
     check("wrong sync password reported, not applied", "inne hasło" in sm.error, sm.error)
+
+
+def link_devices():
+    """Połączone urządzenia: Luna na komputerze ↔ udawany telefon (luna_link w tym samym procesie, przez localhost)."""
+    import threading
+    import luna_link as L
+    if not L.available():
+        check("cryptography installed for device linking", False); return
+    tmp = Path(tempfile.mkdtemp(prefix="luna_link_ui_"))
+    st = w.store; cfg = luna.link_cfg(st); cfg["on"] = True
+    cfg["feat"].update(files_auto=True, clip=True, passwords=False)
+    lm = luna.link_manager(st)
+    lm.link = L.Link(tmp / "pc.json", lm, name="Komputer testowy", port=0, discovery=False)
+    check("device link starts when switched on", lm.start() and lm.link.running())
+
+    class Phone(L.Handler):
+        def __init__(self):
+            self.log = []
+
+        def allowed(self, f, p):
+            return True
+
+        def on_clip(self, p, text):
+            self.log.append(("clip", text))
+
+        def on_notify(self, p, title, body, kind):
+            self.log.append(("notify", title, body))
+
+        def on_sync(self, p, payload):
+            return {}
+    ph = Phone(); phone = L.Link(tmp / "phone.json", ph, name="Telefon testowy", dev_type="phone", port=0, discovery=False)
+    phone.start()
+
+    def bg(fn):   # telefon działa w osobnym wątku – Luna w tym czasie obsługuje zdarzenia
+        out = {}
+        th = threading.Thread(target=lambda: out.__setitem__("r", _try(fn)), daemon=True); th.start()
+        until(lambda: not th.is_alive(), 30000)
+        return out.get("r")
+
+    dlg = luna.PairDialog(w); dlg.show(); wait(200)
+    code = lm.link.code[0]
+    r = bg(lambda: phone.pair_with("127.0.0.1", lm.link.port, lm.link.fp, code))
+    until(lambda: not dlg.isVisible(), 4000)
+    check("phone pairs with the code shown on the computer", isinstance(r, dict) and phone.id in lm.peers(), r)
+    check("pairing dialog closes by itself", not dlg.isVisible())
+    lm.link.state["peers"][phone.id].update(addr="127.0.0.1", port=phone.port)
+    lm.link.saw(phone.id, "Telefon testowy", "phone", phone.fp, "127.0.0.1", phone.port)
+
+    n0 = len(w.all_tabs())
+    bg(lambda: phone.open_on(lm.link.id, f"http://site-a.localhost:{PORT}/?z-telefonu", "Z telefonu"))
+    until(lambda: len(w.all_tabs()) > n0, 5000)
+    check("page sent from the phone opens in a new tab", any("z-telefonu" in (t.web.url().toString() if t.web else "")
+                                                             for t in w.all_tabs()))
+    lm._refresh_tabs()
+    tabs = bg(lambda: phone.tabs_of(lm.link.id))
+    check("phone sees the computer's open tabs", isinstance(tabs, list) and any("site-a.localhost" in x["url"] for x in tabs), tabs)
+
+    bg(lambda: phone.clip_to(lm.link.id, "tekst z telefonu"))
+    until(lambda: QApplication.clipboard().text() == "tekst z telefonu", 3000)
+    check("shared clipboard: phone → computer", QApplication.clipboard().text() == "tekst z telefonu")
+    QApplication.clipboard().setText("tekst z komputera")
+    until(lambda: ("clip", "tekst z komputera") in ph.log, 5000)
+    check("shared clipboard: computer → phone", ("clip", "tekst z komputera") in ph.log, ph.log)
+
+    # synchronizacja: telefon wysyła nowsze zakładki, dostaje dane komputera; hasła wyłączone
+    future = int(time.time()) + 500
+    r = bg(lambda: phone.sync_with(lm.link.id, {"v": 1, "device": "tel", "name": "Telefon testowy", "t": future,
+                                                "cols": {"bookmarks": [{"title": "Z telefonu", "url": "https://tel.example.org",
+                                                                        "folder": ""}]},
+                                                "mtime": {"bookmarks": future},
+                                                "logins": [{"origin": "https://tel.example.org", "user": "u", "pw": "p", "ts": future}],
+                                                "tabs": [{"url": "https://karta-z-telefonu.example.org", "title": "Karta z telefonu"}]}))
+    check("sync over the network: computer answers with its data", isinstance(r, dict) and "tiles" in (r.get("cols") or {}), r and list(r))
+    check("bookmarks from the phone applied", any(b.get("url") == "https://tel.example.org" for b in luna.Bookmarks.items()))
+    check("passwords not shared while switched off", luna.VAULT[0].find("https://tel.example.org", "u") is None
+          and not (r or {}).get("logins"))
+    check("phone's tabs listed on the computer", any(n == "Telefon testowy" for n, _, _ in lm.other_tabs()))
+    cfg["feat"]["sync"] = False
+    r = bg(lambda: phone.sync_with(lm.link.id, {"v": 1}))
+    check("sync can be switched off", r is None or "wyłączona" in str(r), r)
+    cfg["feat"]["sync"] = True
+
+    # pliki od telefonu: bajt w bajt do Pobrane/Luna
+    lm.files_dir = lambda: str(tmp / "Pobrane" / "Luna")
+    pic = tmp / "zdjecie.jpg"; pic.write_bytes(os.urandom(2 * 2 ** 20))
+    n = bg(lambda: phone.send_files(lm.link.id, [str(pic)]))
+    check("photo from the phone saved without changes", n == 1 and (tmp / "Pobrane" / "Luna" / "zdjecie.jpg").read_bytes() == pic.read_bytes())
+    until(lambda: w.notice.isVisible() and "Odebrano" in w.notice.text.text(), 3000)
+    check("computer tells about the received file", "Odebrano" in w.notice.text.text(), w.notice.text.text())
+
+    # pilot i powiadomienia
+    bg(lambda: phone.remote(lm.link.id, "next_tab"))
+    check("remote control command accepted", True)
+    bg(lambda: phone.notify(lm.link.id, "Test", "z telefonu"))
+    until(lambda: "Telefon testowy: Test" in w.notice.text.text(), 3000)
+    check("notification from the phone shown", "Telefon testowy: Test" in w.notice.text.text(), w.notice.text.text())
+    cfg["feat"]["notify_send"] = True
+    lm.notify_phones("Pobieranie skończone", "plik.zip")
+    until(lambda: any(x[0] == "notify" for x in ph.log), 4000)
+    check("computer notifies the phone", ("notify", "Pobieranie skończone", "plik.zip") in ph.log, ph.log)
+
+    # menu „Wyślij na urządzenie”
+    from PyQt6.QtWidgets import QMenu
+    m = QMenu(); luna.send_to_device_menu(w, m, "https://example.com")
+    sub = [a for a in m.actions() if a.menu()]
+    check("'Send to device' menu lists the phone", sub and sub[0].text() == "Wyślij na urządzenie"
+          and "Telefon testowy" in [a.text() for a in sub[0].menu().actions()])
+    # strona ustawień
+    page = luna.page_devices(type("D", (), {"store": st, "browser": w})())
+    check("settings page lists the paired phone", "Telefon testowy" in [x.text() for x in page.findChildren(QLabel)])
+
+    # wyłączenie
+    lm.set_on(False)
+    check("switching off stops listening", not lm.link.running())
+    r = bg(lambda: phone.open_on(lm.link.id, "https://example.com"))
+    check("phone cannot reach a switched-off computer", not isinstance(r, dict), r)
+    phone.stop()
+
+
+def _try(fn):
+    try:
+        return fn()
+    except Exception as e:
+        return e
 
 
 def memory_and_animations():

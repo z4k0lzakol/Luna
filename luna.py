@@ -4325,6 +4325,8 @@ class PomodoroWidget(WidgetFrame):
         QApplication.beep(); self.end = None; self.ui.stop()
         self.mode = "Przerwa" if self.mode == "Praca" else "Praca"; self.left = self.MODES[self.mode]
         self.tick(); self.state.setText(f"Koniec! Teraz: {self.mode.lower()}")
+        if LINK:
+            LINK[0].notify_phones("Pomodoro", f"Koniec! Teraz: {self.mode.lower()}", "pomodoro")
 
     def teardown(self):
         self.alarm.stop(); self.ui.stop()
@@ -7703,6 +7705,8 @@ class DownloadManager(QObject):
             return
         req.setDownloadDirectory(self.folder())
         req.receivedBytesChanged.connect(self.changed); req.stateChanged.connect(lambda _: self.changed.emit())
+        req.stateChanged.connect(lambda st, r=req: st == QWebEngineDownloadRequest.DownloadState.DownloadCompleted and LINK
+                                 and LINK[0].notify_phones("Pobieranie skończone", r.downloadFileName(), "download"))
         req.accept(); self.items.insert(0, req); del self.items[50:]
         self.started.emit(req.downloadFileName()); self.changed.emit()
 
@@ -9185,6 +9189,8 @@ def sync_touch():
     """Wywoływane przy zapisie danych – zaplanuj wysłanie zmian (20 s ciszy)."""
     if SYNC:
         SYNC[0].touch()
+    if LINK:
+        LINK[0].touch()
 
 
 class SyncManager(QObject):
@@ -9255,12 +9261,7 @@ class SyncManager(QObject):
         if not self.enabled():
             return
         try:
-            cols = self.collections(); mt = self._stamp(cols)
-            v = VAULT[0]
-            payload = {"v": 1, "device": self.cfg()["device"], "name": self.cfg()["name"], "t": int(time.time()),
-                       "cols": cols, "mtime": mt, "logins": v.logins(), "deleted": v.data.get("deleted", {}),
-                       "tabs": self._tabs()}
-            blob = backup_encrypt(payload, self.password())
+            blob = backup_encrypt(self.payload(), self.password())
             path = os.path.join(self.folder(), self.cfg()["device"] + ".lunasync"); tmp = path + ".tmp"
             with open(tmp, "wb") as f:
                 f.write(blob)
@@ -9269,6 +9270,17 @@ class SyncManager(QObject):
         except (OSError, ValueError) as e:
             self.error = f"Nie udało się zapisać: {e}"
         self.changed.emit()
+
+    def payload(self, logins=True, only=None):
+        """Ładunek synchronizacji – do pliku w chmurze i do Luna Link (sieć lokalna). only: zbiór kolekcji do wysłania."""
+        cols = self.collections()
+        if only is not None:
+            cols = {k: v for k, v in cols.items() if k in only}
+        mt = self._stamp(cols)
+        v = VAULT[0] if VAULT and VAULT[0].available() else None
+        return {"v": 1, "device": self.cfg()["device"], "name": self.cfg()["name"], "t": int(time.time()),
+                "cols": cols, "mtime": mt, "logins": v.logins() if (v and logins) else [],
+                "deleted": v.data.get("deleted", {}) if (v and logins) else {}, "tabs": self._tabs()}
 
     @staticmethod
     def _tabs():
@@ -9305,7 +9317,7 @@ class SyncManager(QObject):
             self.merge(data)
         self.cfg()["last_read"] = int(time.time()); self.store.save_soon(); self.changed.emit()
 
-    def merge(self, r):
+    def merge(self, r, logins=True, only=None):
         """Kolekcje: nowsza wygrywa w całości. Hasła: wpis po wpisie (nowszy wygrywa), usunięcia przenoszone."""
         self._applying = True
         try:
@@ -9313,6 +9325,8 @@ class SyncManager(QObject):
             local = self.collections(); self._stamp(local)
             changed_settings = False
             for k, val in cols.items():
+                if only is not None and k not in only:
+                    continue
                 if k not in local or int(mts.get(k, 0)) <= int((state.get(k) or {}).get("mtime", 0)):
                     continue
                 if k == "tiles":
@@ -9328,7 +9342,7 @@ class SyncManager(QObject):
                 elif k == "settings":
                     self.store.settings.update({x: y for x, y in val.items() if x in SYNC_SETTINGS}); changed_settings = True
                 state[k] = {"hash": self._hash(val), "mtime": int(mts[k])}
-            if VAULT and VAULT[0].available():
+            if logins and VAULT and VAULT[0].available():
                 self._merge_logins(r.get("logins") or [], r.get("deleted") or {})
             if changed_settings:
                 self.store.save_settings(); self.store.features_changed.emit()
@@ -9362,6 +9376,533 @@ class SyncManager(QObject):
         """[(nazwa komputera, czas, [karty])] z innych komputerów."""
         return sorted(((d.get("name", "?"), d.get("t", 0), d.get("tabs", [])) for d in self.remote.values()),
                       key=lambda x: -x[1])
+
+
+# --- Luna Link: połączone urządzenia w sieci lokalnej (komputer ↔ telefon ↔ komputer), bez serwerów Luny.
+# Sieć i szyfrowanie: luna_link.py, protokół: POLACZENIE_URZADZEN.md. Tu: ustawienia, okna parowania, odbieranie. ---
+import luna_link
+
+LINK = []
+LINK_STATE = HOME / ".luna_polaczenie.json"
+# (id, nazwa, opis, domyślnie) – każdą funkcję da się wyłączyć; główny przełącznik jest w settings["link"]["on"]
+LINK_FEATS = [
+    ("open", "Strony z innych urządzeń", "„Wyślij na urządzenie” na telefonie albo innym komputerze otwiera stronę w nowej karcie tutaj.", True),
+    ("tabs", "Moje karty widoczne na innych urządzeniach", "Sparowane urządzenia widzą listę otwartych tu kart (menu → Karty z innych urządzeń).", True),
+    ("sync", "Synchronizacja w sieci domowej", "Zakładki, kafelki, zakreślenia, „Do przeczytania”, adresy i ustawienia – gdy urządzenia są w tej "
+     "samej sieci Wi-Fi. Działa też bez folderu w chmurze.", True),
+    ("passwords", "Hasła w synchronizacji", "Zapisane hasła trafiają na sparowane urządzenia (połączenie szyfrowane, tylko w sieci domowej).", False),
+    ("clip", "Wspólny schowek", "Tekst skopiowany tutaj można wkleić na sparowanym urządzeniu i odwrotnie. Uwaga: dotyczy każdego "
+     "skopiowanego tekstu.", False),
+    ("files", "Pliki od sparowanych urządzeń", "Zdjęcia, filmy i dokumenty bez utraty jakości – trafiają do Pobrane/Luna.", True),
+    ("files_auto", "Przyjmuj pliki od sparowanych bez pytania", "Bez tego Luna za każdym razem pyta „Przyjmij / Odrzuć”.", False),
+    ("files_unpaired", "Pliki od innych urządzeń w tej sieci", "Jak LocalSend: każda Luna w Twojej sieci może zaproponować pliki – zawsze z pytaniem.", False),
+    ("remote", "Pilot z telefonu", "Telefon steruje filmami i muzyką w aktywnej karcie: pauza, przewijanie, głośność, przełączanie kart.", True),
+    ("notify", "Powiadomienia z innych urządzeń", "Krótkie komunikaty od sparowanych urządzeń (np. „Pobieranie skończone”).", True),
+    ("notify_send", "Wysyłaj powiadomienia na telefon", "Koniec pobierania, koniec Pomodoro i zmiany w paczkach trafiają na sparowane telefony.", False),
+]
+LINK_LABEL = {"desktop": "komputer", "phone": "telefon", "tablet": "tablet"}
+
+
+def link_cfg(store):
+    c = store.settings.setdefault("link", {})
+    c.setdefault("on", False); c.setdefault("feat", {})
+    return c
+
+
+def link_feature(store, key):
+    c = link_cfg(store)
+    return bool(c["feat"].get(key, next((d for k, _, _, d in LINK_FEATS if k == key), False)))
+
+
+class _GuiCall(QObject):
+    """Wykonanie funkcji w wątku interfejsu i czekanie na wynik (z wątku serwera Luna Link)."""
+    run = pyqtSignal(object)
+
+    def __init__(self):
+        super().__init__(QApplication.instance()); self.run.connect(self._run)
+
+    @staticmethod
+    def _run(job):
+        try:
+            job["out"] = job["fn"]()
+        except Exception as e:
+            job["err"] = e
+        job["ev"].set()
+
+    def later(self, fn):
+        """Bez czekania na wynik."""
+        import threading
+        self.run.emit({"fn": fn, "ev": threading.Event()})
+
+    def __call__(self, fn, timeout=30):
+        import threading
+        job = {"fn": fn, "ev": threading.Event()}
+        self.run.emit(job)
+        if not job["ev"].wait(timeout):
+            raise TimeoutError("Luna nie odpowiedziała")
+        if "err" in job:
+            raise job["err"]
+        return job.get("out")
+
+
+class LinkManager(QObject, luna_link.Handler):
+    """Połączone urządzenia: start/stop, odbieranie (wątki serwera → interfejs), synchronizacja w sieci, wysyłanie."""
+    nearby_sig = pyqtSignal()
+    peers_sig = pyqtSignal()
+    status = pyqtSignal(str)
+    progress_sig = pyqtSignal(object)   # {"done", "total", "name", "peer"} albo None (koniec)
+
+    def __init__(self, store):
+        QObject.__init__(self, QApplication.instance())
+        self.store = store; self.gui = _GuiCall(); self.link = None
+        self.remote_tabs = {}            # id → (nazwa, czas, [karty])
+        self._tabs_cache = []; self._clip_ignore = None; self._busy_sync = set()
+        self._tt = QTimer(self); self._tt.timeout.connect(self._refresh_tabs)
+        self._st = QTimer(self); self._st.timeout.connect(lambda: self.sync_all())
+        self._touch = QTimer(self); self._touch.setSingleShot(True); self._touch.timeout.connect(lambda: self.sync_all())
+        QGuiApplication.clipboard().dataChanged.connect(self._clip_changed)
+        self.nearby_sig.connect(lambda: self.on() and self._touch.start(3000))   # urządzenie pojawiło się w sieci → synchronizacja
+
+    # --- stan ---
+    def available(self):
+        return luna_link.available()
+
+    def on(self):
+        return link_cfg(self.store)["on"] and self.available()
+
+    def feat(self, key):
+        return link_feature(self.store, key)
+
+    def default_name(self):
+        n = os.environ.get("COMPUTERNAME") or socket_hostname()
+        return (n or "Komputer").title()[:40]
+
+    def start(self):
+        if not self.on():
+            return False
+        if self.link is None:
+            self.link = luna_link.Link(LINK_STATE, self, name=self.default_name(), dev_type="desktop")
+        try:
+            self.link.start()
+        except (OSError, luna_link.LinkError) as e:
+            self.status.emit(f"Nie udało się włączyć połączenia: {e}"); return False
+        self._refresh_tabs(); self._tt.start(8000); self._st.start(3 * 60 * 1000)
+        QTimer.singleShot(4000, lambda: self.sync_all())
+        self.peers_sig.emit()
+        return True
+
+    def stop(self):
+        self._tt.stop(); self._st.stop()
+        if self.link:
+            self.link.stop()
+        self.nearby_sig.emit()
+
+    def set_on(self, on):
+        link_cfg(self.store)["on"] = bool(on); self.store.save_soon()
+        self.start() if on else self.stop()
+
+    def peers(self):
+        return self.link.peers() if self.link else {}
+
+    def reachable(self, pid):
+        return bool(self.link and self.link.reachable(pid))
+
+    # --- wywołania z wątków serwera (luna_link.Handler) ---
+    def features(self):
+        return [k for k, *_ in LINK_FEATS if self.feat(k)]
+
+    def allowed(self, feature, peer):
+        if not self.on():
+            return False
+        if feature == "approve":
+            return False   # komputer prosi telefon o zgodę, nie odwrotnie
+        return self.feat(feature)
+
+    def nearby_changed(self):   # z wątku wykrywania – sygnał przechodzi do wątku interfejsu
+        self.nearby_sig.emit()
+
+    def on_paired(self, peer):
+        self.peers_sig.emit()
+        self.gui.later(lambda: self._say(f"Sparowano: {peer['name']} ({LINK_LABEL.get(peer.get('type'), 'urządzenie')}).", "signal"))
+
+    def on_unpaired(self, peer):
+        self.remote_tabs.pop(peer.get("id"), None); self.peers_sig.emit()
+
+    def on_open(self, peer, url, title):
+        self.gui.later(lambda: self._open(peer, url))
+
+    def get_tabs(self, peer):
+        return list(self._tabs_cache)
+
+    def on_clip(self, peer, text):
+        def put():
+            self._clip_ignore = text; QGuiApplication.clipboard().setText(text)
+            self._say(f"Schowek z urządzenia {peer['name']} – możesz wkleić (Ctrl+V).", "copy")
+        self.gui.later(put)
+
+    def on_sync(self, peer, payload):
+        return self.gui(lambda: self._exchange(peer, payload), 60)
+
+    def offer_files(self, sender, files):
+        import threading
+        if sender.get("token") and self.feat("files_auto"):
+            return list(range(len(files)))
+        ans = {"v": []}; ev = threading.Event()
+        size = sum(f["size"] for f in files)
+        names = ", ".join(f["name"] for f in files[:3]) + (f" i {len(files) - 3} innych" if len(files) > 3 else "")
+        who = sender.get("name") or sender.get("addr")
+        txt = (f"{who}{'' if sender.get('token') else ' (niesparowane urządzenie)'} chce wysłać "
+               f"{len(files)} {'plik' if len(files) == 1 else 'pliki'} ({human_size(size)}): {names}")
+
+        def ask():
+            w = self._win()
+            if not w:
+                ev.set(); return
+            w.notice.ask(txt, [("Przyjmij", lambda: (ans.__setitem__("v", list(range(len(files)))), ev.set()), True),
+                               ("Odrzuć", lambda: ev.set(), False)], icon="download")
+        self.gui.later(ask)
+        ev.wait(60)
+        return ans["v"]
+
+    def files_dir(self):
+        from PyQt6.QtCore import QStandardPaths
+        base = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation) or str(HOME / "Downloads")
+        return os.path.join(base, "Luna")
+
+    def on_files_done(self, sender, paths):
+        def done():
+            w = self._win()
+            if not w:
+                return
+            folder = os.path.dirname(paths[0]) if paths else self.files_dir()
+            one = len(paths) == 1
+            w.notice.ask(f"Odebrano {'plik' if one else f'{len(paths)} pliki'} od {sender.get('name') or sender.get('addr')}"
+                         + (f": {os.path.basename(paths[0])}" if one else "") + ".",
+                         ([("Otwórz", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(paths[0])), True)] if one else []) +
+                         [("Pokaż w folderze", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(folder)), not one)], icon="download")
+        self.gui.later(done)
+
+    def on_remote(self, peer, cmd, value):
+        self.gui.later(lambda: self._remote(cmd, value))
+
+    def on_notify(self, peer, title, body, kind):
+        self.gui.later(lambda: self._say(f"{peer['name']}: {title}" + (f" – {body}" if body else ""), "signal", 9000))
+
+    # --- w wątku interfejsu ---
+    def _win(self):
+        w = QApplication.activeWindow()
+        return w if isinstance(w, Browser) else (WINDOWS[0] if WINDOWS else None)
+
+    def _say(self, text, icon="signal", ms=6000):
+        w = self._win()
+        if w:
+            w.notice.info(text, ms, icon)
+
+    def _open(self, peer, url):
+        w = self._win()
+        if not w:
+            return
+        w.open_url_new_tab(url); w.raise_(); w.activateWindow()
+        w.notice.info(f"Strona z urządzenia {peer['name']}.", 4000, "signal")
+
+    def _refresh_tabs(self):
+        try:
+            self._tabs_cache = SyncManager._tabs() if self.feat("tabs") else []
+        except Exception:
+            pass
+
+    def _sync_parts(self):
+        """(kolekcje, hasła) do synchronizacji w sieci – według przełączników."""
+        if not self.feat("sync"):
+            return set(), False
+        return {"tiles", "bookmarks", "highlights", "readlater", "addresses", "settings"}, self.feat("passwords")
+
+    def _exchange(self, peer, payload):
+        only, pw = self._sync_parts()
+        sm = self._sm()
+        if payload.get("cols") or payload.get("logins"):
+            sm.merge(payload, logins=pw, only=only)
+        self.remote_tabs[peer["id"]] = (peer["name"], int(time.time()), payload.get("tabs") or [])
+        out = sm.payload(logins=pw, only=only)
+        if not self.feat("tabs"):
+            out["tabs"] = []
+        return out
+
+    def _sm(self):
+        if not SYNC:
+            SYNC.append(SyncManager(self.store))
+        return SYNC[0]
+
+    def _remote(self, cmd, value):
+        w = self._win()
+        if not w:
+            return
+        if cmd in ("next_tab", "prev_tab"):
+            w.cycle_tab(1 if cmd == "next_tab" else -1); return
+        t = w.cur(); v = t.web if t else None
+        if v is None:
+            return
+        try:
+            num = float(value) if value is not None else 0.0
+        except (TypeError, ValueError):
+            num = 0.0
+        js = {"playpause": "m.paused?m.play():m.pause()", "seek": f"m.currentTime=Math.max(0,m.currentTime+({num}))",
+              "volume": f"m.volume=Math.min(1,Math.max(0,{num}))", "mute": "m.muted=!m.muted",
+              "fullscreen": "document.fullscreenElement?document.exitFullscreen():(m.requestFullscreen&&m.requestFullscreen())"}.get(cmd)
+        if js:
+            _safe_js(v, "(function(){var a=[].slice.call(document.querySelectorAll('video,audio'));"
+                        "var m=a.filter(function(x){return !x.paused})[0]||a.sort(function(x,y){return (y.duration||0)-(x.duration||0)})[0];"
+                        "if(m){" + js + "}})()")
+
+    def _clip_changed(self):
+        if not (self.on() and self.link and self.feat("clip")):
+            return
+        text = QGuiApplication.clipboard().text()
+        if not text or text == self._clip_ignore or len(text) > 1_000_000:
+            return
+        self._clip_ignore = text
+        for pid in self.peers():
+            if self.reachable(pid):
+                self._bg(lambda pid=pid: self.link.clip_to(pid, text))
+
+    # --- wysyłanie (w tle) ---
+    def _bg(self, fn, done=None, fail=None):
+        import threading
+
+        def run():
+            try:
+                r = fn()
+            except (luna_link.LinkError, OSError) as e:
+                if fail:
+                    msg = str(e); self.gui.later(lambda: fail(msg))
+                return
+            if done:
+                self.gui.later(lambda: done(r))
+        threading.Thread(target=run, daemon=True).start()
+
+    def send_url(self, pid, url, title=""):
+        name = self.peers().get(pid, {}).get("name", "urządzenie")
+        self._bg(lambda: self.link.open_on(pid, url, title), lambda _: self._say(f"Wysłano na: {name}.", "signal", 3000),
+                 lambda e: self._say(f"Nie udało się wysłać na {name}: {e}", "signal", 7000))
+
+    def send_files(self, target, paths):
+        name = target["name"] if isinstance(target, dict) else self.peers().get(target, {}).get("name", "urządzenie")
+        self._cancel = False
+
+        def prog(d, t, n):
+            self.progress_sig.emit({"done": d, "total": t, "name": n, "peer": name})
+        self._say(f"Wysyłanie do: {name}… czekam, aż odbiorca przyjmie pliki.", "send", 70000)
+
+        def ok(n):
+            self.progress_sig.emit(None); self._say(f"Wysłano {n} z {len(paths)} plików do: {name}.", "send", 6000)
+
+        def bad(e):
+            self.progress_sig.emit(None); self._say(f"Nie udało się wysłać do {name}: {e}", "send", 8000)
+        self._bg(lambda: self.link.send_files(target, paths, prog, lambda: self._cancel), ok, bad)
+
+    def sync_all(self):
+        if not (self.on() and self.link and self.feat("sync")):
+            return
+        for pid in self.peers():
+            if self.reachable(pid) and pid not in self._busy_sync:
+                self._sync_one(pid)
+
+    def _sync_one(self, pid):
+        only, pw = self._sync_parts(); sm = self._sm()
+        out = sm.payload(logins=pw, only=only)
+        if not self.feat("tabs"):
+            out["tabs"] = []
+        self._busy_sync.add(pid); name = self.peers().get(pid, {}).get("name", "?")
+
+        def done(r):
+            self._busy_sync.discard(pid)
+            if r:
+                sm.merge(r, logins=pw, only=only)
+                self.remote_tabs[pid] = (name, int(time.time()), r.get("tabs") or [])
+                link_cfg(self.store).setdefault("last_sync", {})[pid] = int(time.time()); self.store.save_soon()
+                self.peers_sig.emit()
+        self._bg(lambda: self.link.sync_with(pid, out), done, lambda e: self._busy_sync.discard(pid))
+
+    def touch(self):
+        if self.on() and self.link:
+            self._touch.start(20000)
+
+    def notify_phones(self, title, body="", kind=""):
+        if not (self.on() and self.link and self.feat("notify_send")):
+            return
+        for pid, p in self.peers().items():
+            if p.get("type") in ("phone", "tablet") and self.reachable(pid):
+                self._bg(lambda pid=pid: self.link.notify(pid, title, body, kind))
+
+    def other_tabs(self):
+        """[(nazwa, czas, [karty])] z urządzeń połączonych przez sieć."""
+        return sorted(self.remote_tabs.values(), key=lambda x: -x[1])
+
+
+def socket_hostname():
+    import socket
+    try:
+        return socket.gethostname()
+    except OSError:
+        return ""
+
+
+def link_manager(store=None):
+    if not LINK and store is not None:
+        LINK.append(LinkManager(store))
+    return LINK[0] if LINK else None
+
+
+def send_to_device_menu(browser, menu, url, title=""):
+    """Podmenu „Wyślij na urządzenie” (karta, link) – sparowane urządzenia; szare, gdy poza siecią."""
+    lm = link_manager()
+    if not (lm and lm.on() and lm.peers()):
+        return
+    sm = menu.addMenu(glyph("signal"), "Wyślij na urządzenie")
+    for pid, p in lm.peers().items():
+        a = sm.addAction(f"{p['name']}" + ("" if lm.reachable(pid) else "  (poza siecią)"))
+        a.triggered.connect(lambda _=False, pid=pid: lm.send_url(pid, url, title))
+        a.setEnabled(lm.reachable(pid) or bool(p.get("addr")))
+
+
+class PairDialog(LunaDialog):
+    """Parowanie: kod QR dla telefonu i 6-cyfrowy kod dla innego komputera. Zamyka się po udanym parowaniu."""
+
+    def __init__(self, browser):
+        super().__init__(browser, "Sparuj urządzenie", "signal", (520, 640), "Telefon: zeskanuj kod w Lunie na telefonie "
+                         "(Menu → Połączone urządzenia → Skanuj kod). Inny komputer: wybierz ten komputer i wpisz kod.")
+        self.lm = link_manager(); before = set(self.lm.peers())
+        uri = self.lm.link.pair_uri(); code = self.lm.link.code[0]
+        q = QLabel(); q.setPixmap(qr_pixmap(uri, px=4)); q.setAlignment(Qt.AlignmentFlag.AlignCenter); self.body.addWidget(q)
+        c = lbl(" ".join([code[:3], code[3:]]), "h1"); c.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        c.setStyleSheet("font-size:34px; letter-spacing:6px;"); self.body.addWidget(c)
+        self.body.addWidget(lbl(f"Ten komputer: {self.lm.link.name} · kod ważny 5 minut, jednorazowy", "muted2", wrap=True))
+        self.state = lbl("Czekam na drugie urządzenie…", "muted2", wrap=True); self.body.addWidget(self.state)
+        self.body.addStretch(1)
+        self.footer(right=[("Zamknij", self.reject, False)])
+
+        def check():
+            new = set(self.lm.peers()) - before
+            if new:
+                p = self.lm.peers()[new.pop()]
+                self.state.setText(f"Sparowano: {p['name']} ✓"); QTimer.singleShot(1200, self.accept)
+        self.lm.peers_sig.connect(check); self.destroyed.connect(lambda _=None: safe_disconnect(self.lm.peers_sig, check))
+
+
+def pair_with_nearby(parent, dev):
+    """Inny komputer z listy wykrytych: wpisz kod pokazany na nim."""
+    lm = link_manager()
+    code, ok = QInputDialog.getText(parent, "Połącz z urządzeniem",
+                                    f"Na urządzeniu „{dev['name']}” otwórz Ustawienia → Połączone urządzenia → Sparuj "
+                                    f"urządzenie i wpisz pokazany kod:")
+    code = re.sub(r"\D", "", code or "")
+    if not ok or len(code) != 6:
+        return
+    lm._bg(lambda: lm.link.pair_with(dev["addr"], dev["port"], dev["fp"], code),
+           lambda p: lm._say(f"Sparowano: {p['name']}.", "signal"),
+           lambda e: QMessageBox.warning(parent, "Połącz z urządzeniem", f"Nie udało się: {e}"))
+
+
+@settings_page("devices", "Połączone urządzenia")
+def page_devices(dlg):
+    w, l = page_box("Połączone urządzenia", "Telefon i inne komputery z Luną w tej samej sieci Wi-Fi: wysyłanie stron i plików, "
+                    "wspólne zakładki, karty, schowek i pilot. Połączenie jest bezpośrednie i szyfrowane – bez serwerów Luny.")
+    st = dlg.store; lm = link_manager(st)
+    if not lm.available():
+        l.addWidget(lbl("Ta wersja Luny nie ma pakietu „cryptography”, potrzebnego do szyfrowanego połączenia. "
+                        "Zainstaluj go (pip install cryptography) albo użyj Luny z wydania.", "muted2", wrap=True))
+        l.addStretch(1); return scroll_page(w)
+    l.addWidget(switch_row("Połączenie urządzeń", "Wyłączone: Luna nie ogłasza się w sieci i nie przyjmuje połączeń.",
+                           lm.on(), lambda v: (lm.set_on(v), refresh())))
+    box = QWidget(); box.setObjectName("clear"); bl = QVBoxLayout(box); bl.setContentsMargins(0, 0, 0, 0); bl.setSpacing(6)
+    l.addWidget(box)
+    bl.addWidget(lbl("Nazwa tego komputera", "h3"))
+    ne = QLineEdit(); ne.setObjectName("glassin"); bl.addWidget(ne)
+    ne.editingFinished.connect(lambda: lm.link and lm.link.set_name(ne.text()))
+    row = QHBoxLayout(); pair = QPushButton("Sparuj urządzenie…"); pair.setObjectName("primary")
+    send = QPushButton("Wyślij pliki…"); row.addWidget(pair); row.addWidget(send); row.addStretch(1); bl.addLayout(row)
+    bl.addWidget(lbl("Sparowane urządzenia", "h3")); peers_box = QVBoxLayout(); bl.addLayout(peers_box)
+    bl.addWidget(lbl("W tej sieci", "h3")); near_box = QVBoxLayout(); bl.addLayout(near_box)
+    bl.addWidget(lbl("Co mogą połączone urządzenia", "h3"))
+    for key, title, desc, _ in LINK_FEATS:
+        bl.addWidget(switch_row(title, desc, lm.feat(key),
+                                lambda v, k=key: (link_cfg(st)["feat"].__setitem__(k, bool(v)), st.save_soon())))
+
+    def clear(lay):
+        while lay.count():
+            it = lay.takeAt(0)
+            if it.widget():
+                it.widget().deleteLater()
+
+    def device_row(text, sub, buttons):
+        r = QWidget(); r.setObjectName("clear"); h = QHBoxLayout(r); h.setContentsMargins(0, 2, 0, 2)
+        col = QVBoxLayout(); col.setSpacing(0); col.addWidget(lbl(text)); col.addWidget(lbl(sub, "muted"))
+        h.addLayout(col, 1)
+        for label, fn in buttons:
+            b = QPushButton(label); b.clicked.connect(fn); h.addWidget(b)
+        return r
+
+    def refresh():
+        try:
+            box.setEnabled(lm.on())
+            if lm.link:
+                ne.setText(lm.link.name)
+            clear(peers_box); clear(near_box)
+            last = link_cfg(st).get("last_sync", {})
+            f = lambda ts: datetime.fromtimestamp(ts).strftime("%d.%m %H:%M") if ts else "jeszcze nie"
+            for pid, p in lm.peers().items():
+                where = "w tej sieci" if lm.reachable(pid) else "poza siecią"
+                peers_box.addWidget(device_row(p["name"], f"{LINK_LABEL.get(p.get('type'), 'urządzenie')} · {where} · "
+                                                          f"synchronizacja: {f(last.get(pid))}",
+                                               [("Wyślij pliki…", lambda _=False, pid=pid: pick_and_send(pid)),
+                                                ("Usuń", lambda _=False, pid=pid: forget(pid))]))
+            if not lm.peers():
+                peers_box.addWidget(lbl("Brak – kliknij „Sparuj urządzenie…”.", "muted"))
+            near = [d for d in (lm.link.nearby.values() if lm.link else []) if not d.get("paired")]
+            for d in near:
+                btns = [("Wyślij pliki…", lambda _=False, d=d: pick_and_send(d)),
+                        ("Połącz…", lambda _=False, d=d: pair_with_nearby(dlg, d))]
+                near_box.addWidget(device_row(d["name"], f"{LINK_LABEL.get(d.get('type'), 'urządzenie')} z Luną · niesparowane", btns))
+            if not near:
+                near_box.addWidget(lbl("Nie widać innych urządzeń z Luną (na nich też musi być włączone połączenie)." if lm.on()
+                                       else "Włącz połączenie, aby zobaczyć urządzenia.", "muted", wrap=True))
+        except RuntimeError:
+            pass
+
+    def pick_and_send(target):
+        files, _ = QFileDialog.getOpenFileNames(dlg, "Wyślij pliki", str(HOME))
+        if files:
+            lm.send_files(target, files)
+
+    def forget(pid):
+        p = lm.peers().get(pid, {})
+        if QMessageBox.question(dlg, "Usuń urządzenie", f"Usunąć „{p.get('name')}” z połączonych urządzeń? "
+                                "Ponowne połączenie wymaga parowania.") == QMessageBox.StandardButton.Yes:
+            lm.link.forget(pid); refresh()
+
+    def do_pair():
+        if not lm.on():
+            lm.set_on(True); refresh()
+        if lm.link and lm.link.running():
+            PairDialog(dlg.browser).exec(); refresh()
+
+    def send_any():
+        devs = [(p["name"], pid) for pid, p in lm.peers().items()] + \
+               [(d["name"] + " (niesparowane)", d) for d in (lm.link.nearby.values() if lm.link else []) if not d.get("paired")]
+        if not devs:
+            QMessageBox.information(dlg, "Wyślij pliki", "Brak urządzeń – sparuj telefon albo włącz Lunę na drugim urządzeniu."); return
+        name, ok = QInputDialog.getItem(dlg, "Wyślij pliki", "Do urządzenia:", [d[0] for d in devs], 0, False)
+        if ok:
+            pick_and_send(dict(devs)[name])
+    pair.clicked.connect(do_pair); send.clicked.connect(send_any)
+    for sig in (lm.peers_sig, lm.nearby_sig):
+        sig.connect(refresh); w.destroyed.connect(lambda _=None, s=sig: safe_disconnect(s, refresh))
+    refresh(); l.addStretch(1)
+    return scroll_page(w)
+
+
+_ORDER.insert(_ORDER.index("sync") + 1, "devices")
+SETTINGS_PAGES.sort(key=lambda p: _ORDER.index(p[0]))
 
 
 def parse_changes(raw):
@@ -13369,6 +13910,9 @@ class Browser(QMainWindow):
             QTimer.singleShot(8000, SHIELD[0].maybe_update)   # lista domen raz w tygodniu, po starcie
         if self.primary and not SYNC:
             SYNC.append(SyncManager(self.store)); QTimer.singleShot(5000, SYNC[0].start)
+        if self.primary and not LINK and "--luna-smoke-test" not in sys.argv:
+            QTimer.singleShot(3000, link_manager(self.store).start)   # tylko gdy połączenie urządzeń jest włączone
+            QApplication.instance().aboutToQuit.connect(lambda: LINK and LINK[0].stop())
         up = updater()
         up.result.connect(self.on_update_result)
         if self.primary and can_self_install() and not self.store.settings.get("install_never") \
@@ -14123,9 +14667,10 @@ class Browser(QMainWindow):
         if self.store.feature("later_tabs"):
             lt = m.addMenu(glyph("moon"), f"Karty na później ({len(self.later_items())})")
             lt.aboutToShow.connect(lambda lt=lt: self.later_menu(lt)); self.later_menu(lt)
-        if SYNC and SYNC[0].enabled() and SYNC[0].remote:
-            om = m.addMenu(glyph("window"), "Karty z innych komputerów")
-            for name, ts, tabs in SYNC[0].other_tabs():
+        others = (SYNC[0].other_tabs() if SYNC and SYNC[0].enabled() and SYNC[0].remote else []) +                  (LINK[0].other_tabs() if LINK and LINK[0].on() else [])
+        if others:
+            om = m.addMenu(glyph("window"), "Karty z innych urządzeń")
+            for name, ts, tabs in others:
                 sm_ = om.addMenu(f"{name} ({len(tabs)})")
                 for d_ in tabs[:40]:
                     sm_.addAction(mini_icon(d_.get("title") or d_["url"], d_["url"]), (d_.get("title") or d_["url"])[:60]).triggered.connect(
@@ -14176,6 +14721,7 @@ class Browser(QMainWindow):
         yt.tile("key", "Hasła", None, "Hasła i autouzupełnianie", menu=pw)
         yt.tile("star", "Na ekran", self.pin_current, "Dodaj stronę do ekranu głównego (Ctrl+D)", web is not None)
         menu_row_action(m, yt)
+        self.act(m, "signal", "Połączone urządzenia…", lambda: self.open_settings("devices"))
         # 3. ta strona
         menu_section(m, "Ta strona")
         zr = MenuRow("zoom", "Powiększ")
@@ -15279,6 +15825,7 @@ class Browser(QMainWindow):
             if cl != link:
                 self.act(m, "copy", "Kopiuj czysty link (bez śledzenia)", lambda: QGuiApplication.clipboard().setText(cl))
             self.act(m, "qr", "Kod QR linku", lambda: show_qr(self, cl))
+            send_to_device_menu(self, m, link)
             self.act(m, "download", "Zapisz plik z linku…", trig(A.DownloadLinkToDisk))
             m.addSeparator()
         if d["image"] and d["media_url"]:
@@ -15348,6 +15895,7 @@ class Browser(QMainWindow):
                 self.act(am, "tabs", "Porównaj otwarte karty", lambda: self.ai_ask("compare"))
             self.act(m, "book", "Dodaj do „Do przeczytania”", self.read_later_add, "Ctrl+Shift+O")
             self.act(m, "qr", "Kod QR strony", lambda: show_qr(self, clean_url(view.url().toString())))
+            send_to_device_menu(self, m, view.url().toString(), view.title())
             self.act(m, "copy", "Kopiuj czysty link strony", lambda: QGuiApplication.clipboard().setText(clean_url(view.url().toString())))
             self.act(m, "save", "Zapisz stronę jako…", self.save_page, "Ctrl+S")
             self.act(m, "print", "Drukuj…", self.print_page, "Ctrl+P")
@@ -16016,6 +16564,8 @@ class Browser(QMainWindow):
             for key, label in LATER_WHEN:
                 lm.addAction(label, lambda k=key: self.postpone_tab(t, k))
         z = m.addAction("Uśpij teraz", lambda: self.sleep_now(t)); z.setEnabled(t is not self.cur() and t.web is not None and not t.asleep)
+        if t.web is not None and not t.on_home():
+            send_to_device_menu(self, m, t.web.url().toString(), t.title_text)
         m.addSeparator(); m.addAction("Zamknij kartę", lambda: self.close_tab(t))
         m.exec(pos)
 

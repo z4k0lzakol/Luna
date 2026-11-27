@@ -16,8 +16,8 @@ datas = [
     (os.path.join(ROOT, "adblock", "luna-filters.txt"), "adblock"),
     (os.path.join(ROOT, "LICENSE"), "."),
 ]
-binaries, hidden = [], ["adblock.compiler"]
-optional = ["psutil"] + (["winrt"] if sys.platform == "win32" else ["keyring"])
+binaries, hidden = [], ["adblock.compiler", "luna_link"]
+optional = ["psutil", "cryptography"] + (["winrt"] if sys.platform == "win32" else ["keyring"])
 for pkg in optional:   # moduły opcjonalne – dołączane, gdy są zainstalowane
     try:
         d, b, h = collect_all(pkg)
