@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Luna używa aparatu tylko do zeskanowania kodu parowania z komputera.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Luna łączy się z Twoim komputerem w tej samej sieci Wi-Fi (połączone urządzenia).</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>

@@ -130,6 +130,23 @@
 
 The same Luna on Android – **[download `Luna-Android.apk`](https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk)** (preview, Android 7 and newer). A home screen with widgets, a bar within thumb's reach (swipe sideways for the next tab, up for all tabs), a menu sheet, the AI assistant and messengers, two pages on one screen, search suggestions, a landscape layout with a top bar, and ad blocking, YouTube included. Code: [`mobile/`](mobile/). The iPhone version is ready in the code and will follow once it has an Apple signature.
 
+## Connected devices
+
+<p align="center">
+  <a href="https://z4k0lzakol.github.io/Luna/en/#polaczenie"><img src="docs/img/podglad-polaczenie.gif" width="720" alt="Film preview: photos from the phone fly to the computer, bookmarks and tabs reach the other device – click to watch the whole film"></a><br>
+  <img src="docs/img/ikony/play.svg" width="16" height="16" alt="" align="absmiddle"> <b><a href="https://z4k0lzakol.github.io/Luna/en/#polaczenie">Watch the film: connected devices</a></b> (with sound)
+</p>
+
+Luna on your computer and phone on the same Wi-Fi connect **directly** – no Luna servers, no accounts (Settings → Connected devices; on the phone Menu → Devices):
+
+- **Pairing with a QR code** – the phone scans the code shown on the computer; another computer uses a 6-digit code.
+- **A page on the other device** – “Send to device” in the tab, link and page menus; tabs open on other devices in the menu.
+- **Files without quality loss** – photos, videos and documents byte for byte (like LocalSend), also via “Share → Luna” on Android; the receiver sees “Accept / Decline”.
+- **Shared bookmarks, tiles and Read later** on your home network; the cloud folder still works between computers.
+- **One clipboard**, **the phone as a remote** for videos on the computer, and **notifications** (e.g. download finished) on the phone.
+
+The connection is encrypted (TLS with pinned certificates), off by default, and every feature can be switched off on its own. Protocol: [`POLACZENIE_URZADZEN.md`](POLACZENIE_URZADZEN.md) (in Polish).
+
 ## What it's good for
 
 | Who | What they get |
@@ -207,7 +224,7 @@ Plans for upcoming versions:
 - [ ] **Digital signature** – Windows and macOS will no longer show warnings on first launch.
 - [x] **Luna for Android** (preview, [`mobile/`](mobile/)) – home screen with widgets, tabs and spaces, menu sheet, AI assistant and messengers, two pages on screen, search suggestions, landscape layout and ad blocking.
 - [ ] **Luna for iPhone and iPad** – the app is ready in the code; publishing it requires an Apple signature.
-- [ ] **Pairing your phone with your computer** – bookmarks and tabs via QR code, without Luna servers.
+- [x] **Pairing your phone with your computer** – QR pairing, pages, files, bookmarks, tabs, clipboard and remote – without Luna servers.
 - [x] **Luna as your default browser** – links from email and other programs open in Luna.
 - [ ] **Light theme and accent color**, an archive of old tabs, a portable version (for a USB stick).
 

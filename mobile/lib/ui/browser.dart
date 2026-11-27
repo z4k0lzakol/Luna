@@ -12,10 +12,12 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../adblock.dart';
+import '../link/manager.dart';
 import '../scripts.dart';
 import '../state.dart';
 import '../suggest.dart';
 import 'common.dart';
+import 'devices.dart';
 import 'home.dart';
 import 'lists.dart';
 import 'menu.dart';
@@ -70,6 +72,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void initState() {
     super.initState();
     blockerVersion.addListener(_applyBlocker);
+    LinkManager.instance?.onSharedFiles = (paths) async {   // „Udostępnij → Luna”: wybór urządzenia
+      final m = LinkManager.instance!;
+      if (!mounted) return;
+      final t = await pickDevice(context, m, 'Wyślij ${paths.length == 1 ? 'plik' : '${paths.length} pliki'} do', nearby: true);
+      if (t != null && mounted) await pickAndSend(context, m, t, paths);
+    };
   }
 
   @override
@@ -589,7 +597,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
               },
             ));
     if (id == null || !mounted) return;
-    final needsPage = {'later', 'addBookmark', 'reader', 'translate', 'dark', 'copy'};
+    final needsPage = {'later', 'addBookmark', 'reader', 'translate', 'dark', 'copy', 'sendTab'};
     if (needsPage.contains(id) && cur.isHome) {
       toast(context, 'Najpierw otwórz stronę');
       return;
@@ -653,6 +661,24 @@ class _BrowserScreenState extends State<BrowserScreen> {
         widget.onGuide();
       case 'panel':
         _panel();
+      case 'devices':
+        final lmDevices = LinkManager.instance;
+        if (lmDevices != null) _push(DevicesScreen(m: lmDevices, onOpen: _open));
+      case 'sendTab':
+        final lmSendTab = LinkManager.instance;
+        if (lmSendTab == null) return;
+        final toTab = await pickDevice(context, lmSendTab, 'Wyślij stronę na');
+        if (toTab is String) await lmSendTab.sendUrl(toTab, cur.url, cur.title);
+      case 'sendFiles':
+        final lmSendFiles = LinkManager.instance;
+        if (lmSendFiles == null) return;
+        final toFiles = await pickDevice(context, lmSendFiles, 'Wyślij pliki do', nearby: true);
+        if (toFiles != null && mounted) await pickAndSend(context, lmSendFiles, toFiles);
+      case 'remote':
+        final lmRemote = LinkManager.instance;
+        if (lmRemote == null) return;
+        final pc = await pickDevice(context, lmRemote, 'Pilot – komputer', desktopsOnly: true);
+        if (pc is String && mounted) _push(RemoteScreen(m: lmRemote, d: lmRemote.peers[pc]!));
     }
   }
 

@@ -40,6 +40,10 @@ dependencies:
   path_provider: ^2.1.6
   url_launcher: ^6.3.3
   flutter_svg: ^2.5.1
+  # połączone urządzenia (lib/link/): certyfikat TLS telefonu, odciski SHA-256, skanowanie kodu QR z komputera
+  basic_utils: 5.8.2
+  crypto: ^3.0.6
+  mobile_scanner: 7.4.3
 
 dev_dependencies:
   flutter_test:
