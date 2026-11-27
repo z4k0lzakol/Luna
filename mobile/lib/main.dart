@@ -18,8 +18,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // błąd w tle (sieć, połączone urządzenia) zostaje w dzienniku – nie zamyka Luny
   PlatformDispatcher.instance.onError = (e, st) {
-    debugPrint('Luna: nieobsłużony błąd: $e
-$st');
+    debugPrint('Luna: nieobsłużony błąd: $e\n$st');
     return true;
   };
   if (const bool.fromEnvironment('LUNA_PERF')) _perf();
