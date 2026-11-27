@@ -60,7 +60,7 @@ except Exception:
     _SMTC = _SMTC_STATUS = _DataReader = None
 import adblock   # wbudowana blokada reklam (adblock/); rejestruje własny schemat – musi być przed QApplication
 
-VERSION = "1.0.12"   # wersja wydania (tag vX.Y.Z na GitHubie musi się zgadzać); kopia z gita pokazuje dodatkowo commit
+VERSION = "1.0.13"   # wersja wydania (tag vX.Y.Z na GitHubie musi się zgadzać); kopia z gita pokazuje dodatkowo commit
 RELEASES_API = "https://api.github.com/repos/z4k0lzakol/Luna/releases/latest"
 RELEASES_URL = "https://github.com/z4k0lzakol/Luna/releases/latest"
 

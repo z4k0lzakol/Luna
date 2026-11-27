@@ -1,10 +1,10 @@
-## Co nowego w 1.0.12
+## Co nowego w 1.0.13
 
-- **macOS: Luna aktualizuje się sama** – pobiera nową wersję w tle, sprawdza jej sumę kontrolną i instaluje ją przy zamknięciu (albo od razu po kliknięciu). Ostrzeżenie Apple trzeba więc ominąć tylko raz, przy pierwszej instalacji.
-- **macOS: instrukcja w obrazie .dmg** – okno instalatora pokazuje, jak otworzyć Lunę bez podpisu Apple, a obok leży plik „Jak otworzyć Lunę.txt”.
-- **macOS: instalacja jednym poleceniem** – w Terminalu, bez ostrzeżenia „nie została otwarta” (polecenie niżej).
+- **Linux: Luna aktualizuje się sama** – AppImage i wersja z archiwum .tar.gz pobierają nowe wydanie w tle, sprawdzają sumę kontrolną i instalują je przy zamknięciu.
+- **Android: aktualizacje z poziomu Luny** – Luna sama sprawdza nowe wydania, pobiera je i otwiera okno instalacji; w Ustawieniach jest też „Sprawdź aktualizacje”.
+- **Android: stały podpis aplikacji** – od tej wersji kolejne wydania instalują się na poprzednich bez utraty danych. **Jeśli masz Lunę 1.0.12 lub starszą na telefonie, odinstaluj ją raz przed instalacją 1.0.13** (starsze wersje miały inny podpis).
 
-W 1.0.11: poprawka obrotu ekranu i płynniejsze animacje w Lunie na Androida.
+W 1.0.12: samoaktualizacja i instrukcja instalacji w Lunie na macOS.
 
 Wersja na iPhone'a jest gotowa w kodzie, ale do instalacji potrzebny jest podpis Apple (konto Apple Developer) – pojawi się później.
 
