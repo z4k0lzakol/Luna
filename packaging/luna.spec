@@ -17,6 +17,11 @@ datas = [
     (os.path.join(ROOT, "LICENSE"), "."),
 ]
 binaries, hidden = [], ["adblock.compiler", "luna_link"]
+# cryptography 50+ na Windows: moduł _rust jest zbudowany pod stabilne ABI Pythona 3.15 (abi3t) i ładuje python3t.dll,
+# której PyInstaller sam nie dołącza – bez niej Luna nie tworzy certyfikatu (połączone urządzenia, kod QR)
+_p3t = os.path.join(sys.base_prefix, "python3t.dll")
+if sys.platform == "win32" and os.path.exists(_p3t):
+    binaries.append((_p3t, "."))
 optional = ["psutil", "cryptography"] + (["winrt"] if sys.platform == "win32" else ["keyring"])
 for pkg in optional:   # moduły opcjonalne – dołączane, gdy są zainstalowane
     try:

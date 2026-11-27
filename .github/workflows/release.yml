@@ -68,10 +68,13 @@ jobs:
           export HOME="$RUNNER_TEMP/luna-home" USERPROFILE="$RUNNER_TEMP/luna-home"
           mkdir -p "$HOME"
           case "$RUNNER_OS" in
-            Windows) ./dist/Luna/Luna.exe --luna-smoke-test ;;
-            Linux)   xvfb-run -a ./dist/Luna/Luna --luna-smoke-test ;;
-            macOS)   ./dist/Luna.app/Contents/MacOS/Luna --luna-smoke-test ;;
+            Windows) out=$(./dist/Luna/Luna.exe --luna-smoke-test 2>&1) ;;
+            Linux)   out=$(xvfb-run -a ./dist/Luna/Luna --luna-smoke-test 2>&1) ;;
+            macOS)   out=$(./dist/Luna.app/Contents/MacOS/Luna --luna-smoke-test 2>&1) ;;
           esac
+          echo "$out" | grep -a "LUNA SMOKE" || true
+          # na Windows kod wyjścia programu okienkowego nie zawsze dociera – liczy się wypisany wynik
+          echo "$out" | grep -q "LUNA SMOKE OK" || { echo "::error::Test uruchomienia nie przeszedł"; exit 1; }
           echo "Luna uruchomiła się i zamknęła poprawnie."
 
       # Podpis cyfrowy (SignPath Foundation) – działa dopiero po akceptacji projektu i dodaniu w ustawieniach repozytorium

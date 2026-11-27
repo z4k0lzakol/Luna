@@ -7,7 +7,7 @@ PyQt6-WebEngine==6.11.0
 PyQt6-WebEngine-Qt6==6.11.2
 PyQt6-sip==13.13.0
 psutil
-cryptography==50.0.2
+cryptography==49.0.0   # 50+ ma na Windows moduł abi3t (wymaga python3t.dll, w Lunie z wydania się nie ładował)
 keyring; sys_platform != "win32"
 winrt-Windows.Media.Control; sys_platform == "win32"
 winrt-Windows.Storage.Streams; sys_platform == "win32"

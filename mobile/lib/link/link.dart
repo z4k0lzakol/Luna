@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -25,6 +26,16 @@ String fingerprintDer(List<int> der) => crypto.sha256.convert(der).toString();
 
 List<int> pemToDer(String pem) => // basic_utils zapisuje PEM z końcami linii \r\n
     base64.decode(pem.split(RegExp(r'\r?\n')).map((l) => l.trim()).where((l) => l.isNotEmpty && !l.startsWith('-----')).join());
+
+/// (certyfikat PEM, klucz PEM) – samopodpisany certyfikat urządzenia, EC P-256, 20 lat.
+(String, String) makeCert(String devId) {
+  final pair = CryptoUtils.generateEcKeyPair();
+  final priv = pair.privateKey as ECPrivateKey, pub = pair.publicKey as ECPublicKey;
+  final csr = X509Utils.generateEccCsrPem({'CN': 'Luna $devId'}, priv, pub);
+  final cert = X509Utils.generateSelfSignedCertificate(priv, csr, 365 * 20,
+      serialNumber: BigInt.parse(randomHex(8), radix: 16).toString(), notBefore: DateTime.now().subtract(const Duration(days: 1)));
+  return (cert, CryptoUtils.encodeEcPrivateKeyToPem(priv));
+}
 
 class LinkError implements Exception {
   final String message;
@@ -139,14 +150,14 @@ class Link {
       {'luna': 1, 'id': id, 'name': name, 'type': type, 'fp': fp, 'port': port ?? portWanted, 'features': h.features()};
 
   // --- certyfikat ---
-  void ensureCert() {
+  /// Certyfikat liczony w osobnym wątku (isolate): kryptografia w czystym Darcie trwa na wolniejszych telefonach
+  /// dłuższą chwilę – w wątku interfejsu zamroziłaby ekran (Android zgłasza wtedy „aplikacja nie odpowiada”).
+  Future<void> ensureCert() async {
     if (st['cert'] == null || st['key'] == null) {
-      final pair = CryptoUtils.generateEcKeyPair();
-      final priv = pair.privateKey as ECPrivateKey, pub = pair.publicKey as ECPublicKey;
-      final csr = X509Utils.generateEccCsrPem({'CN': 'Luna $id'}, priv, pub);
-      st['cert'] = X509Utils.generateSelfSignedCertificate(priv, csr, 365 * 20,
-          serialNumber: BigInt.parse(randomHex(8), radix: 16).toString(), notBefore: DateTime.now().subtract(const Duration(days: 1)));
-      st['key'] = CryptoUtils.encodeEcPrivateKeyToPem(priv);
+      final devId = id;
+      final pem = await Isolate.run(() => makeCert(devId));
+      st['cert'] = pem.$1;
+      st['key'] = pem.$2;
     }
     final f = fingerprintDer(pemToDer(st['cert'] as String));
     if (st['fp'] != f) st['fp'] = f;
@@ -156,7 +167,7 @@ class Link {
   // --- start / stop ---
   Future<void> start() async {
     if (_server != null) return;
-    ensureCert();
+    await ensureCert();
     final ctx = SecurityContext()
       ..useCertificateChainBytes(utf8.encode(st['cert'] as String))
       ..usePrivateKeyBytes(utf8.encode(st['key'] as String));
