@@ -471,17 +471,30 @@ def memory_and_animations():
 
 
 def menu_texts(fn):
-    """Uruchamia fn (która otwiera QMenu.popup) i zwraca teksty akcji widocznego menu."""
+    """Uruchamia fn (która otwiera QMenu.popup) i zwraca teksty akcji tego menu.
+    Treść jest odczytywana w chwili otwarcia, a nie z menu widocznego po chwili: w Windows menu podręczne zamyka się
+    samo, gdy okno Luny straci aktywność (inne okno dostanie fokus), i wtedy test losowo nie widział żadnego menu."""
     from PyQt6.QtWidgets import QMenu
-    fn()
-    wait(500)
-    for m in app.topLevelWidgets():
-        if isinstance(m, QMenu) and m.isVisible():
-            t = [a.text() for a in m.actions() if a.text()]
-            subs = {a.text(): [x.text() for x in a.menu().actions()] for a in m.actions() if a.menu()}
-            m.hide()
-            return t, subs
-    return [], {}
+    seen, orig = [], QMenu.popup
+
+    def popup(m, *a, **k):
+        seen.append(([x.text() for x in m.actions() if x.text()],
+                     {x.text(): [y.text() for y in x.menu().actions()] for x in m.actions() if x.menu()}, m))
+        return orig(m, *a, **k)
+    QMenu.popup = popup
+    try:
+        fn()
+        until(lambda: seen, 3000)   # prawdziwy prawy klik otwiera menu dopiero po odpowiedzi strony
+    finally:
+        QMenu.popup = orig
+    if not seen:
+        return [], {}
+    t, subs, m = seen[-1]
+    try:
+        m.hide()
+    except RuntimeError:   # menu już usunięte
+        pass
+    return t, subs
 
 
 def error_guard():
