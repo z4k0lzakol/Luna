@@ -130,6 +130,23 @@
 
 Ta sama Luna na Androidzie – **[pobierz `Luna-Android.apk`](https://github.com/z4k0lzakol/Luna/releases/latest/download/Luna-Android.apk)** (wersja testowa, Android 7 i nowsze). Ekran główny z widgetami, pasek pod kciukiem (przesuń w bok – sąsiednia karta, w górę – wszystkie karty), menu w arkuszu od dołu, asystent AI i komunikatory, dwie strony na jednym ekranie, podpowiedzi wyszukiwania, układ poziomy z paskiem u góry i blokada reklam także na YouTube. Kod: [`mobile/`](mobile/). Wersja na iPhone'a jest gotowa w kodzie i pojawi się po uzyskaniu podpisu Apple.
 
+## Połączone urządzenia
+
+<p align="center">
+  <a href="https://z4k0lzakol.github.io/Luna/#polaczenie"><img src="docs/img/podglad-polaczenie.gif" width="720" alt="Podgląd filmu: zdjęcia z telefonu lecą na komputer, a zakładki i karty trafiają na drugie urządzenie – kliknij, aby obejrzeć cały film"></a><br>
+  <img src="docs/img/ikony/play.svg" width="16" height="16" alt="" align="absmiddle"> <b><a href="https://z4k0lzakol.github.io/Luna/#polaczenie">Obejrzyj film: połączone urządzenia</a></b> (z dźwiękiem)
+</p>
+
+Komputer i telefon z Luną w tej samej sieci Wi-Fi łączą się **bezpośrednio** – bez serwerów Luny i bez kont (Ustawienia → Połączone urządzenia, na telefonie Menu → Urządzenia):
+
+- **Parowanie kodem QR** – telefon skanuje kod z komputera; inny komputer – 6-cyfrowy kod.
+- **Strona na drugim urządzeniu** – „Wyślij na urządzenie” w menu karty, linku i strony; karty otwarte na innych urządzeniach w menu.
+- **Pliki bez utraty jakości** – zdjęcia, filmy i dokumenty bajt w bajt (jak LocalSend), także z „Udostępnij → Luna” na Androidzie; odbiorca widzi „Przyjmij / Odrzuć”.
+- **Wspólne zakładki, kafelki i „Do przeczytania”** w domowej sieci; między komputerami dalej działa też folder w chmurze.
+- **Jeden schowek**, **telefon jako pilot** do filmów na komputerze i **powiadomienia** (np. koniec pobierania) na telefonie.
+
+Połączenie jest szyfrowane (TLS z przypiętymi certyfikatami), domyślnie wyłączone, a każdą funkcję da się wyłączyć osobno. Opis protokołu: [`POLACZENIE_URZADZEN.md`](POLACZENIE_URZADZEN.md).
+
 ## Do czego się przyda
 
 | Kto | Co dostaje |
@@ -207,7 +224,7 @@ Plany na kolejne wersje:
 - [ ] **Podpis cyfrowy** – Windows i macOS nie pokażą już ostrzeżeń przy pierwszym uruchomieniu.
 - [x] **Luna na Androida** (wersja testowa, [`mobile/`](mobile/)) – ekran główny z widgetami, karty i przestrzenie, menu w arkuszu, asystent AI i komunikatory, dwie strony na ekranie, podpowiedzi wyszukiwania, układ poziomy i blokada reklam.
 - [ ] **Luna na iPhone'a i iPada** – aplikacja jest gotowa w kodzie; do udostępnienia potrzebny jest podpis Apple.
-- [ ] **Połączenie telefonu z komputerem** – zakładki i karty przez kod QR, bez serwerów Luny.
+- [x] **Połączenie telefonu z komputerem** – parowanie kodem QR, strony, pliki, zakładki, karty, schowek i pilot – bez serwerów Luny.
 - [x] **Luna jako domyślna przeglądarka** – linki z poczty i innych programów otwierają się w Lunie.
 - [ ] **Jasny motyw i kolor akcentu**, archiwum starych kart, wersja przenośna (na pendrive).
 
