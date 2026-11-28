@@ -1,3 +1,10 @@
+## Co nowego w 1.0.17
+
+- **Telefon i tablet poziomo: strony znów widać** – przy kilku otwartych kartach strona bywała czarna, a ekran nowej karty był wąskim paskiem gwiazd. Teraz strony i ekran główny zawsze zajmują całą szerokość.
+- **Dwie strony obok siebie bez przeskakiwania** – przy przewijaniu pasek zostaje na miejscu, więc strony nie zmieniają wysokości.
+- **Pole adresu każdej z dwóch stron** – stuknij pole nad stroną, aby wpisać adres albo wyszukać tylko w niej.
+- Linki otwierane z innych aplikacji działają bez błędów w tle.
+
 ## Co nowego w 1.0.16
 
 - **Telefon i tablet: aktualizacje same po otwarciu** – zaraz po uruchomieniu Luna sprawdza nowe wydanie, pobiera je w tle (domyślnie tylko przez Wi-Fi) i proponuje instalację. Nowy ekran **Aktualizacje** (menu i Ustawienia): stan, postęp, opis zmian i przełączniki.
