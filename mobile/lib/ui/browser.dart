@@ -222,7 +222,8 @@ class _BrowserScreenState extends State<BrowserScreen> with WidgetsBindingObserv
           }
         },
         onScrollChanged: (c, x, y) {
-          if (t.id != s.currentId) return;
+          // dwie strony: pasek zostaje – chowanie go zmieniało wysokość obu stron i przewijana strona przeskakiwała
+          if (t.id != s.currentId || _split) return;
           final last = _lastY[t.id] ?? 0;
           _lastY[t.id] = y;
           if (y - last > 14 && _barVisible && y > 80) {
@@ -309,8 +310,32 @@ class _BrowserScreenState extends State<BrowserScreen> with WidgetsBindingObserv
               SiteLetter(t.host),
               const SizedBox(width: 8),
               Expanded(
-                  child: Text(t.private ? 'Prywatna · ${t.title}' : t.title,
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: active ? const Color(0xFFBDBDBD) : const Color(0xFF7A7A7A)))),
+                child: _split
+                    // dwie strony: pole adresu tej strony – stuknięcie wybiera ją i otwiera wpisywanie adresu albo wyszukiwania
+                    ? GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          if (!active) s.activate(t.id);
+                          _startEditing();
+                        },
+                        child: Container(
+                          height: 28,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                              color: C.field, borderRadius: BorderRadius.circular(10), border: Border.all(color: active ? const Color(0xFF5A5A5A) : C.border2)),
+                          child: Row(children: [
+                            Icon(Icons.search, size: 14, color: active ? C.text2 : C.muted),
+                            const SizedBox(width: 6),
+                            Expanded(
+                                child: Text(t.host.isEmpty ? 'Szukaj lub wpisz adres' : t.host,
+                                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(fontSize: 12.5, color: active ? const Color(0xFFDCDCDC) : const Color(0xFF7A7A7A)))),
+                          ]),
+                        ),
+                      )
+                    : Text(t.private ? 'Prywatna · ${t.title}' : t.title,
+                        maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, color: active ? const Color(0xFFBDBDBD) : const Color(0xFF7A7A7A))),
+              ),
               if (_split && bottomPane)
                 IconButton(tooltip: 'Zamknij dolną stronę', onPressed: _closeSplit, icon: const Icon(Icons.close, size: 16, color: C.muted))
               else if (!_split)
