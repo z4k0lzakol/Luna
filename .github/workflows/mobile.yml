@@ -13,6 +13,14 @@ on:
         description: 'Numer wersji w APK do testów aktualizacji (np. 1.0.14) – puste: wersja z luna.py'
         required: false
         default: ''
+      perf:
+        description: 'Wersja pomiarowa (LUNA_PERF): czasy klatek, stron i podpowiedzi w logcat'
+        type: boolean
+        default: false
+      nointercept:
+        description: 'Pomiar: WebView bez przekazywania żądań do Darta (bez blokady reklam)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -75,7 +83,7 @@ jobs:
         run: |
           # do 3 prób – Maven Central bywa przeciążony (HTTP 429) i Gradle nie pobiera wtedy wtyczek
           for i in 1 2 3; do
-            flutter build apk --release --build-name="$LUNA_VERSION" --build-number="$LUNA_BUILD" --dart-define=LUNA_VERSION="$LUNA_VERSION" && exit 0
+            flutter build apk --release --build-name="$LUNA_VERSION" --build-number="$LUNA_BUILD" --dart-define=LUNA_VERSION="$LUNA_VERSION" --dart-define=LUNA_PERF=${{ github.event.inputs.perf || 'false' }} --dart-define=LUNA_NOINTERCEPT=${{ github.event.inputs.nointercept || 'false' }} && exit 0
             echo "Próba $i nieudana"; sleep 60
           done
           exit 1

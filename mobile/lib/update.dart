@@ -145,7 +145,7 @@ class Updater extends ChangeNotifier {
   Future<void> _maybeDownload() async {
     if (!auto || latest == null || state != UpdState.available) return;
     if (wifiOnly && !await _onWifi()) {
-      _say('Dostępna nowa wersja Luny – ${latest!.version}', action: SnackBarAction(label: 'Pobierz', onPressed: download), long: true);
+      _say('Dostępna nowa wersja Luny – ${latest!.version}', action: SnackBarAction(textColor: C.cream, label: 'Pobierz', onPressed: download), long: true);
       return;
     }
     await download(quiet: true);
@@ -282,7 +282,7 @@ class Updater extends ChangeNotifier {
   void _offerInstall({bool force = false}) {
     if (_offered && !force) return;
     _offered = true;
-    _say('Luna ${latest?.version ?? ''} jest gotowa do instalacji', action: SnackBarAction(label: 'Zainstaluj', onPressed: install), long: true);
+    _say('Luna ${latest?.version ?? ''} jest gotowa do instalacji', action: SnackBarAction(textColor: C.cream, label: 'Zainstaluj', onPressed: install), long: true);
   }
 
   /// Otwiera systemowe okno instalacji (po pobraniu – od razu; inaczej najpierw pobiera).
@@ -295,7 +295,7 @@ class Updater extends ChangeNotifier {
       final r = await _channel.invokeMethod<String>('install', {'path': _file!.path});
       if (r == 'settings') {
         _say('Zezwól Lunie na instalowanie aplikacji, wróć i kliknij „Zainstaluj” jeszcze raz',
-            action: SnackBarAction(label: 'Zainstaluj', onPressed: install), long: true);
+            action: SnackBarAction(textColor: C.cream, label: 'Zainstaluj', onPressed: install), long: true);
       }
     } catch (e) {
       _say('Nie udało się otworzyć instalacji: $e');

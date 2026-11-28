@@ -107,12 +107,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     }
   }
 
+  final Map<String, (DateTime, int, int)> _perfLoad = {};   // pomiar (LUNA_PERF): początek, żądania, zablokowane
+
   InAppWebViewSettings _settings(TabData t) => InAppWebViewSettings(
         userAgent: Platform.isAndroid && widget.userAgent.isNotEmpty ? widget.userAgent : null,
         applicationNameForUserAgent: Platform.isIOS ? 'Version/18.0 Safari/604.1' : null,
         incognito: t.private,
         useShouldOverrideUrlLoading: true,
-        useShouldInterceptRequest: Platform.isAndroid,
+        useShouldInterceptRequest: Platform.isAndroid && !const bool.fromEnvironment('LUNA_NOINTERCEPT'),
         contentBlockers: Platform.isIOS && s.adblock && !s.allowedHere(t.host) ? AdBlock.instance.iosRules() : [],
         supportMultipleWindows: true,
         javaScriptCanOpenWindowsAutomatically: false,
@@ -145,11 +147,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
         onWebViewCreated: (c) => _ctls[t.id] = c,
         onLoadStart: (c, u) {
           s.blockedByTab[t.id] = 0;
+          if (kPerf) _perfLoad[t.id] = (DateTime.now(), 0, 0);
           if (t.id == s.currentId && !_barVisible) setState(() => _barVisible = true);
         },
         onProgressChanged: (c, p) => _progress.putIfAbsent(t.id, () => ValueNotifier(1)).value = p / 100,
+        onPageCommitVisible: kPerf
+            ? (c, u) {
+                final p = _perfLoad[t.id];
+                if (p != null) debugPrint('LUNAPERF widoczna ${u?.host} ${DateTime.now().difference(p.$1).inMilliseconds} ms');
+              }
+            : null,
         onLoadStop: (c, u) async {
           _ptr[t.id]?.endRefreshing();
+          final pl = _perfLoad.remove(t.id);
+          if (pl != null) {
+            debugPrint('LUNAPERF zaladowana ${u?.host} ${DateTime.now().difference(pl.$1).inMilliseconds} ms, zadan ${pl.$2}, zablokowanych ${pl.$3}');
+          }
           if (u == null) return;
           final title = await c.getTitle() ?? '';
           s.pageLoaded(t, u.toString(), title);
@@ -194,11 +207,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
         },
         shouldInterceptRequest: Platform.isAndroid
             ? (c, req) async {
+                if (kPerf) {
+                  final p = _perfLoad[t.id];
+                  if (p != null) _perfLoad[t.id] = (p.$1, p.$2 + 1, p.$3);
+                }
                 if (!s.adblock || req.isForMainFrame == true) return null;
                 final page = t.host;
                 if (page.isNotEmpty && s.allowedHere(page)) return null;
                 if (!AdBlock.instance.blocks(req.url.host, page)) return null;
                 s.countBlocked(t.id);
+                if (kPerf) {
+                  final p = _perfLoad[t.id];
+                  if (p != null) _perfLoad[t.id] = (p.$1, p.$2, p.$3 + 1);
+                }
                 return WebResourceResponse(contentType: 'text/plain', data: Uint8List(0), statusCode: 200, reasonPhrase: 'OK');
               }
             : null,
@@ -417,7 +438,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       return;
     }
     _netT = Timer(const Duration(milliseconds: 180), () async {
+      final sw = Stopwatch()..start();
       final r = await netSuggestions(s.engine, v);
+      if (kPerf) debugPrint('LUNAPERF podpowiedzi ${sw.elapsedMilliseconds} ms (${r.length})');
       if (mounted && _editing && _addr.text == v) setState(() => _net = r);
     });
   }
