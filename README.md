@@ -42,7 +42,8 @@
 
 <p align="center">
   <a href="https://z4k0lzakol.github.io/Luna/#film"><img src="docs/img/podglad.gif" width="720" alt="Podgląd filmu: karta przeciągnięta na stronę dzieli ekran – kliknij, aby obejrzeć cały film"></a><br>
-  <img src="docs/img/ikony/play.svg" width="16" height="16" alt="" align="absmiddle"> <b><a href="https://z4k0lzakol.github.io/Luna/#film">Obejrzyj cały film: Luna w 50 sekund</a></b> (z dźwiękiem)
+  <img src="docs/img/ikony/play.svg" width="16" height="16" alt="" align="absmiddle"> <b><a href="https://z4k0lzakol.github.io/Luna/#film">Obejrzyj cały film: Luna w 50 sekund</a></b> (z dźwiękiem)<br>
+  <img src="docs/img/ikony/play.svg" width="16" height="16" alt="" align="absmiddle"> <b><a href="https://z4k0lzakol.github.io/Luna/#poradnik">Poradnik: pierwsze kroki w 3 minuty</a></b> – krok po kroku, z podpisami
 </p>
 
 <p align="center"><sub>
