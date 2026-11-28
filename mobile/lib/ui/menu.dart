@@ -45,6 +45,7 @@ const _sections = <(String, List<MenuItemDef>)>[
     MenuItemDef('focus', Icons.center_focus_strong_outlined, 'Skupienie', ['tryb skupienia']),
     MenuItemDef('shield', Icons.shield_outlined, 'Tarcza', ['reklamy', 'blokada']),
     MenuItemDef('guide', Icons.help_outline, 'Przewodnik', ['pomoc']),
+    MenuItemDef('updates', Icons.system_update_outlined, 'Aktualizacje', ['wersja', 'nowa wersja', 'zainstaluj']),
     MenuItemDef('panel', Icons.auto_awesome_outlined, 'Asystent AI', ['komunikatory', 'czat']),
   ]),
 ];

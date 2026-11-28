@@ -23,6 +23,7 @@ import 'lists.dart';
 import 'menu.dart';
 import 'panel.dart';
 import 'tabs.dart';
+import 'updates.dart';
 import 'widgets.dart';
 
 /// Zmienia się po pobraniu / aktualizacji list – strony na iOS dostają wtedy nowe reguły.
@@ -657,6 +658,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
         if (mounted) toast(context, s.focus ? 'Tryb skupienia: strona na cały ekran, pasek chowa się przy przewijaniu' : 'Tryb skupienia wyłączony');
       case 'shield':
         _shield();
+      case 'updates':
+        _push(const UpdatesScreen());
       case 'guide':
         widget.onGuide();
       case 'panel':

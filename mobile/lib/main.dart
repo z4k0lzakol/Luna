@@ -71,7 +71,10 @@ class _LunaAppState extends State<LunaApp> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) widget.s.markActive();
+    if (state == AppLifecycleState.resumed) {
+      widget.s.markActive();
+      Updater.instance.resumed();   // nowa wersja: ponowne sprawdzenie albo propozycja instalacji
+    }
   }
 
   @override

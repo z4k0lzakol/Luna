@@ -13947,7 +13947,7 @@ class Browser(QMainWindow):
         elif self.primary and getattr(sys, "frozen", False) and not RELEASE_CHECK:   # zainstalowana Luna: wydania z GitHuba
             rc = ReleaseCheck(QApplication.instance()); RELEASE_CHECK.append(rc); rc.found.connect(self.on_new_release)
             t = QTimer(rc); t.timeout.connect(lambda: self.store.feature("updates") and rc.check()); t.start(12 * 3600 * 1000)
-            QTimer.singleShot(20000, lambda: self.store.feature("updates") and rc.check())
+            QTimer.singleShot(4000, lambda: self.store.feature("updates") and rc.check())   # zaraz po starcie: nowe wydanie pobiera się od razu
         self.store.ensure_fonts()
 
     def _startup_news(self, changes, head):

@@ -54,6 +54,7 @@ class MainActivity : FlutterActivity() {
             }
         }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "luna/update").setMethodCallHandler { call, result ->
+            if (call.method == "isWifi") return@setMethodCallHandler result.success(onWifi())
             if (call.method != "install") return@setMethodCallHandler result.notImplemented()
             try {
                 result.success(installApk(File(call.argument<String>("path")!!)))
@@ -92,6 +93,14 @@ class MainActivity : FlutterActivity() {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         })
         return "ok"
+    }
+
+    /** Sieć bez limitu danych (Wi-Fi, Ethernet) – aktualizacje pobierane w tle tylko wtedy (domyślnie). */
+    private fun onWifi(): Boolean {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+        return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) ||
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)
     }
 
     // --- połączone urządzenia ---
