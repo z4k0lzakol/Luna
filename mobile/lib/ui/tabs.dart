@@ -9,9 +9,10 @@ import 'common.dart';
 class TabsScreen extends StatefulWidget {
   final LunaState s;
   final Map<String, Uint8List> thumbs;
+  final bool Function(String id)? asleep;   // karta uśpiona (strona nie zajmuje pamięci)
   final int initialSegment;
   final void Function(String id) onSplit;
-  const TabsScreen({super.key, required this.s, required this.thumbs, required this.onSplit, this.initialSegment = 0});
+  const TabsScreen({super.key, required this.s, required this.thumbs, required this.onSplit, this.asleep, this.initialSegment = 0});
 
   @override
   State<TabsScreen> createState() => _TabsScreenState();
@@ -135,7 +136,8 @@ class _TabsScreenState extends State<TabsScreen> {
                     ? _laterList(later)
                     : GridView.count(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                        crossAxisCount: 2,
+                        // telefon: 2 kolumny; tablet i poziomo: tyle, ile się zmieści (karta ok. 220 px)
+                        crossAxisCount: (MediaQuery.of(context).size.width / 220).floor().clamp(2, 6),
                         mainAxisSpacing: 12,
                         crossAxisSpacing: 12,
                         childAspectRatio: 0.78,
@@ -198,6 +200,8 @@ class _TabsScreenState extends State<TabsScreen> {
               t.isHome ? const Icon(Icons.nightlight_round, size: 15, color: C.cream) : SiteLetter(t.host),
               const SizedBox(width: 6),
               Expanded(child: Text(t.isHome ? 'Nowa karta' : t.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: Color(0xFFDCDCDC)))),
+              if (!t.isHome && (widget.asleep?.call(t.id) ?? false))
+                const Tooltip(message: 'Uśpiona – wczyta się po otwarciu', child: Icon(Icons.bedtime_outlined, size: 14, color: C.muted)),
               IconButton(
                 tooltip: 'Zamknij kartę',
                 visualDensity: VisualDensity.compact,

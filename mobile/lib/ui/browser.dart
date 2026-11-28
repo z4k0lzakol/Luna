@@ -16,6 +16,7 @@ import '../link/manager.dart';
 import '../scripts.dart';
 import '../state.dart';
 import '../suggest.dart';
+import '../thumbs.dart';
 import 'common.dart';
 import 'devices.dart';
 import 'home.dart';
@@ -23,6 +24,7 @@ import 'lists.dart';
 import 'menu.dart';
 import 'panel.dart';
 import 'tabs.dart';
+import 'updates.dart';
 import 'widgets.dart';
 
 /// Zmienia się po pobraniu / aktualizacji list – strony na iOS dostają wtedy nowe reguły.
@@ -38,15 +40,18 @@ class BrowserScreen extends StatefulWidget {
   State<BrowserScreen> createState() => _BrowserScreenState();
 }
 
-class _BrowserScreenState extends State<BrowserScreen> {
+class _BrowserScreenState extends State<BrowserScreen> with WidgetsBindingObserver {
   static const _maxAlive = 4;
+  final _used = <String, DateTime>{};   // ostatnie użycie karty – usypianie nieużywanych
+  Timer? _sleepT;
+  String? _lastCur;
 
   LunaState get s => widget.s;
   final _ctls = <String, InAppWebViewController>{};
   final _ptr = <String, PullToRefreshController>{};
   final _keys = <String, GlobalKey>{};
   final _alive = <String>[];
-  final _thumbs = <String, Uint8List>{};
+  Map<String, Uint8List> get _thumbs => ThumbStore.instance.map;
   final _zoom = <String, int>{};
   final _progress = <String, ValueNotifier<double>>{}; // pasek postępu odświeża tylko siebie, nie cały ekran
   final _lastY = <String, int>{};
@@ -72,6 +77,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
   void initState() {
     super.initState();
     blockerVersion.addListener(_applyBlocker);
+    WidgetsBinding.instance.addObserver(this);
+    ThumbStore.instance.load({for (final t in s.tabs) t.id});
+    _sleepT = Timer.periodic(const Duration(minutes: 1), (_) => _sleepIdle());
     LinkManager.instance?.onSharedFiles = (paths) async {   // „Udostępnij → Luna”: wybór urządzenia
       final m = LinkManager.instance!;
       if (!mounted) return;
@@ -83,6 +91,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   @override
   void dispose() {
     blockerVersion.removeListener(_applyBlocker);
+    WidgetsBinding.instance.removeObserver(this);
+    _sleepT?.cancel();
     _netT?.cancel();
     _addr.dispose();
     _addrFocus.dispose();
@@ -94,24 +104,55 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   void _touch(String id) {
     _alive.removeWhere((x) => s.byId(x) == null);
+    _used[id] = DateTime.now();
+    if (_alive.isNotEmpty && _alive.last == id) return;
     _alive.remove(id);
     _alive.add(id);
     while (_alive.length > _maxAlive) {
       // usypia najdawniej używaną kartę: przy powrocie strona wczyta się od nowa
       final old = _alive.firstWhere((x) => x != _sTop && x != _sBot && x != s.currentId, orElse: () => '');
       if (old.isEmpty) break;
-      _alive.remove(old);
-      _ctls.remove(old);
-      _ptr.remove(old);
+      _sleep(old);
     }
   }
+
+  bool _keepAwake(String id) => id == s.currentId || id == _sTop || id == _sBot;
+
+  /// Usypia kartę: strona znika z pamięci (podgląd zostaje), przy powrocie wczyta się od nowa.
+  void _sleep(String id) {
+    _alive.remove(id);
+    _ctls.remove(id);
+    _ptr.remove(id);
+    _progress.remove(id);
+  }
+
+  /// Karty nieużywane dłużej niż ustawienie (Ustawienia → Usypiaj nieużywane karty).
+  void _sleepIdle() {
+    final min = s.sleepMinutes;
+    if (min <= 0 || !mounted) return;
+    final now = DateTime.now();
+    final idle = [for (final id in _alive) if (!_keepAwake(id) && now.difference(_used[id] ?? now).inMinutes >= min) id];
+    if (idle.isEmpty) return;
+    setState(() => idle.forEach(_sleep));
+  }
+
+  /// Mało pamięci (Android): usypia wszystkie karty w tle.
+  @override
+  void didHaveMemoryPressure() {
+    final bg = [for (final id in _alive) if (!_keepAwake(id)) id];
+    if (bg.isNotEmpty && mounted) setState(() => bg.forEach(_sleep));
+  }
+
+  bool asleep(String id) => !_alive.contains(id);
+
+  final Map<String, (DateTime, int, int)> _perfLoad = {};   // pomiar (LUNA_PERF): początek, żądania, zablokowane
 
   InAppWebViewSettings _settings(TabData t) => InAppWebViewSettings(
         userAgent: Platform.isAndroid && widget.userAgent.isNotEmpty ? widget.userAgent : null,
         applicationNameForUserAgent: Platform.isIOS ? 'Version/18.0 Safari/604.1' : null,
         incognito: t.private,
         useShouldOverrideUrlLoading: true,
-        useShouldInterceptRequest: Platform.isAndroid,
+        useShouldInterceptRequest: Platform.isAndroid && !const bool.fromEnvironment('LUNA_NOINTERCEPT'),
         contentBlockers: Platform.isIOS && s.adblock && !s.allowedHere(t.host) ? AdBlock.instance.iosRules() : [],
         supportMultipleWindows: true,
         javaScriptCanOpenWindowsAutomatically: false,
@@ -144,11 +185,22 @@ class _BrowserScreenState extends State<BrowserScreen> {
         onWebViewCreated: (c) => _ctls[t.id] = c,
         onLoadStart: (c, u) {
           s.blockedByTab[t.id] = 0;
+          if (kPerf) _perfLoad[t.id] = (DateTime.now(), 0, 0);
           if (t.id == s.currentId && !_barVisible) setState(() => _barVisible = true);
         },
         onProgressChanged: (c, p) => _progress.putIfAbsent(t.id, () => ValueNotifier(1)).value = p / 100,
+        onPageCommitVisible: kPerf
+            ? (c, u) {
+                final p = _perfLoad[t.id];
+                if (p != null) debugPrint('LUNAPERF widoczna ${u?.host} ${DateTime.now().difference(p.$1).inMilliseconds} ms');
+              }
+            : null,
         onLoadStop: (c, u) async {
           _ptr[t.id]?.endRefreshing();
+          final pl = _perfLoad.remove(t.id);
+          if (pl != null) {
+            debugPrint('LUNAPERF zaladowana ${u?.host} ${DateTime.now().difference(pl.$1).inMilliseconds} ms, zadan ${pl.$2}, zablokowanych ${pl.$3}');
+          }
           if (u == null) return;
           final title = await c.getTitle() ?? '';
           s.pageLoaded(t, u.toString(), title);
@@ -193,11 +245,19 @@ class _BrowserScreenState extends State<BrowserScreen> {
         },
         shouldInterceptRequest: Platform.isAndroid
             ? (c, req) async {
+                if (kPerf) {
+                  final p = _perfLoad[t.id];
+                  if (p != null) _perfLoad[t.id] = (p.$1, p.$2 + 1, p.$3);
+                }
                 if (!s.adblock || req.isForMainFrame == true) return null;
                 final page = t.host;
                 if (page.isNotEmpty && s.allowedHere(page)) return null;
                 if (!AdBlock.instance.blocks(req.url.host, page)) return null;
                 s.countBlocked(t.id);
+                if (kPerf) {
+                  final p = _perfLoad[t.id];
+                  if (p != null) _perfLoad[t.id] = (p.$1, p.$2, p.$3 + 1);
+                }
                 return WebResourceResponse(contentType: 'text/plain', data: Uint8List(0), statusCode: 200, reasonPhrase: 'OK');
               }
             : null,
@@ -218,11 +278,12 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Future<void> _thumb(String id) async {
     final c = _ctls[id];
-    if (c == null || id != s.currentId) return;
+    final t = s.byId(id);
+    if (c == null || t == null || t.isHome) return;
     try {
       final b = await c.takeScreenshot(
           screenshotConfiguration: ScreenshotConfiguration(compressFormat: CompressFormat.JPEG, quality: 45, snapshotWidth: 360));
-      if (b != null) _thumbs[id] = b;
+      if (b != null && b.isNotEmpty) await ThumbStore.instance.put(id, b, private: t.private);
     } catch (_) {}
   }
 
@@ -416,7 +477,9 @@ class _BrowserScreenState extends State<BrowserScreen> {
       return;
     }
     _netT = Timer(const Duration(milliseconds: 180), () async {
+      final sw = Stopwatch()..start();
       final r = await netSuggestions(s.engine, v);
+      if (kPerf) debugPrint('LUNAPERF podpowiedzi ${sw.elapsedMilliseconds} ms (${r.length})');
       if (mounted && _editing && _addr.text == v) setState(() => _net = r);
     });
   }
@@ -487,6 +550,7 @@ class _BrowserScreenState extends State<BrowserScreen> {
           pageBuilder: (_, __, ___) => TabsScreen(
             s: s,
             thumbs: _thumbs,
+            asleep: asleep,
             initialSegment: segment,
             onSplit: (id) {
               final cur = s.currentId;
@@ -657,6 +721,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
         if (mounted) toast(context, s.focus ? 'Tryb skupienia: strona na cały ekran, pasek chowa się przy przewijaniu' : 'Tryb skupienia wyłączony');
       case 'shield':
         _shield();
+      case 'updates':
+        _push(const UpdatesScreen());
       case 'guide':
         widget.onGuide();
       case 'panel':
@@ -906,6 +972,11 @@ class _BrowserScreenState extends State<BrowserScreen> {
             _keys.removeWhere((k, _) => !k.endsWith('-${o.name}'));
           }
           _orient = o;
+          if (_lastCur != null && _lastCur != cur.id) {
+            final prev = _lastCur!;   // podgląd karty, z której odchodzisz (jeszcze żywa w tle)
+            Future.microtask(() => _thumb(prev));
+          }
+          _lastCur = cur.id;
           if (!cur.isHome) _touch(cur.id);
           if (_split) {
             _touch(_sTop!);

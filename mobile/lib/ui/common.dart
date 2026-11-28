@@ -5,6 +5,9 @@ import 'dart:math';
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 
+/// Wersja pomiarowa (--dart-define=LUNA_PERF=true): czasy klatek, ładowania stron i podpowiedzi w logcat (LUNAPERF).
+const kPerf = bool.fromEnvironment('LUNA_PERF');
+
 class C {
   static const bg = Color(0xFF0B0B0B);
   static const sheet = Color(0xFF111111);

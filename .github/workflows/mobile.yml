@@ -8,6 +8,19 @@ on:
     paths: ['mobile/**', '.github/workflows/mobile.yml', 'luna_link.py', 'tests/link_peer.py']
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      test_version:
+        description: 'Numer wersji w APK do testów aktualizacji (np. 1.0.14) – puste: wersja z luna.py'
+        required: false
+        default: ''
+      perf:
+        description: 'Wersja pomiarowa (LUNA_PERF): czasy klatek, stron i podpowiedzi w logcat'
+        type: boolean
+        default: false
+      nointercept:
+        description: 'Pomiar: WebView bez przekazywania żądań do Darta (bez blokady reklam)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -53,6 +66,7 @@ jobs:
         run: |
           # wersja z luna.py (jak na komputerze): 1.0.12 → numer kompilacji 10012 (Android przyjmuje tylko rosnące numery)
           v=$(python3 -c "import re;print(re.search(r'^VERSION = \"([^\"]+)\"', open('luna.py', encoding='utf-8').read(), re.M).group(1))")
+          if [ -n "${{ github.event.inputs.test_version }}" ]; then v="${{ github.event.inputs.test_version }}"; echo "::notice::APK testowy z wersją $v"; fi
           IFS=. read -r a b c <<< "$v"
           echo "LUNA_VERSION=$v" >> "$GITHUB_ENV"
           echo "LUNA_BUILD=$((a * 1000000 + b * 1000 + c))" >> "$GITHUB_ENV"
@@ -69,7 +83,7 @@ jobs:
         run: |
           # do 3 prób – Maven Central bywa przeciążony (HTTP 429) i Gradle nie pobiera wtedy wtyczek
           for i in 1 2 3; do
-            flutter build apk --release --build-name="$LUNA_VERSION" --build-number="$LUNA_BUILD" --dart-define=LUNA_VERSION="$LUNA_VERSION" && exit 0
+            flutter build apk --release --build-name="$LUNA_VERSION" --build-number="$LUNA_BUILD" --dart-define=LUNA_VERSION="$LUNA_VERSION" --dart-define=LUNA_PERF=${{ github.event.inputs.perf || 'false' }} --dart-define=LUNA_NOINTERCEPT=${{ github.event.inputs.nointercept || 'false' }} && exit 0
             echo "Próba $i nieudana"; sleep 60
           done
           exit 1

@@ -7,6 +7,7 @@ import '../state.dart';
 import '../update.dart';
 import 'common.dart';
 import 'tabs.dart';
+import 'updates.dart';
 import 'widgets.dart';
 
 class _Page extends StatelessWidget {
@@ -299,6 +300,28 @@ class SettingsScreen extends StatelessWidget {
                 s.changed();
               },
             ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Usypiaj nieużywane karty'),
+              subtitle: const Text('Strona karty nieużywanej przez ten czas znika z pamięci (podgląd zostaje) i wczyta się po powrocie. '
+                  'Przy braku pamięci Luna usypia karty w tle od razu.', style: TextStyle(color: C.muted, fontSize: 12.5)),
+              trailing: DropdownButton<int>(
+                value: const [0, 5, 10, 30, 60].contains(s.sleepMinutes) ? s.sleepMinutes : 10,
+                dropdownColor: C.sheet,
+                underline: const SizedBox(),
+                items: const [
+                  DropdownMenuItem(value: 5, child: Text('po 5 min')),
+                  DropdownMenuItem(value: 10, child: Text('po 10 min')),
+                  DropdownMenuItem(value: 30, child: Text('po 30 min')),
+                  DropdownMenuItem(value: 60, child: Text('po godzinie')),
+                  DropdownMenuItem(value: 0, child: Text('nigdy')),
+                ],
+                onChanged: (v) {
+                  s.sleepMinutes = v ?? 10;
+                  s.changed();
+                },
+              ),
+            ),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Pogoda na ekranie głównym'),
@@ -390,10 +413,11 @@ class SettingsScreen extends StatelessWidget {
             if (Updater.instance.supported)
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Sprawdź aktualizacje'),
-                subtitle: const Text('Wersja $kVersion', style: TextStyle(color: C.muted, fontSize: 12.5)),
+                title: const Text('Aktualizacje'),
+                subtitle: const Text('Wersja $kVersion – sprawdzanie, pobieranie i instalacja nowej wersji',
+                    style: TextStyle(color: C.muted, fontSize: 12.5)),
                 trailing: const Icon(Icons.system_update_outlined, size: 20),
-                onTap: () => Updater.instance.check(interactive: true),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const UpdatesScreen())),
               ),
             for (final l in [
               ('Strona Luny', 'https://z4k0lzakol.github.io/Luna/'),

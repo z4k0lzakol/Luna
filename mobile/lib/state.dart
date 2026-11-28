@@ -7,6 +7,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'thumbs.dart';
+
 class TabData {
   final String id;
   String url;
@@ -89,6 +91,7 @@ class LunaState extends ChangeNotifier {
   String engine = 'Brave';
   bool adblock = true;
   bool suggestNet = true;
+  int sleepMinutes = 10;   // usypianie kart nieużywanych tyle minut (0 = wyłączone)
   Set<String> allow = {};
   bool weatherOn = true;
   Map<String, dynamic> city = {'name': 'Warszawa', 'admin': 'mazowieckie', 'lat': 52.2298, 'lon': 21.0118};
@@ -120,6 +123,7 @@ class LunaState extends ChangeNotifier {
         if (!engines.containsKey(engine)) engine = 'Brave';
         adblock = (m['adblock'] ?? true) as bool;
         suggestNet = (m['suggestNet'] ?? true) as bool;
+        sleepMinutes = (m['sleepMin'] ?? 10) as int;
         allow = {for (final d in (m['allow'] ?? []) as List) d as String};
         weatherOn = (m['weather'] ?? true) as bool;
         if (m['city'] is Map) city = Map<String, dynamic>.from(m['city'] as Map);
@@ -153,6 +157,7 @@ class LunaState extends ChangeNotifier {
             'engine': engine,
             'adblock': adblock,
             'suggestNet': suggestNet,
+            'sleepMin': sleepMinutes,
             'allow': allow.toList(),
             'weather': weatherOn,
             'city': city,
@@ -202,6 +207,7 @@ class LunaState extends ChangeNotifier {
     final wasCurrent = id == currentId;
     final t = tabs.removeAt(idx);
     blockedByTab.remove(id);
+    ThumbStore.instance.remove(id);
     if (splitId == id) splitId = null;
     if (wasCurrent) {
       final same = tabs.where((x) => x.private == t.private && (t.private || x.space == space)).toList();

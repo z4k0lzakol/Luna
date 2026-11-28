@@ -211,7 +211,7 @@ class LinkManager extends LinkHandler with ChangeNotifier {
     }
     final one = files.length == 1;
     _say('Odebrano ${one ? 'plik' : '${files.length} pliki'} od ${sender.name} – Pobrane/Luna',
-        action: one && saved.first.isNotEmpty ? SnackBarAction(label: 'Otwórz', onPressed: () => _openSaved(saved.first)) : null);
+        action: one && saved.first.isNotEmpty ? SnackBarAction(textColor: C.cream, label: 'Otwórz', onPressed: () => _openSaved(saved.first)) : null);
   }
 
   Future<String> _toDownloads(File f) async {
