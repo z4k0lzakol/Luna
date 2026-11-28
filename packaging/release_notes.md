@@ -1,3 +1,11 @@
+## Co nowego w 1.0.16
+
+- **Telefon i tablet: aktualizacje same po otwarciu** – zaraz po uruchomieniu Luna sprawdza nowe wydanie, pobiera je w tle (domyślnie tylko przez Wi-Fi) i proponuje instalację. Nowy ekran **Aktualizacje** (menu i Ustawienia): stan, postęp, opis zmian i przełączniki.
+- **Podgląd strony w kartach** – zapisywany na dysku, więc widać go także po ponownym otwarciu Luny.
+- **Usypianie nieużywanych kart** – po wybranym czasie (domyślnie 10 min) karta zwalnia pamięć, a przy braku pamięci Android usypia karty w tle od razu; uśpiona karta ma znaczek księżyca.
+- **Tablet: więcej kart naraz** – lista kart dopasowuje liczbę kolumn do szerokości ekranu.
+- **Komputer:** nowe wydanie jest sprawdzane kilka sekund po uruchomieniu.
+
 ## Co nowego w 1.0.15
 
 - **Połączone urządzenia na Windows: kod QR działa** – w 1.0.14 Luna z wydania na Windows nie tworzyła certyfikatu, więc parowanie się nie zaczynało. Gdy połączenia nie da się włączyć, ustawienia pokazują teraz powód.
