@@ -29,8 +29,6 @@
             <!-- linki z innych aplikacji obsługuje Luna (kanał luna/links) – bez tego Flutter próbował otworzyć adres
                  strony jako ekran aplikacji i przy każdym linku rzucał wyjątek -->
             <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
-            <!-- test: rysowanie silnikiem Skia zamiast Impeller (czarne strony i pocięte tło na starszych GPU) -->
-            <meta-data android:name="io.flutter.embedding.android.EnableImpeller" android:value="false" />
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"

@@ -448,7 +448,10 @@ class _BrowserScreenState extends State<BrowserScreen> with WidgetsBindingObserv
       main = EnterAnim(key: ValueKey('main-${cur.id}'), from: Offset(_dir * 0.06, 0), child: _page(cur));
     }
     final hidden = [for (final id in _alive) if (!shown.contains(id)) s.byId(id)].whereType<TabData>().where((t) => !t.isHome).toList();
-    return Stack(children: [
+    // fit: expand – obszar stron zawsze na całe dostępne miejsce. Bez tego poziomo (kolumna nie wymusza szerokości)
+    // Stack brał szerokość z ukrytych kart (Offstage = rozmiar 0) i przy kilku kartach strona dostawała 0 px:
+    // czarny ekran zamiast strony i wąski pasek gwiazd zamiast ekranu nowej karty.
+    return Stack(fit: StackFit.expand, children: [
       Positioned.fill(child: main),
       for (final t in hidden) Offstage(child: _page(t)),
     ]);
